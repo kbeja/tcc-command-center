@@ -1,0 +1,205 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from './supabase';
+import { daysBetween, today } from '../data/seasons';
+
+// ─── Products ───────────────────────────────────────────────────────────────
+
+export function useProducts() {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('products')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (data) setProducts(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('products')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  return { products, loading, refetch: fetch };
+}
+
+export function useProduct(id) {
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!id) return;
+    const { data } = await supabase.from('products').select('*').eq('id', id).single();
+    if (data) setProduct(data);
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  return { product, loading, refetch: fetch };
+}
+
+export async function updateProduct(id, updates) {
+  const { data, error } = await supabase
+    .from('products')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function createProduct(product) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('products')
+    .insert({ ...product, created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+// ─── Needs Attention ─────────────────────────────────────────────────────────
+
+export function getNeedsAttention(products) {
+  return products.filter(p => {
+    if (['Killed', 'Paused'].includes(p.stage)) return false;
+    const daysLive = p.went_live_at ? daysBetween(p.went_live_at, today()) : 0;
+    if (p.stage === 'Live' && daysLive >= 30 && !p.total_sales) return true;
+    if (p.stage === 'Reviewing' && p.last_reviewed_at && daysBetween(p.last_reviewed_at, today()) > 7) return true;
+    const daysInStage = p.stage_updated_at ? daysBetween(p.stage_updated_at, today()) : 0;
+    if (!['Live', 'Killed', 'Paused'].includes(p.stage) && daysInStage >= 21) return true;
+    return false;
+  });
+}
+
+export function getPickUpProduct(products) {
+  const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
+  if (!active.length) return null;
+  // Sort by most recently updated
+  return active.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+}
+
+// ─── Research Sessions ───────────────────────────────────────────────────────
+
+export function useResearchSessions(productId) {
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let query = supabase.from('research_sessions').select('*, keywords(*)').order('date', { ascending: false });
+    if (productId) query = query.eq('product_id', productId);
+    const { data } = await query;
+    if (data) setSessions(data);
+    setLoading(false);
+  }, [productId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { sessions, loading, refetch: fetch };
+}
+
+export async function createResearchSession(session, keywords) {
+  const now = new Date().toISOString();
+  const { data: s, error } = await supabase
+    .from('research_sessions')
+    .insert({ ...session, created_at: now })
+    .select()
+    .single();
+  if (error || !s) return { error };
+  if (keywords?.length) {
+    await supabase.from('keywords').insert(
+      keywords.map(k => ({ ...k, research_session_id: s.id, created_at: now }))
+    );
+  }
+  return { data: s };
+}
+
+// ─── Sparks ──────────────────────────────────────────────────────────────────
+
+export function useSparks() {
+  const [sparks, setSparks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('sparks')
+      .select('*')
+      .is('archived_at', null)
+      .order('created_at', { ascending: false });
+    if (data) setSparks(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { sparks, loading, refetch: fetch };
+}
+
+export async function createSpark(content, collectionTag) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('sparks')
+    .insert({ content, collection_tag: collectionTag || null, temperature: 'cold', created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function updateSpark(id, updates) {
+  const { data, error } = await supabase
+    .from('sparks')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function archiveSpark(id) {
+  return updateSpark(id, { archived_at: new Date().toISOString() });
+}
+
+// ─── Workshop Items ───────────────────────────────────────────────────────────
+
+export function useWorkshopItems() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('workshop_items')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (data) setItems(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { items, loading, refetch: fetch };
+}
+
+export async function createWorkshopItem(item) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('workshop_items')
+    .insert({ ...item, status: 'pending', created_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function resolveWorkshopItem(id, status = 'reviewed') {
+  const { data, error } = await supabase
+    .from('workshop_items')
+    .update({ status, reviewed_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
