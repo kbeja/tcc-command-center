@@ -4,7 +4,7 @@ export default function StageTracker({ currentStage, onStageSelect }) {
   const currentIdx = STAGE_ORDER[currentStage] ?? 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
       {STAGES.map((stage, idx) => {
         const done = idx < currentIdx;
         const active = idx === currentIdx;
@@ -16,8 +16,8 @@ export default function StageTracker({ currentStage, onStageSelect }) {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 12,
-              padding: '8px 12px',
+              gap: 8,
+              padding: '6px 10px',
               background: active ? 'var(--rose-faint)' : 'transparent',
               border: 'none',
               borderLeft: active ? '2px solid var(--dusty-rose)' : '2px solid transparent',
@@ -28,38 +28,20 @@ export default function StageTracker({ currentStage, onStageSelect }) {
             }}
           >
             <div style={{
-              width: 18,
-              height: 18,
-              borderRadius: '50%',
-              border: active
-                ? '2px solid var(--dusty-rose)'
-                : done
-                ? '2px solid var(--dusty-rose)'
-                : '2px solid rgba(43,41,38,0.15)',
-              background: active
-                ? 'var(--dusty-rose)'
-                : done
-                ? 'var(--rose-faint)'
-                : 'transparent',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+              border: done || active ? '2px solid var(--dusty-rose)' : '2px solid rgba(43,41,38,0.15)',
+              background: active ? 'var(--dusty-rose)' : done ? 'var(--rose-faint)' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {done && <span style={{ fontSize: '0.5rem', color: 'var(--dusty-rose)', fontWeight: 700 }}>✓</span>}
+              {done && <span style={{ fontSize: '0.45rem', color: 'var(--dusty-rose)', fontWeight: 700 }}>✓</span>}
             </div>
             <span style={{
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight: active ? 600 : 400,
-              color: active ? 'var(--warm-charcoal)' : done ? 'var(--charcoal-soft)' : 'var(--charcoal-soft)',
+              color: active ? 'var(--warm-charcoal)' : 'var(--charcoal-soft)',
             }}>
               {stage}
             </span>
-            {active && (
-              <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--dusty-rose)', fontWeight: 500 }}>
-                current
-              </span>
-            )}
           </button>
         );
       })}
