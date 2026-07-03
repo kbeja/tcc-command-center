@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct } from '../lib/hooks';
-import { useResearchSessions, createResearchSession } from '../lib/hooks';
-import { useProducts } from '../lib/hooks';
+import { useProduct, updateProduct, useResearchSessions, useProducts } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
 import StageTracker from '../components/StageTracker';
 import ConfidenceSelector from '../components/ConfidenceSelector';
@@ -15,8 +13,7 @@ export default function ProductWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { product, loading, refetch } = useProduct(id);
-  const { sessions, refetch: refetchSessions } = useResearchSessions(id);
-  const { products } = useProducts();
+  const { sessions, refetch: refetchSessions } = useResearchSessions(product?.collection);
   const [notes, setNotes] = useState('');
   const [noteSaved, setNoteSaved] = useState(false);
   const [addingResearch, setAddingResearch] = useState(false);
@@ -126,8 +123,7 @@ export default function ProductWorkspace() {
         {addingResearch && (
           <div className="card" style={{ marginBottom: 12 }}>
             <ResearchSessionForm
-              products={products}
-              defaultProductId={id}
+              defaultNiche={product?.collection}
               onSaved={() => { setAddingResearch(false); refetchSessions(); }}
               onCancel={() => setAddingResearch(false)}
             />

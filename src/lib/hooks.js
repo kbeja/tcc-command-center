@@ -88,17 +88,17 @@ export function getPickUpProduct(products) {
 
 // ─── Research Sessions ───────────────────────────────────────────────────────
 
-export function useResearchSessions(productId) {
+export function useResearchSessions(niche) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
     let query = supabase.from('research_sessions').select('*, keywords(*)').order('date', { ascending: false });
-    if (productId) query = query.eq('product_id', productId);
+    if (niche) query = query.eq('niche', niche);
     const { data } = await query;
     if (data) setSessions(data);
     setLoading(false);
-  }, [productId]);
+  }, [niche]);
 
   useEffect(() => { fetch(); }, [fetch]);
   return { sessions, loading, refetch: fetch };

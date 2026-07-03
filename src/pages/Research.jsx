@@ -1,16 +1,23 @@
 import { useState } from 'react';
-import { useProducts } from '../lib/hooks';
 import { useResearchSessions } from '../lib/hooks';
+import { COLLECTIONS } from '../data/collections';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 
 export default function Research() {
-  const { products } = useProducts();
-  const { sessions, loading, refetch } = useResearchSessions();
+  const [filterNiche, setFilterNiche] = useState('');
+  const { sessions, loading, refetch } = useResearchSessions(filterNiche || undefined);
   const [adding, setAdding] = useState(false);
-  const [filterProduct, setFilterProduct] = useState('');
 
-  const filtered = sessions.filter(s => !filterProduct || s.product_id === filterProduct);
+  // Group by niche
+  const grouped = sessions.reduce((acc, s) => {
+    const key = s.niche || 'Uncategorized';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(s);
+    return acc;
+  }, {});
+
+  const niches = Object.keys(grouped).sort();
 
   return (
     <div className="page">
@@ -26,42 +33,53 @@ export default function Research() {
       {adding && (
         <div className="card" style={{ marginBottom: 20 }}>
           <ResearchSessionForm
-            products={products}
+            defaultNiche={filterNiche || 'Mom Chapter'}
             onSaved={() => { setAdding(false); refetch(); }}
             onCancel={() => setAdding(false)}
           />
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
-        <select value={filterProduct} onChange={e => setFilterProduct(e.target.value)}>
-          <option value="">All products</option>
-          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+      <div style={{ marginBottom: 20, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button
+          className={`btn btn-sm ${!filterNiche ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setFilterNiche('')}
+        >
+          All
+        </button>
+        {COLLECTIONS.map(c => (
+          <button
+            key={c}
+            className={`btn btn-sm ${filterNiche === c ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setFilterNiche(c)}
+          >
+            {c}
+          </button>
+        ))}
       </div>
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && sessions.length === 0 && (
         <div className="empty-state">
           <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>🔬</div>
-          <p>No research sessions yet. Add one to start tracking keyword research.</p>
+          <p>No research sessions yet. Add one to start tracking keyword research by topic.</p>
         </div>
       )}
 
-      {filtered.map(s => {
-        const product = products.find(p => p.id === s.product_id);
-        return (
-          <div key={s.id} className="card" style={{ marginBottom: 10 }}>
-            {product && (
-              <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6, fontWeight: 500, letterSpacing: '0.04em' }}>
-                {product.name}
-              </div>
-            )}
-            <ResearchSessionCard session={s} />
+      {niches.map(niche => (
+        <div key={niche} style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <div className="section-label" style={{ margin: 0 }}>{niche}</div>
+            <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
+              {grouped[niche].length} session{grouped[niche].length !== 1 ? 's' : ''}
+            </span>
           </div>
-        );
-      })}
+          <div className="card">
+            {grouped[niche].map(s => <ResearchSessionCard key={s.id} session={s} />)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

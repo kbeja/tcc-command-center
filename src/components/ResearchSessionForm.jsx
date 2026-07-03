@@ -1,14 +1,19 @@
 import { useState } from 'react';
 import { createResearchSession } from '../lib/hooks';
+import { COLLECTIONS } from '../data/collections';
 
 const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
 const DECISIONS = ['Pursue', 'Watch', 'Discard'];
+const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
 
-export default function ResearchSessionForm({ products, defaultProductId, onSaved, onCancel }) {
-  const [productId, setProductId] = useState(defaultProductId || '');
+export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel }) {
+  const [topic, setTopic] = useState('');
+  const [niche, setNiche] = useState(defaultNiche || 'Mom Chapter');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [source, setSource] = useState('Everbee');
+  const [status, setStatus] = useState('Complete');
   const [notes, setNotes] = useState('');
+  const [gapsNotes, setGapsNotes] = useState('');
   const [decision, setDecision] = useState('Pursue');
   const [keywords, setKeywords] = useState([]);
   const [kw, setKw] = useState({ keyword: '', volume: '', competition: '', score: '' });
@@ -22,7 +27,7 @@ export default function ResearchSessionForm({ products, defaultProductId, onSave
   }
 
   async function handleSave() {
-    if (!productId) return;
+    if (!topic.trim()) return;
     setSaving(true);
     const kwList = keywords.map(k => ({
       keyword: k.keyword,
@@ -30,7 +35,7 @@ export default function ResearchSessionForm({ products, defaultProductId, onSave
       competition: k.competition ? parseInt(k.competition) : null,
       score: k.score ? parseInt(k.score) : null,
     }));
-    await createResearchSession({ product_id: productId, date, source, notes, decision }, kwList);
+    await createResearchSession({ topic, niche, date, source, notes, decision, status, gaps_notes: gapsNotes }, kwList);
     setSaving(false);
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);
@@ -39,16 +44,25 @@ export default function ResearchSessionForm({ products, defaultProductId, onSave
   return (
     <div>
       <div className="form-group">
-        <label className="form-label">Product</label>
-        <select value={productId} onChange={e => setProductId(e.target.value)}>
-          <option value="">Select product…</option>
-          {products?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <label className="form-label">Topic / Keyword Cluster</label>
+        <input
+          placeholder="e.g. Mom Life SVGs, Dark Academia Book Lover..."
+          value={topic}
+          onChange={e => setTopic(e.target.value)}
+        />
       </div>
 
-      <div className="form-group">
-        <label className="form-label">Date</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="form-group">
+          <label className="form-label">Niche / Collection</label>
+          <select value={niche} onChange={e => setNiche(e.target.value)}>
+            {COLLECTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
       </div>
 
       <div className="form-group">
@@ -63,9 +77,27 @@ export default function ResearchSessionForm({ products, defaultProductId, onSave
       </div>
 
       <div className="form-group">
+        <label className="form-label">Status</label>
+        <div className="toggle-group">
+          {STATUSES.map(s => (
+            <button key={s} className={`toggle-btn${status === s ? ' active' : ''}`} onClick={() => setStatus(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="form-group">
         <label className="form-label">Notes</label>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="What did you find?" rows={2} />
       </div>
+
+      {(status === 'Gaps Identified' || status === 'Needs More Data') && (
+        <div className="form-group">
+          <label className="form-label">What's Still Missing</label>
+          <textarea value={gapsNotes} onChange={e => setGapsNotes(e.target.value)} placeholder="What gaps need to be filled?" rows={2} />
+        </div>
+      )}
 
       <div className="form-group">
         <div className="section-label" style={{ marginBottom: 8 }}>Keywords Found</div>
@@ -105,7 +137,7 @@ export default function ResearchSessionForm({ products, defaultProductId, onSave
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={!productId || saving}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={!topic.trim() || saving}>
           {saving ? 'Saving…' : 'Save Session →'}
         </button>
         {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>}
