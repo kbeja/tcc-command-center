@@ -13,12 +13,24 @@ const KW_STATUS = {
 
 const STATUS_CYCLE = { use: 'watch', watch: 'discard', discard: 'use' };
 
-function parseStatusFromText(text) {
-  const t = (text || '').toLowerCase().trim();
+function autoColor(score, competition, statusText) {
+  const s = parseFloat(score) || 0;
+  const c = parseFloat(competition) || 0;
+  const t = (statusText || '').toLowerCase().trim();
+  // Explicit text override first
   if (t === 'use' || t === 'yes' || t === 'keep') return 'use';
   if (t === 'discard' || t === 'no' || t === 'skip') return 'discard';
+  // Score/competition rules
+  if (s >= 1000 && c <= 500) return 'use';
+  if (s === 0 || c >= 50000) return 'discard';
   return 'watch';
 }
+
+const STATUS_HINTS = {
+  'Complete': 'Research done, decisions made',
+  'Needs More Data': 'More Everbee research needed',
+  'Gaps Identified': 'Known gaps noted below',
+};
 
 function KeywordRow({ kw, index, onChange, onRemove }) {
   function cycleStatus() {
@@ -108,7 +120,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
         volume: volume || '',
         competition: competition || '',
         score: score || '',
-        status: parseStatusFromText(statusText),
+        status: autoColor(score, competition, statusText),
       });
     }
     if (parsed.length) {
@@ -195,6 +207,9 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
                 {s}
               </button>
             ))}
+          </div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 6 }}>
+            {STATUS_HINTS[status]}
           </div>
         </div>
       </div>
