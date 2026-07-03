@@ -39,7 +39,7 @@ export default function Home() {
   const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
   const pickUp = getPickUpProduct(active);
   const needsAttn = getNeedsAttention(products);
-  const inProgress = active.filter(p => p.stage !== 'Live');
+  const inProgress = active.filter(p => !['Live', 'Idea'].includes(p.stage));
   const hotSparks = sparks.filter(s => s.temperature === 'hot');
   const coldSparks = sparks.filter(s => s.temperature === 'cold');
   const review = getNextReviewDates();
