@@ -111,19 +111,33 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
     for (const line of lines) {
       const parts = line.split('|').map(p => p.trim());
       if (parts.length < 1 || !parts[0]) continue;
-      // Skip header line
       if (parts[0].toLowerCase() === 'keyword') continue;
       const [keyword, volume, competition, score, statusText] = parts;
+      if (!keyword) continue;
       parsed.push({
-        keyword: keyword || '',
+        keyword,
         volume: volume || '',
         competition: competition || '',
         score: score || '',
         status: autoColor(score, competition, statusText),
+        updated_at: new Date().toISOString(),
       });
     }
     if (parsed.length) {
-      setKeywords(prev => [...prev, ...parsed]);
+      setKeywords(prev => {
+        const merged = [...prev];
+        for (const incoming of parsed) {
+          const idx = merged.findIndex(
+            k => k.keyword.toLowerCase() === incoming.keyword.toLowerCase()
+          );
+          if (idx >= 0) {
+            merged[idx] = incoming; // overwrite existing row
+          } else {
+            merged.push(incoming);
+          }
+        }
+        return merged;
+      });
       setBulkText('');
       setShowBulk(false);
     }

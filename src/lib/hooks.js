@@ -126,7 +126,7 @@ export async function createResearchSession(session, keywords) {
   if (error || !s) return { error };
   if (keywords?.length) {
     await supabase.from('keywords').insert(
-      keywords.map(k => ({ ...k, research_session_id: s.id, created_at: now }))
+      keywords.map(k => ({ ...k, research_session_id: s.id, created_at: now, updated_at: now }))
     );
   }
   return { data: s };

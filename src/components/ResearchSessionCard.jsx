@@ -82,17 +82,24 @@ export default function ResearchSessionCard({ session, onDeleted }) {
                     display: 'flex', gap: 10, padding: '5px 10px',
                     borderLeft: `3px solid ${KW_COLORS[k.tag_type] || KW_COLORS.watch}`,
                     background: 'var(--charcoal-faint)', borderRadius: '0 2px 2px 0',
-                    alignItems: 'center',
+                    alignItems: 'center', flexWrap: 'wrap',
                   }}>
-                    <span style={{ flex: 1 }}>{k.keyword}</span>
-                    {k.volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {k.volume}</span>}
-                    {k.competition && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>comp {k.competition}</span>}
-                    {k.score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {k.score}</span>}
-                    <button
-                      onClick={() => handleDeleteKeyword(k.id)}
-                      style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5, flexShrink: 0 }}
-                      title="Remove keyword"
-                    >×</button>
+                    <span style={{ flex: 1, minWidth: 120 }}>{k.keyword}</span>
+                    <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+                      {k.volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {k.volume}</span>}
+                      {k.competition && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>comp {k.competition}</span>}
+                      {k.score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {k.score}</span>}
+                      {k.updated_at && (
+                        <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.65rem', opacity: 0.7 }}>
+                          updated {new Date(k.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleDeleteKeyword(k.id)}
+                        style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}
+                        title="Remove keyword"
+                      >×</button>
+                    </span>
                   </div>
                 ))}
               </div>
