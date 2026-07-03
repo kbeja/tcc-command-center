@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { deleteResearchSession, deleteKeyword } from '../lib/hooks';
 
 const STATUS_STYLES = {
   'Complete': { background: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
@@ -6,48 +7,65 @@ const STATUS_STYLES = {
   'Gaps Identified': { background: 'rgba(201,123,123,0.2)', color: '#7a2b2b' },
 };
 
-export default function ResearchSessionCard({ session }) {
+const KW_COLORS = { use: '#7CAF8A', watch: '#E8A87C', discard: '#C97B7B' };
+
+export default function ResearchSessionCard({ session, onDeleted }) {
   const [open, setOpen] = useState(false);
-  const kwCount = session.keywords?.length || 0;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [keywords, setKeywords] = useState(session.keywords || []);
+  const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
+
+  async function handleDelete() {
+    await deleteResearchSession(session.id);
+    onDeleted?.();
+  }
+
+  async function handleDeleteKeyword(kwId) {
+    await deleteKeyword(kwId);
+    setKeywords(prev => prev.filter(k => k.id !== kwId));
+  }
 
   return (
     <div style={{ borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 12, marginTop: 12 }}>
-      <button
-        style={{ background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', padding: 0 }}
-        onClick={() => setOpen(!open)}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 500, fontSize: '0.88rem', marginBottom: 4 }}>
-              {session.topic || 'Untitled Research'}
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
-                {session.date} · {session.source} · {kwCount} keyword{kwCount !== 1 ? 's' : ''}
-              </span>
-              {session.status && (
-                <span style={{
-                  fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20,
-                  ...statusStyle
-                }}>
-                  {session.status}
-                </span>
-              )}
-            </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <button
+          style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, flex: 1 }}
+          onClick={() => setOpen(!open)}
+        >
+          <div style={{ fontWeight: 500, fontSize: '0.88rem', marginBottom: 4 }}>
+            {session.topic || 'Untitled Research'}
           </div>
-          <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+              {session.date} · {session.source} · {kwCount} keyword{kwCount !== 1 ? 's' : ''}
+            </span>
+            {session.status && (
+              <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, ...statusStyle }}>
+                {session.status}
+              </span>
+            )}
+          </div>
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {confirmDelete ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem' }}>
+              <span style={{ color: 'var(--charcoal-soft)' }}>Delete this session?</span>
+              <button onClick={handleDelete} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>Yes</button>
+              <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>Cancel</button>
+            </span>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.6 }} title="Delete session">
+              🗑
+            </button>
+          )}
+          <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>{open ? '▲' : '▼'}</span>
         </div>
-      </button>
+      </div>
 
       {open && (
         <div style={{ marginTop: 12, fontSize: '0.8rem' }}>
-          {session.decision && (
-            <div style={{ marginBottom: 8 }}>
-              <span className="eyebrow">Decision: </span>
-              <span style={{ fontWeight: 500 }}>{session.decision}</span>
-            </div>
-          )}
           {session.notes && (
             <p style={{ color: 'var(--charcoal-soft)', marginBottom: 8, lineHeight: 1.5 }}>{session.notes}</p>
           )}
@@ -57,16 +75,26 @@ export default function ResearchSessionCard({ session }) {
               <p style={{ lineHeight: 1.5 }}>{session.gaps_notes}</p>
             </div>
           )}
-          {session.keywords?.length > 0 && (
+          {keywords.length > 0 && (
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Keywords</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {session.keywords.map(k => (
-                  <div key={k.id} style={{ display: 'flex', gap: 12, padding: '4px 0', borderBottom: '1px solid rgba(43,41,38,0.06)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {keywords.map(k => (
+                  <div key={k.id} style={{
+                    display: 'flex', gap: 10, padding: '5px 10px',
+                    borderLeft: `3px solid ${KW_COLORS[k.tag_type] || KW_COLORS.watch}`,
+                    background: 'var(--charcoal-faint)', borderRadius: '0 2px 2px 0',
+                    alignItems: 'center',
+                  }}>
                     <span style={{ flex: 1 }}>{k.keyword}</span>
-                    {k.volume && <span style={{ color: 'var(--charcoal-soft)' }}>vol {k.volume}</span>}
-                    {k.competition && <span style={{ color: 'var(--charcoal-soft)' }}>comp {k.competition}</span>}
-                    {k.score && <span style={{ color: 'var(--charcoal-soft)' }}>score {k.score}</span>}
+                    {k.volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {k.volume}</span>}
+                    {k.competition && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>comp {k.competition}</span>}
+                    {k.score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {k.score}</span>}
+                    <button
+                      onClick={() => handleDeleteKeyword(k.id)}
+                      style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5, flexShrink: 0 }}
+                      title="Remove keyword"
+                    >×</button>
                   </div>
                 ))}
               </div>

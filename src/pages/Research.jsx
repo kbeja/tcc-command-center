@@ -76,7 +76,7 @@ export default function Research() {
             </span>
           </div>
           <div className="card">
-            {grouped[niche].map(s => <ResearchSessionCard key={s.id} session={s} />)}
+            {grouped[niche].map(s => <ResearchSessionCard key={s.id} session={s} onDeleted={refetch} />)}
           </div>
         </div>
       ))}

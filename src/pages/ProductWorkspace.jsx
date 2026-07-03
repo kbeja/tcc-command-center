@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, useResearchSessions, useProducts } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
 import StageTracker from '../components/StageTracker';
 import ConfidenceSelector from '../components/ConfidenceSelector';
@@ -18,6 +18,7 @@ export default function ProductWorkspace() {
   const [noteSaved, setNoteSaved] = useState(false);
   const [addingResearch, setAddingResearch] = useState(false);
   const [stageSaved, setStageSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (product) setNotes(product.notes || '');
@@ -48,9 +49,20 @@ export default function ProductWorkspace() {
     <div className="page">
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/products')} style={{ marginBottom: 12 }}>
-          ← Back
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/products')}>← Back</button>
+          {confirmDelete ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem' }}>
+              <span style={{ color: 'var(--warm-charcoal)' }}>Permanently delete this product and all research?</span>
+              <button onClick={async () => { await deleteProduct(id); navigate('/products'); }} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes, delete</button>
+              <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+            </span>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.78rem', opacity: 0.6 }}>
+              🗑 Delete product
+            </button>
+          )}
+        </div>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', fontWeight: 300, marginBottom: 6 }}>
           {product.name}
         </div>
@@ -132,7 +144,7 @@ export default function ProductWorkspace() {
         {sessions.length === 0 && !addingResearch && (
           <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)' }}>No research sessions yet.</div>
         )}
-        {sessions.map(s => <ResearchSessionCard key={s.id} session={s} />)}
+        {sessions.map(s => <ResearchSessionCard key={s.id} session={s} onDeleted={refetchSessions} />)}
       </div>
 
       <hr className="rule" />

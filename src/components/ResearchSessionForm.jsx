@@ -3,7 +3,6 @@ import { createResearchSession } from '../lib/hooks';
 import { COLLECTIONS } from '../data/collections';
 
 const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
-const DECISIONS = ['Pursue', 'Watch', 'Discard'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
 
 const KW_STATUS = {
@@ -89,7 +88,6 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
   const [status, setStatus] = useState('Complete');
   const [notes, setNotes] = useState('');
   const [gapsNotes, setGapsNotes] = useState('');
-  const [decision, setDecision] = useState('Pursue');
   const [keywords, setKeywords] = useState([]);
   const [bulkText, setBulkText] = useState('');
   const [showBulk, setShowBulk] = useState(true);
@@ -144,7 +142,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
         score: k.score ? parseInt(k.score) : null,
         tag_type: k.status,
       }));
-    await createResearchSession({ topic, niche, date, source, notes, decision, status, gaps_notes: gapsNotes }, kwList);
+    await createResearchSession({ topic, niche, date, source, notes, status, gaps_notes: gapsNotes }, kwList);
     setSaving(false);
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);
@@ -267,17 +265,6 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
         )}
 
         <button className="btn btn-ghost btn-sm" onClick={addBlankKeyword}>+ Add keyword manually</button>
-      </div>
-
-      <div className="form-group">
-        <label className="form-label">Decision</label>
-        <div className="toggle-group">
-          {DECISIONS.map(d => (
-            <button key={d} className={`toggle-btn${decision === d ? ' active' : ''}`} onClick={() => setDecision(d)}>
-              {d}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>

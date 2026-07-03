@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { updateSpark, archiveSpark } from '../lib/hooks';
+import { supabase } from '../lib/supabase';
 
 export default function SparkCard({ spark, onAction }) {
   const [confirm, setConfirm] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function handle(action) {
     if (action === 'archive') {
@@ -14,6 +16,11 @@ export default function SparkCard({ spark, onAction }) {
     }
     setConfirm(action);
     setTimeout(() => { setConfirm(null); onAction?.(); }, 1200);
+  }
+
+  async function handleDelete() {
+    await supabase.from('sparks').delete().eq('id', spark.id);
+    onAction?.();
   }
 
   return (
@@ -35,8 +42,14 @@ export default function SparkCard({ spark, onAction }) {
 
       {confirm ? (
         <span className="inline-confirm">✓ Done</span>
+      ) : confirmDelete ? (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem' }}>
+          <span style={{ color: 'var(--charcoal-soft)' }}>Remove this spark?</span>
+          <button onClick={handleDelete} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
+          <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+        </span>
       ) : (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           {spark.temperature === 'hot' ? (
             <>
               <button className="btn btn-primary btn-sm" onClick={() => handle('activate')}>Activate →</button>
@@ -46,6 +59,7 @@ export default function SparkCard({ spark, onAction }) {
             <button className="btn btn-ghost btn-sm" onClick={() => handle('activate')}>Evaluate →</button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>Archive →</button>
+          <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }} title="Delete spark">🗑</button>
         </div>
       )}
     </div>

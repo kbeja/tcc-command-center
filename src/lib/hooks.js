@@ -55,6 +55,10 @@ export async function updateProduct(id, updates) {
   return { data, error };
 }
 
+export async function deleteProduct(id) {
+  return supabase.from('products').delete().eq('id', id);
+}
+
 export async function createProduct(product) {
   const now = new Date().toISOString();
   const { data, error } = await supabase
@@ -102,6 +106,14 @@ export function useResearchSessions(niche) {
 
   useEffect(() => { fetch(); }, [fetch]);
   return { sessions, loading, refetch: fetch };
+}
+
+export async function deleteResearchSession(id) {
+  return supabase.from('research_sessions').delete().eq('id', id);
+}
+
+export async function deleteKeyword(id) {
+  return supabase.from('keywords').delete().eq('id', id);
 }
 
 export async function createResearchSession(session, keywords) {
