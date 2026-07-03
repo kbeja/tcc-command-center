@@ -93,7 +93,6 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
 }
 
 export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel }) {
-  const [topic, setTopic] = useState('');
   const [niche, setNiche] = useState(defaultNiche || 'Mom Chapter');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [source, setSource] = useState('Everbee');
@@ -143,7 +142,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
   }
 
   async function handleSave() {
-    if (!topic.trim()) return;
+    if (!niche) return;
     setSaving(true);
     const kwList = keywords
       .filter(k => k.keyword.trim())
@@ -154,7 +153,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
         score: k.score ? parseInt(k.score) : null,
         tag_type: k.status,
       }));
-    await createResearchSession({ topic, niche, date, source, notes, status, gaps_notes: gapsNotes }, kwList);
+    await createResearchSession({ niche, date, source, notes, status, gaps_notes: gapsNotes }, kwList);
     setSaving(false);
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);
@@ -166,15 +165,6 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
 
   return (
     <div>
-      <div className="form-group">
-        <label className="form-label">Topic / Keyword Cluster</label>
-        <input
-          placeholder="e.g. Mom Life SVGs, Dark Academia Book Lover..."
-          value={topic}
-          onChange={e => setTopic(e.target.value)}
-        />
-      </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div className="form-group">
           <label className="form-label">Niche / Collection</label>
@@ -283,7 +273,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={!topic.trim() || saving}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={!niche || saving}>
           {saving ? 'Saving…' : 'Save Session →'}
         </button>
         {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>}

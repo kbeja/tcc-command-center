@@ -33,12 +33,10 @@ export default function ResearchSessionCard({ session, onDeleted }) {
           style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, flex: 1 }}
           onClick={() => setOpen(!open)}
         >
-          <div style={{ fontWeight: 500, fontSize: '0.88rem', marginBottom: 4 }}>
-            {session.topic || 'Untitled Research'}
-          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
-              {session.date} · {session.source} · {kwCount} keyword{kwCount !== 1 ? 's' : ''}
+            <span style={{ fontWeight: 500, fontSize: '0.82rem' }}>{session.date}</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+              {session.source} · {kwCount} keyword{kwCount !== 1 ? 's' : ''}
             </span>
             {session.status && (
               <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, ...statusStyle }}>
