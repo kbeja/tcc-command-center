@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useWorkshopItems, useProducts } from '../lib/hooks';
 import WorkshopItem from '../components/WorkshopItem';
 import SessionSummaryParser from '../components/SessionSummaryParser';
+import Codex from '../components/Codex';
 
 export default function Workshop() {
   const { items, loading, refetch } = useWorkshopItems();
@@ -25,11 +26,16 @@ export default function Workshop() {
           <button className={`btn btn-sm ${tab === 'triage' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('triage')}>
             Triage ({items.length})
           </button>
+          <button className={`btn btn-sm ${tab === 'codex' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('codex')}>
+            Codex
+          </button>
           <button className={`btn btn-sm ${tab === 'import' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('import')}>
             Import Session
           </button>
         </div>
       </div>
+
+      {tab === 'codex' && <Codex />}
 
       {tab === 'import' && (
         <SessionSummaryParser products={products} onDone={() => { refetch(); setTab('triage'); }} />

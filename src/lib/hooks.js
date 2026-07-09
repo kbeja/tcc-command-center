@@ -268,3 +268,46 @@ export async function resolveWorkshopItem(id, status = 'reviewed') {
     .single();
   return { data, error };
 }
+
+// ─── Codex ───────────────────────────────────────────────────────────────────
+
+export function useCodexEntries() {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('codex_entries')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) setEntries(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { entries, loading, refetch: fetch };
+}
+
+export async function createCodexEntry(entry) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('codex_entries')
+    .insert({ ...entry, created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function updateCodexEntry(id, updates) {
+  const { data, error } = await supabase
+    .from('codex_entries')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function deleteCodexEntry(id) {
+  return supabase.from('codex_entries').delete().eq('id', id);
+}
