@@ -44,16 +44,11 @@ export default function WorkshopItem({ item, onAction }) {
 
       {confirm ? (
         <span className="inline-confirm">✓ Done</span>
-      ) : item.type === 'decision' || item.type === 'note' || item.type === 'unparseable' ? (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary btn-sm" onClick={() => handle('codex')}>→ Flag for Codex</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>→ Archive</button>
-        </div>
       ) : (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary btn-sm" onClick={() => handle('pipeline')}>→ Activate to Pipeline</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => handle('spark')}>→ Keep in Sparks</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => handle('codex')}>→ Flag for Codex</button>
+          <button className="btn btn-primary btn-sm" onClick={() => handle('pipeline')}>→ Pipeline</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => handle('spark')}>→ Idea Vault</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => handle('codex')}>→ Codex</button>
           <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>→ Archive</button>
         </div>
       )}
