@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useSparks, updateSpark, archiveSpark } from '../lib/hooks';
-import { COLLECTIONS } from '../data/collections';
+import { useSparks, updateSpark, archiveSpark, useCollections } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
 
 export default function Sparks() {
   const { sparks, loading, refetch } = useSparks();
+  const { collections } = useCollections();
   const [search, setSearch] = useState('');
   const [collectionFilter, setCollectionFilter] = useState('');
   const [selecting, setSelecting] = useState(false);
@@ -65,7 +65,7 @@ export default function Sparks() {
       <div className="page-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div className="page-title">Sparks</div>
+            <div className="page-title">Idea Vault</div>
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>
               {hot.length} hot · {sparks.filter(s => s.temperature === 'cold').length} cold
             </div>
@@ -130,7 +130,7 @@ export default function Sparks() {
           />
           <select value={collectionFilter} onChange={e => setCollectionFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All collections</option>
-            {COLLECTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
 

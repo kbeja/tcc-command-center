@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { updateSpark, archiveSpark } from '../lib/hooks';
+import { updateSpark, archiveSpark, useCollections } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
-import { COLLECTIONS } from '../data/collections';
 
 export default function SparkCard({ spark, onAction }) {
+  const { collections } = useCollections();
   const [confirm, setConfirm] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingCollection, setEditingCollection] = useState(false);
@@ -59,7 +59,7 @@ export default function SparkCard({ spark, onAction }) {
               style={{ fontSize: '0.72rem', padding: '2px 6px', height: 'auto' }}
             >
               <option value="">No collection</option>
-              {COLLECTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              {collections.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           ) : (
             <button

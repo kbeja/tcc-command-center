@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { createResearchSession } from '../lib/hooks';
-import { COLLECTIONS } from '../data/collections';
+import { createResearchSession, useCollections } from '../lib/hooks';
 
 const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
@@ -91,7 +90,8 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
 }
 
 export default function ResearchSessionForm({ defaultCollection, defaultNiche, onSaved, onCancel }) {
-  const [collection, setCollection] = useState(defaultCollection || defaultNiche || 'Mom Chapter');
+  const { collections } = useCollections();
+  const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
   const [niche, setNiche] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [source, setSource] = useState('Everbee');
@@ -185,7 +185,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, o
         <div className="form-group">
           <label className="form-label">Collection</label>
           <select value={collection} onChange={e => setCollection(e.target.value)}>
-            {COLLECTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div className="form-group">

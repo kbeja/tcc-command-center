@@ -188,6 +188,38 @@ export async function archiveSpark(id) {
   return updateSpark(id, { archived_at: new Date().toISOString() });
 }
 
+// ─── Collections ─────────────────────────────────────────────────────────────
+
+export function useCollections() {
+  const [collections, setCollections] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('collections')
+      .select('*')
+      .order('name', { ascending: true });
+    if (data) setCollections(data.map(c => c.name));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { collections, loading, refetch: fetch };
+}
+
+export async function createCollection(name) {
+  const { data, error } = await supabase
+    .from('collections')
+    .insert({ name })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function deleteCollection(name) {
+  return supabase.from('collections').delete().eq('name', name);
+}
+
 // ─── Workshop Items ───────────────────────────────────────────────────────────
 
 export function useWorkshopItems() {

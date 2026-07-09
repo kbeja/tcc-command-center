@@ -95,7 +95,7 @@ export default function Home() {
       </Section>
 
       {/* Sparks */}
-      <Section icon="💡" title="Sparks" badge={`${hotSparks.length} hot · ${coldSparks.length} cold`}>
+      <Section icon="💡" title="Idea Vault" badge={`${hotSparks.length} hot · ${coldSparks.length} cold`}>
         {hotSparks.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             <div className="section-label">Hot</div>
@@ -105,7 +105,7 @@ export default function Home() {
         {coldSparks.slice(0, 3).map(s => <SparkCard key={s.id} spark={s} onAction={refetchSparks} />)}
         {coldSparks.length > 3 && (
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/sparks')} style={{ marginTop: 4 }}>
-            See all {coldSparks.length} sparks →
+            See all {coldSparks.length} ideas →
           </button>
         )}
       </Section>

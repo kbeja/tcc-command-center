@@ -14,7 +14,7 @@ export default function Nav({ workshopCount }) {
       </NavLink>
       <NavLink to="/sparks" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
         <span className="nav-icon">💡</span>
-        <span>Sparks</span>
+        <span>Idea Vault</span>
       </NavLink>
       <NavLink to="/research" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
         <span className="nav-icon">🔬</span>
