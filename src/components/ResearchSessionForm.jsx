@@ -101,6 +101,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, o
   const [keywords, setKeywords] = useState([]);
   const [bulkText, setBulkText] = useState('');
   const [showBulk, setShowBulk] = useState(true);
+  const [seasonal, setSeasonal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -167,7 +168,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, o
         tag_type: k.status,
       }));
     await createResearchSession(
-      { collection, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes },
+      { collection, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
       kwList
     );
     setSaving(false);
@@ -228,6 +229,19 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, o
             {STATUS_HINTS[status]}
           </div>
         </div>
+      </div>
+
+      <div className="form-group">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+          <input
+            type="checkbox"
+            checked={seasonal}
+            onChange={e => setSeasonal(e.target.checked)}
+            style={{ width: 'auto', margin: 0 }}
+          />
+          <span className="form-label" style={{ margin: 0 }}>Seasonal keywords</span>
+          <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>— exclude from evergreen product bundles</span>
+        </label>
       </div>
 
       <div className="form-group">

@@ -43,6 +43,11 @@ export default function ResearchSessionCard({ session, onDeleted }) {
                 {session.niche}
               </span>
             )}
+            {session.seasonal && (
+              <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: 'rgba(232,168,124,0.2)', color: '#7a4a1e' }}>
+                seasonal
+              </span>
+            )}
             {session.status && (
               <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, ...statusStyle }}>
                 {session.status}

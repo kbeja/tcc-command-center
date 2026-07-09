@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useProduct, updateProduct, deleteProduct, useResearchSessions } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
-import { collectionKnowledge } from '../data/collections';
+import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
 import ConfidenceSelector from '../components/ConfidenceSelector';
 import CollectionKnowledge from '../components/CollectionKnowledge';
@@ -213,8 +213,11 @@ function ContextBundle({ product, sessions }) {
     const colKnowledge = collectionKnowledge[product.collection] || {};
 
     // Deduplicate green keywords — keep highest score per keyword name
+    // Exclude seasonal sessions unless the product itself is seasonal
+    const isSeasonalProduct = product.portfolio_level === 'Seasonal';
     const kwMap = new Map();
     for (const s of sessions) {
+      if (s.seasonal && !isSeasonalProduct) continue;
       for (const k of (s.keywords || [])) {
         if (k.tag_type !== 'use') continue;
         const key = k.keyword.toLowerCase();
@@ -231,15 +234,20 @@ function ContextBundle({ product, sessions }) {
       ? greenKeywords.map(k => `${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`).join('\n')
       : colKnowledge.keywords?.topKeywords?.slice(0, 15).join('\n') || 'See keyword bank';
 
-    // Style guide: niche-specific session notes first, then collection guide
+    // Style guide: static niche guide first, then niche session notes, then collection guide
+    const nicheKey = product.niche?.toLowerCase() || '';
+    const staticNicheGuide = nicheKey ? nicheStyleGuides[nicheKey] : null;
     const nicheSessions = product.niche
-      ? sessions.filter(s => s.niche?.toLowerCase() === product.niche?.toLowerCase() && s.notes)
+      ? sessions.filter(s => s.niche?.toLowerCase() === nicheKey && s.notes)
       : [];
-    const nicheGuide = nicheSessions.length
-      ? `Niche (${product.niche}):\n${nicheSessions.map(s => s.notes).join('\n')}`
+    const nicheSessionNotes = nicheSessions.length
+      ? `Niche research notes (${product.niche}):\n${nicheSessions.map(s => s.notes).join('\n')}`
       : '';
-    const styleGuide = [nicheGuide, colKnowledge.styleGuide || 'See TCC OS style guides.']
-      .filter(Boolean).join('\n\n');
+    const styleGuide = [
+      staticNicheGuide,
+      nicheSessionNotes,
+      !staticNicheGuide ? (colKnowledge.styleGuide || 'See TCC OS style guides.') : null,
+    ].filter(Boolean).join('\n\n');
 
     return `--- TCC CONTEXT BUNDLE ---
 Product: ${product.name}

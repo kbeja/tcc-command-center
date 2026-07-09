@@ -87,6 +87,17 @@ Description opening options:
 
 Tags strategy: Mix "book lover" + "reader" + "dark academia" + specific genre (romance reader, fantasy reader).`;
 
+// Niche-specific style guides (keyed by lowercase niche name)
+export const nicheStyleGuides = {
+  '90s nostalgia': `90s NOSTALGIA — MOM CHAPTER STYLE GUIDE
+
+Aesthetic: Warm, nostalgic, lived-in. Think butter yellows, faded denim, oversized comfort.
+Colors: Buttermilk, warm white, washed denim, soft terracotta.
+Typography: Retro serif, slightly worn, reminiscent of 90s brand lettering.
+Motifs: Cassette tapes, butterfly clips, crimped hair, Saturday morning cartoons, after-school snacks.
+Vibe: The mom who grew up in the 90s and is raising her kids the same way — intentionally, warmly, with a little chaos.`,
+};
+
 export const collectionKnowledge = {
   'Mom Chapter': {
     keywords: momKeywords,
