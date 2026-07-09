@@ -22,7 +22,13 @@ export default function WorkshopItem({ item, onAction }) {
     setTimeout(() => { setConfirm(null); onAction?.(); }, 1200);
   }
 
-  const typeLabel = { spark: '💡 Spark', session_summary: '📋 Session', decision: '📌 Decision' }[item.type] || item.type;
+  const typeLabel = {
+    spark: '💡 Spark',
+    session_summary: '📋 Session',
+    decision: '📌 Decision',
+    note: '📝 Note',
+    unparseable: '⚠️ Could Not Parse',
+  }[item.type] || item.type;
 
   return (
     <div className="card" style={{ marginBottom: 10 }}>
@@ -38,7 +44,7 @@ export default function WorkshopItem({ item, onAction }) {
 
       {confirm ? (
         <span className="inline-confirm">✓ Done</span>
-      ) : item.type === 'decision' || item.type === 'note' ? (
+      ) : item.type === 'decision' || item.type === 'note' || item.type === 'unparseable' ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button className="btn btn-primary btn-sm" onClick={() => handle('codex')}>→ Flag for Codex</button>
           <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>→ Archive</button>

@@ -180,6 +180,15 @@ export default function SessionSummaryParser({ products, onDone }) {
       if (d) { await createWorkshopItem({ type: 'decision', content: d, source: 'Session Import' }); counts.decisions++; }
     }
 
+    // Save unparseable items to Triage so they're never lost
+    for (const u of parsed.unparseable) {
+      await createWorkshopItem({
+        type: 'unparseable',
+        content: `[${u.section}] ${u.line}`,
+        source: 'Session Import',
+      });
+    }
+
     // Notes: append to matched product → matched spark → Workshop fallback
     if (parsed.notes.length > 0) {
       const noteText = `\n[Session notes ${today}]\n` + parsed.notes.map(n => `• ${n}`).join('\n');

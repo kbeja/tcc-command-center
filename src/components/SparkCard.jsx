@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { updateSpark, archiveSpark } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
+import { COLLECTIONS } from '../data/collections';
 
 export default function SparkCard({ spark, onAction }) {
   const [confirm, setConfirm] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingCollection, setEditingCollection] = useState(false);
+  const [collection, setCollection] = useState(spark.collection_tag || '');
 
   async function handle(action) {
     if (action === 'archive') {
@@ -23,6 +26,13 @@ export default function SparkCard({ spark, onAction }) {
     onAction?.();
   }
 
+  async function handleCollectionSave(val) {
+    setCollection(val);
+    setEditingCollection(false);
+    await updateSpark(spark.id, { collection_tag: val || null });
+    onAction?.();
+  }
+
   return (
     <div className="card" style={{ marginBottom: 8 }}>
       <div style={{ marginBottom: 10 }}>
@@ -34,9 +44,36 @@ export default function SparkCard({ spark, onAction }) {
             🔥 Hot{spark.hot_reason ? ` — ${spark.hot_reason}` : ''}
           </div>
         )}
-        <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
-          {new Date(spark.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-          {spark.collection_tag ? ` · ${spark.collection_tag}` : ''}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+            {new Date(spark.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </span>
+
+          {/* Collection tag */}
+          {editingCollection ? (
+            <select
+              value={collection}
+              onChange={e => handleCollectionSave(e.target.value)}
+              onBlur={() => setEditingCollection(false)}
+              autoFocus
+              style={{ fontSize: '0.72rem', padding: '2px 6px', height: 'auto' }}
+            >
+              <option value="">No collection</option>
+              {COLLECTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          ) : (
+            <button
+              onClick={() => setEditingCollection(true)}
+              style={{
+                fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20,
+                background: collection ? 'var(--rose-faint)' : 'var(--charcoal-faint)',
+                color: collection ? 'var(--dusty-rose)' : 'var(--charcoal-soft)',
+                border: 'none', cursor: 'pointer',
+              }}
+            >
+              {collection || '+ collection'}
+            </button>
+          )}
         </div>
       </div>
 
