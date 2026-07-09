@@ -35,6 +35,11 @@ export default function WorkshopItem({ item, onAction }) {
 
       {confirm ? (
         <span className="inline-confirm">✓ Done</span>
+      ) : item.type === 'decision' || item.type === 'note' ? (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary btn-sm" onClick={() => handle('codex')}>→ Flag for Codex</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>→ Archive</button>
+        </div>
       ) : (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button className="btn btn-primary btn-sm" onClick={() => handle('pipeline')}>→ Activate to Pipeline</button>
