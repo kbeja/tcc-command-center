@@ -20,8 +20,8 @@ export default function Products() {
   });
 
   const filtered = sorted.filter(p => {
-    if (filter === 'active') return !['Killed', 'Paused'].includes(p.stage);
-    if (filter === 'live') return p.stage === 'Live';
+    if (filter === 'live') return ['Live', 'Reviewing'].includes(p.stage);
+    if (filter === 'development') return !['Live', 'Reviewing', 'Killed', 'Paused'].includes(p.stage);
     if (filter === 'paused') return ['Killed', 'Paused'].includes(p.stage);
     return true;
   });
@@ -31,7 +31,7 @@ export default function Products() {
       <div className="page-header">
         <div className="page-title">Products</div>
         <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[['all', 'All'], ['active', 'Active'], ['live', 'Live'], ['paused', 'Paused/Killed']].map(([val, label]) => (
+          {[['all', 'All'], ['live', 'Live'], ['development', 'In Development'], ['paused', 'Paused/Killed']].map(([val, label]) => (
             <button
               key={val}
               className={`btn btn-sm ${filter === val ? 'btn-primary' : 'btn-ghost'}`}
