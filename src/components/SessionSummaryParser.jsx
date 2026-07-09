@@ -39,11 +39,15 @@ function parseSummary(text, products) {
     return normalized.match(re)?.[1]?.trim() || '';
   }
 
+  const SECTION_HEADERS = new Set([
+    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes'
+  ]);
+
   const bulletLines = (block) =>
     block.split('\n')
       .map(cleanLine)
       .filter(Boolean)
-      // skip lines that look like sub-keys in a research block
+      .filter(l => !SECTION_HEADERS.has(l.toLowerCase()))
       .filter(l => !/^(Collection|Niche|Source|Keywords?):/i.test(l));
 
   // SPARKS
