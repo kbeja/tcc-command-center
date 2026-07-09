@@ -10,6 +10,14 @@ function autoColor(score, competition) {
   return 'watch';
 }
 
+// Strip markdown bold/italic and leading bullets from a line
+function cleanLine(line) {
+  return line
+    .replace(/\*\*/g, '')   // remove **bold**
+    .replace(/^[\*\-]\s+/, '') // remove leading * or - bullet
+    .trim();
+}
+
 function parseSummary(text, products) {
   const result = {
     sparks: [],
@@ -20,49 +28,55 @@ function parseSummary(text, products) {
     unparseable: [],
   };
 
-  // Extract section blocks
+  // Normalize: strip ** from section headers so regex can find them
+  const normalized = text.replace(/\*\*([A-Z][A-Z\s\(\)]+)\*\*/g, '$1');
+
+  // Extract section blocks — handles both "- bullet" and "* bullet" lines
   function extractBlock(label) {
-    const re = new RegExp(`${label}[^\\n]*\\n([\\s\\S]*?)(?=\\n[A-Z][A-Z ]*\\n|--- END|$)`);
-    return text.match(re)?.[1]?.trim() || '';
+    const re = new RegExp(
+      `${label}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\s*[A-Z][A-Z \\(\\)]*\\s*\\n|--- END|$)`
+    );
+    return normalized.match(re)?.[1]?.trim() || '';
   }
 
-  const lines = (block) =>
-    block.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
+  const bulletLines = (block) =>
+    block.split('\n')
+      .map(cleanLine)
+      .filter(Boolean)
+      // skip lines that look like sub-keys in a research block
+      .filter(l => !/^(Collection|Niche|Source|Keywords?):/i.test(l));
 
   // SPARKS
   const sparksBlock = extractBlock('SPARKS');
-  for (const line of lines(sparksBlock)) {
+  for (const line of bulletLines(sparksBlock)) {
     result.sparks.push(line);
   }
 
   // STAGE UPDATES
   const stageBlock = extractBlock('STAGE UPDATES');
-  for (const line of lines(stageBlock)) {
-    const m = line.match(/(.+?)\s*→\s*(.+)/);
+  for (const rawLine of stageBlock.split('\n').map(cleanLine).filter(Boolean)) {
+    const m = rawLine.match(/(.+?)\s*[→>]\s*(.+)/);
     if (m) {
+      const productName = m[1].trim();
+      const stage = m[2].trim();
       const match = products?.find(p =>
-        p.name.toLowerCase().includes(m[1].trim().toLowerCase())
+        p.name.toLowerCase().includes(productName.toLowerCase())
       );
-      result.stageUpdates.push({
-        raw: line,
-        productName: m[1].trim(),
-        stage: m[2].trim(),
-        productId: match?.id || null,
-        matched: !!match,
-      });
+      result.stageUpdates.push({ raw: rawLine, productName, stage, productId: match?.id || null, matched: !!match });
     } else {
-      result.unparseable.push({ section: 'STAGE UPDATES', line });
+      result.unparseable.push({ section: 'STAGE UPDATES', line: rawLine });
     }
   }
 
-  // RESEARCH — each item is a multi-line block starting with "- Collection:"
+  // RESEARCH — each item starts with "Collection:"
   const researchBlock = extractBlock('RESEARCH');
-  const researchItems = researchBlock.split(/\n(?=- Collection:|Collection:)/i).filter(Boolean);
+  const researchItems = researchBlock.split(/\n(?=[\*\-]?\s*Collection:)/i).filter(Boolean);
   for (const item of researchItems) {
     const colMatch = item.match(/Collection:\s*(.+)/i);
     const nicheMatch = item.match(/Niche:\s*(.+)/i);
     const sourceMatch = item.match(/Source:\s*(.+)/i);
-    const kwLines = item.split('\n').filter(l => /Keywords?:/i.test(l));
+    const kwLine = item.split('\n').find(l => /Keywords?:/i.test(l)) || '';
+    const kwPart = kwLine.replace(/Keywords?:\s*/i, '').trim();
 
     if (!colMatch) {
       result.unparseable.push({ section: 'RESEARCH', line: item.trim().slice(0, 80) });
@@ -70,8 +84,8 @@ function parseSummary(text, products) {
     }
 
     const keywords = [];
-    for (const kwLine of kwLines) {
-      const kwPart = kwLine.replace(/Keywords?:\s*/i, '');
+    // Skip N/A or empty
+    if (kwPart && kwPart.toLowerCase() !== 'n/a') {
       for (const entry of kwPart.split(',')) {
         const parts = entry.split('|').map(p => p.trim());
         if (parts[0]) {
@@ -89,20 +103,20 @@ function parseSummary(text, products) {
     result.research.push({
       collection: colMatch[1].trim(),
       niche: nicheMatch?.[1]?.trim() || null,
-      source: sourceMatch?.[1]?.trim() || 'Everbee',
-      keywords,
+      source: sourceMatch?.[1]?.trim() || 'Other',
+    keywords,
     });
   }
 
-  // DECISIONS
+  // DECISIONS — go to Triage
   const decisionsBlock = extractBlock('DECISIONS');
-  for (const line of lines(decisionsBlock)) {
+  for (const line of bulletLines(decisionsBlock)) {
     result.decisions.push(line);
   }
 
-  // NOTES
+  // NOTES — captured but NOT sent to Triage
   const notesBlock = extractBlock('NOTES');
-  for (const line of lines(notesBlock)) {
+  for (const line of bulletLines(notesBlock)) {
     result.notes.push(line);
   }
 
@@ -161,7 +175,7 @@ export default function SessionSummaryParser({ products, onDone }) {
       if (d) { await createWorkshopItem({ type: 'decision', content: d, source: 'Session Import' }); counts.decisions++; }
     }
 
-    setResult({ ...counts, stageDetails, unparseable: parsed.unparseable });
+    setResult({ ...counts, stageDetails, notes: parsed.notes, unparseable: parsed.unparseable });
     setParsing(false);
   }
 
@@ -194,6 +208,17 @@ export default function SessionSummaryParser({ products, onDone }) {
             <div style={{ fontSize: '0.85rem', color: 'var(--charcoal-soft)' }}>No structured data found. Check the summary format.</div>
           )}
         </div>
+
+        {result.notes?.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Notes (not stored)</div>
+            {result.notes.map((n, i) => (
+              <div key={i} style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid rgba(43,41,38,0.1)' }}>
+                {n}
+              </div>
+            ))}
+          </div>
+        )}
 
         {result.unparseable?.length > 0 && (
           <div style={{
