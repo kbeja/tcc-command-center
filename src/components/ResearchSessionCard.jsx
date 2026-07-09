@@ -38,6 +38,11 @@ export default function ResearchSessionCard({ session, onDeleted }) {
             <span style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
               {session.source} · {kwCount} keyword{kwCount !== 1 ? 's' : ''}
             </span>
+            {session.niche && (
+              <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: 'var(--rose-faint)', color: 'var(--dusty-rose)' }}>
+                {session.niche}
+              </span>
+            )}
             {session.status && (
               <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, ...statusStyle }}>
                 {session.status}

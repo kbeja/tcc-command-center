@@ -1,34 +1,110 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, updateProduct } from '../lib/hooks';
+import { createSpark, createWorkshopItem, updateProduct, createResearchSession } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 
-function parseSummary(text) {
-  const result = { sparks: [], stageUpdates: [], research: [], decisions: [], notes: [] };
+function autoColor(score, competition) {
+  const s = parseFloat(score) || 0;
+  const c = parseFloat(competition) || 0;
+  if (s >= 1000 && c <= 500) return 'use';
+  if (s === 0 || c >= 50000) return 'discard';
+  return 'watch';
+}
 
-  const blocks = {
-    SPARKS: /SPARKS\s*\n([\s\S]*?)(?=\n[A-Z ]+\n|--- END)/,
-    STAGE_UPDATES: /STAGE UPDATES\s*\n([\s\S]*?)(?=\n[A-Z ]+\n|--- END)/,
-    RESEARCH: /RESEARCH\s*\n([\s\S]*?)(?=\n[A-Z ]+\n|--- END)/,
-    DECISIONS: /DECISIONS[^\n]*\n([\s\S]*?)(?=\n[A-Z ]+\n|--- END)/,
-    NOTES: /NOTES\s*\n([\s\S]*?)(?=\n[A-Z ]+\n|--- END)/,
+function parseSummary(text, products) {
+  const result = {
+    sparks: [],
+    stageUpdates: [],
+    research: [],
+    decisions: [],
+    notes: [],
+    unparseable: [],
   };
 
-  const lines = (block) => block?.trim().split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean) || [];
+  // Extract section blocks
+  function extractBlock(label) {
+    const re = new RegExp(`${label}[^\\n]*\\n([\\s\\S]*?)(?=\\n[A-Z][A-Z ]*\\n|--- END|$)`);
+    return text.match(re)?.[1]?.trim() || '';
+  }
 
-  const sparksMatch = text.match(blocks.SPARKS);
-  result.sparks = lines(sparksMatch?.[1]);
+  const lines = (block) =>
+    block.split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
 
-  const stageMatch = text.match(blocks.STAGE_UPDATES);
-  result.stageUpdates = lines(stageMatch?.[1]).map(l => {
-    const m = l.match(/(.+?)\s*→\s*(.+)/);
-    return m ? { product: m[1].trim(), stage: m[2].trim() } : null;
-  }).filter(Boolean);
+  // SPARKS
+  const sparksBlock = extractBlock('SPARKS');
+  for (const line of lines(sparksBlock)) {
+    result.sparks.push(line);
+  }
 
-  const decisionsMatch = text.match(blocks.DECISIONS);
-  result.decisions = lines(decisionsMatch?.[1]);
+  // STAGE UPDATES
+  const stageBlock = extractBlock('STAGE UPDATES');
+  for (const line of lines(stageBlock)) {
+    const m = line.match(/(.+?)\s*→\s*(.+)/);
+    if (m) {
+      const match = products?.find(p =>
+        p.name.toLowerCase().includes(m[1].trim().toLowerCase())
+      );
+      result.stageUpdates.push({
+        raw: line,
+        productName: m[1].trim(),
+        stage: m[2].trim(),
+        productId: match?.id || null,
+        matched: !!match,
+      });
+    } else {
+      result.unparseable.push({ section: 'STAGE UPDATES', line });
+    }
+  }
 
-  const notesMatch = text.match(blocks.NOTES);
-  result.notes = lines(notesMatch?.[1]);
+  // RESEARCH — each item is a multi-line block starting with "- Collection:"
+  const researchBlock = extractBlock('RESEARCH');
+  const researchItems = researchBlock.split(/\n(?=- Collection:|Collection:)/i).filter(Boolean);
+  for (const item of researchItems) {
+    const colMatch = item.match(/Collection:\s*(.+)/i);
+    const nicheMatch = item.match(/Niche:\s*(.+)/i);
+    const sourceMatch = item.match(/Source:\s*(.+)/i);
+    const kwLines = item.split('\n').filter(l => /Keywords?:/i.test(l));
+
+    if (!colMatch) {
+      result.unparseable.push({ section: 'RESEARCH', line: item.trim().slice(0, 80) });
+      continue;
+    }
+
+    const keywords = [];
+    for (const kwLine of kwLines) {
+      const kwPart = kwLine.replace(/Keywords?:\s*/i, '');
+      for (const entry of kwPart.split(',')) {
+        const parts = entry.split('|').map(p => p.trim());
+        if (parts[0]) {
+          keywords.push({
+            keyword: parts[0],
+            volume: parts[1] ? parseInt(parts[1]) : null,
+            competition: parts[2] ? parseInt(parts[2]) : null,
+            score: parts[3] ? parseInt(parts[3]) : null,
+            tag_type: autoColor(parts[3], parts[2]),
+          });
+        }
+      }
+    }
+
+    result.research.push({
+      collection: colMatch[1].trim(),
+      niche: nicheMatch?.[1]?.trim() || null,
+      source: sourceMatch?.[1]?.trim() || 'Everbee',
+      keywords,
+    });
+  }
+
+  // DECISIONS
+  const decisionsBlock = extractBlock('DECISIONS');
+  for (const line of lines(decisionsBlock)) {
+    result.decisions.push(line);
+  }
+
+  // NOTES
+  const notesBlock = extractBlock('NOTES');
+  for (const line of lines(notesBlock)) {
+    result.notes.push(line);
+  }
 
   return result;
 }
@@ -42,54 +118,98 @@ export default function SessionSummaryParser({ products, onDone }) {
     if (!text.trim()) return;
     setParsing(true);
 
-    const parsed = parseSummary(text);
+    const parsed = parseSummary(text, products);
     const now = new Date().toISOString();
-    const counts = { sparks: 0, stages: 0, decisions: 0 };
+    const today = new Date().toISOString().split('T')[0];
+    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0 };
+    const stageDetails = [];
 
-    // Create sparks
     for (const content of parsed.sparks) {
       if (content) { await createSpark(content); counts.sparks++; }
     }
 
-    // Update product stages
     for (const update of parsed.stageUpdates) {
-      const product = products?.find(p => p.name.toLowerCase().includes(update.product.toLowerCase()));
-      if (product) {
-        await supabase.from('products').update({ stage: update.stage, stage_updated_at: now, updated_at: now }).eq('id', product.id);
+      if (update.productId) {
+        await supabase.from('products').update({
+          stage: update.stage,
+          stage_updated_at: now,
+          updated_at: now,
+        }).eq('id', update.productId);
         counts.stages++;
+        stageDetails.push(update);
+      } else {
+        parsed.unparseable.push({ section: 'STAGE UPDATES', line: `"${update.productName}" not found in products` });
       }
     }
 
-    // Flag decisions for Codex
+    for (const session of parsed.research) {
+      await createResearchSession(
+        {
+          collection: session.collection,
+          niche: session.niche,
+          date: today,
+          source: session.source,
+          status: 'Complete',
+          notes: '',
+        },
+        session.keywords
+      );
+      counts.research++;
+    }
+
     for (const d of parsed.decisions) {
       if (d) { await createWorkshopItem({ type: 'decision', content: d, source: 'Session Import' }); counts.decisions++; }
     }
 
-    setResult({ ...counts, stageDetails: parsed.stageUpdates });
+    setResult({ ...counts, stageDetails, unparseable: parsed.unparseable });
     setParsing(false);
   }
 
   if (result) {
+    const total = result.sparks + result.stages + result.research + result.decisions;
     return (
       <div>
         <div className="section-label" style={{ marginBottom: 12 }}>Imported</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-          {result.sparks > 0 && <div style={{ fontSize: '0.85rem' }}>✓ {result.sparks} new Spark{result.sparks !== 1 ? 's' : ''} added</div>}
+          {result.sparks > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {result.sparks} new Spark{result.sparks !== 1 ? 's' : ''} added</div>
+          )}
           {result.stages > 0 && (
             <div style={{ fontSize: '0.85rem' }}>
               ✓ {result.stages} product stage{result.stages !== 1 ? 's' : ''} updated
               {result.stageDetails.map((u, i) => (
                 <div key={i} style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginLeft: 16 }}>
-                  {u.product} → {u.stage}
+                  {u.productName} → {u.stage}
                 </div>
               ))}
             </div>
           )}
-          {result.decisions > 0 && <div style={{ fontSize: '0.85rem' }}>✓ {result.decisions} decision{result.decisions !== 1 ? 's' : ''} flagged for Codex review</div>}
-          {result.sparks === 0 && result.stages === 0 && result.decisions === 0 && (
+          {result.research > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {result.research} research session{result.research !== 1 ? 's' : ''} created</div>
+          )}
+          {result.decisions > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {result.decisions} decision{result.decisions !== 1 ? 's' : ''} flagged for Codex review</div>
+          )}
+          {total === 0 && (
             <div style={{ fontSize: '0.85rem', color: 'var(--charcoal-soft)' }}>No structured data found. Check the summary format.</div>
           )}
         </div>
+
+        {result.unparseable?.length > 0 && (
+          <div style={{
+            background: 'rgba(232,168,124,0.12)',
+            border: '1px solid var(--warning)',
+            borderRadius: 2, padding: '12px 14px', marginBottom: 16,
+          }}>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Could not parse</div>
+            {result.unparseable.map((u, i) => (
+              <div key={i} style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>
+                <span style={{ fontWeight: 500 }}>{u.section}:</span> {u.line}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-primary btn-sm" onClick={onDone}>View imported items →</button>
           <button className="btn btn-ghost btn-sm" onClick={() => { setText(''); setResult(null); }}>Parse another</button>
@@ -101,12 +221,36 @@ export default function SessionSummaryParser({ products, onDone }) {
   return (
     <div>
       <div className="section-label" style={{ marginBottom: 8 }}>Paste Session Summary</div>
+      <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 12, lineHeight: 1.6 }}>
+        Paste a structured summary from Claude or ChatGPT. Items will be routed automatically — sparks to Sparks, stage changes to products, research to Research, decisions to Workshop.
+      </div>
       <textarea
         value={text}
         onChange={e => setText(e.target.value)}
-        placeholder={`--- SESSION SUMMARY ---\nDATE: 2026-06-28\nSOURCE: Claude\n\nSPARKS\n- New idea here\n\nSTAGE UPDATES\n- Product Name → New Stage\n\nDECISIONS (for Codex)\n- Decision here\n--- END SUMMARY ---`}
-        rows={12}
-        style={{ marginBottom: 12, fontFamily: 'monospace', fontSize: '0.78rem' }}
+        placeholder={`--- SESSION SUMMARY ---
+DATE: 2026-07-09
+SOURCE: Claude
+
+SPARKS
+- New product idea here
+
+STAGE UPDATES
+- Product Name → SEO Ready
+
+RESEARCH
+- Collection: Mom Chapter
+  Niche: Mom Humor
+  Source: Everbee
+  Keywords: mom shirt | 4368 | 5 | 873750
+
+DECISIONS (for Codex)
+- Decision that needs to go into TCC OS
+
+NOTES
+- Anything else worth capturing
+--- END SUMMARY ---`}
+        rows={16}
+        style={{ marginBottom: 12, fontFamily: 'monospace', fontSize: '0.75rem' }}
       />
       <button className="btn btn-primary" onClick={handleParse} disabled={!text.trim() || parsing}>
         {parsing ? 'Parsing…' : 'Parse and Import →'}

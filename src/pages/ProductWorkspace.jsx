@@ -295,7 +295,7 @@ function ResearchSection({ collection, sessions, loading, onDeleted, refetch }) 
           {adding && (
             <div className="card" style={{ marginBottom: 12 }}>
               <ResearchSessionForm
-                defaultNiche={collection}
+                defaultCollection={collection}
                 onSaved={() => { setAdding(false); refetch(); }}
                 onCancel={() => setAdding(false)}
               />

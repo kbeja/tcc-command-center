@@ -17,10 +17,8 @@ function autoColor(score, competition, statusText) {
   const s = parseFloat(score) || 0;
   const c = parseFloat(competition) || 0;
   const t = (statusText || '').toLowerCase().trim();
-  // Explicit text override first
   if (t === 'use' || t === 'yes' || t === 'keep') return 'use';
   if (t === 'discard' || t === 'no' || t === 'skip') return 'discard';
-  // Score/competition rules
   if (s >= 1000 && c <= 500) return 'use';
   if (s === 0 || c >= 50000) return 'discard';
   return 'watch';
@@ -92,8 +90,9 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
   );
 }
 
-export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel }) {
-  const [niche, setNiche] = useState(defaultNiche || 'Mom Chapter');
+export default function ResearchSessionForm({ defaultCollection, defaultNiche, onSaved, onCancel }) {
+  const [collection, setCollection] = useState(defaultCollection || defaultNiche || 'Mom Chapter');
+  const [niche, setNiche] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [source, setSource] = useState('Everbee');
   const [status, setStatus] = useState('Complete');
@@ -131,7 +130,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
             k => k.keyword.toLowerCase() === incoming.keyword.toLowerCase()
           );
           if (idx >= 0) {
-            merged[idx] = incoming; // overwrite existing row
+            merged[idx] = incoming;
           } else {
             merged.push(incoming);
           }
@@ -156,7 +155,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
   }
 
   async function handleSave() {
-    if (!niche) return;
+    if (!collection) return;
     setSaving(true);
     const kwList = keywords
       .filter(k => k.keyword.trim())
@@ -167,7 +166,10 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
         score: k.score ? parseInt(k.score) : null,
         tag_type: k.status,
       }));
-    await createResearchSession({ niche, date, source, notes, status, gaps_notes: gapsNotes }, kwList);
+    await createResearchSession(
+      { collection, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes },
+      kwList
+    );
     setSaving(false);
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);
@@ -181,8 +183,8 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div className="form-group">
-          <label className="form-label">Niche / Collection</label>
-          <select value={niche} onChange={e => setNiche(e.target.value)}>
+          <label className="form-label">Collection</label>
+          <select value={collection} onChange={e => setCollection(e.target.value)}>
             {COLLECTIONS.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
@@ -190,6 +192,16 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
           <label className="form-label">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Niche <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
+        <input
+          type="text"
+          value={niche}
+          onChange={e => setNiche(e.target.value)}
+          placeholder="e.g. Mom Humor, 90s Nostalgia, Camp Mom"
+        />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -287,7 +299,7 @@ export default function ResearchSessionForm({ defaultNiche, onSaved, onCancel })
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={!niche || saving}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={!collection || saving}>
           {saving ? 'Saving…' : 'Save Session →'}
         </button>
         {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>}

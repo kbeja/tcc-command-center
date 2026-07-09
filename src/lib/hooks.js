@@ -83,26 +83,38 @@ export function getNeedsAttention(products) {
   });
 }
 
+// Priority order for Pick Up Where You Left Off
+const PICKUP_PRIORITY = ['SEO Ready', 'Assets Ready', 'Design Phase', 'Validated', 'Research', 'Ready to Publish'];
+
 export function getPickUpProduct(products) {
-  const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
-  if (!active.length) return null;
-  // Sort by most recently updated
-  return active.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+  const eligible = products.filter(p =>
+    !['Killed', 'Paused', 'Live', 'Reviewing', 'Idea'].includes(p.stage)
+  );
+  if (!eligible.length) return null;
+  return eligible.sort((a, b) => {
+    const ai = PICKUP_PRIORITY.indexOf(a.stage);
+    const bi = PICKUP_PRIORITY.indexOf(b.stage);
+    if (ai !== bi) return ai - bi;
+    return new Date(b.updated_at) - new Date(a.updated_at);
+  })[0];
 }
 
 // ─── Research Sessions ───────────────────────────────────────────────────────
 
-export function useResearchSessions(niche) {
+export function useResearchSessions(collection) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    let query = supabase.from('research_sessions').select('*, keywords(*)').order('date', { ascending: false });
-    if (niche) query = query.eq('niche', niche);
+    let query = supabase
+      .from('research_sessions')
+      .select('*, keywords(*)')
+      .order('date', { ascending: false });
+    if (collection) query = query.eq('collection', collection);
     const { data } = await query;
     if (data) setSessions(data);
     setLoading(false);
-  }, [niche]);
+  }, [collection]);
 
   useEffect(() => { fetch(); }, [fetch]);
   return { sessions, loading, refetch: fetch };
