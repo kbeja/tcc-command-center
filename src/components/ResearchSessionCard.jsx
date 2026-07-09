@@ -9,6 +9,100 @@ const STATUS_STYLES = {
 };
 
 const KW_COLORS = { use: '#7CAF8A', watch: '#E8A87C', discard: '#C97B7B' };
+const TAG_CYCLE = { use: 'watch', watch: 'discard', discard: 'use' };
+
+function EditableKeyword({ k, onSave, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [keyword, setKeyword] = useState(k.keyword);
+  const [volume, setVolume] = useState(k.volume ?? '');
+  const [competition, setCompetition] = useState(k.competition ?? '');
+  const [score, setScore] = useState(k.score ?? '');
+  const [tagType, setTagType] = useState(k.tag_type || 'watch');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    const updates = {
+      keyword,
+      volume: volume !== '' ? parseInt(volume) : null,
+      competition: competition !== '' ? parseInt(competition) : null,
+      score: score !== '' ? parseInt(score) : null,
+      tag_type: tagType,
+      updated_at: new Date().toISOString(),
+    };
+    await supabase.from('keywords').update(updates).eq('id', k.id);
+    onSave({ ...k, ...updates });
+    setSaving(false);
+    setEditing(false);
+  }
+
+  function cycleTag(e) {
+    e.stopPropagation();
+    const next = TAG_CYCLE[tagType];
+    setTagType(next);
+  }
+
+  if (editing) {
+    return (
+      <div style={{
+        borderLeft: `3px solid ${KW_COLORS[tagType] || KW_COLORS.watch}`,
+        background: 'var(--warm-white)', borderRadius: '0 2px 2px 0',
+        padding: '8px 10px', marginBottom: 3,
+      }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+          <button onClick={cycleTag} title="Cycle tag" style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: '1rem', color: KW_COLORS[tagType], padding: 0, flexShrink: 0,
+          }}>●</button>
+          <input value={keyword} onChange={e => setKeyword(e.target.value)}
+            style={{ flex: 2, minWidth: 120, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Keyword" />
+          <input value={volume} onChange={e => setVolume(e.target.value)} type="number"
+            style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Vol" />
+          <input value={competition} onChange={e => setCompetition(e.target.value)} type="number"
+            style={{ width: 60, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Comp" />
+          <input value={score} onChange={e => setScore(e.target.value)} type="number"
+            style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Score" />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+          <button onClick={() => onDelete(k.id)}
+            style={{ marginLeft: 'auto', color: 'var(--alert)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={() => setEditing(true)}
+      style={{
+        display: 'flex', gap: 10, padding: '5px 10px',
+        borderLeft: `3px solid ${KW_COLORS[tagType] || KW_COLORS.watch}`,
+        background: 'var(--charcoal-faint)', borderRadius: '0 2px 2px 0',
+        alignItems: 'center', flexWrap: 'wrap', cursor: 'pointer',
+      }}
+      title="Click to edit"
+    >
+      <span style={{ flex: 1, minWidth: 120 }}>{keyword}</span>
+      <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+        {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {volume}</span>}
+        {competition && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>comp {competition}</span>}
+        {score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {score}</span>}
+        {k.updated_at && (
+          <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.65rem', opacity: 0.7 }}>
+            updated {new Date(k.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </span>
+        )}
+        <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', opacity: 0.4 }}>✎</span>
+      </span>
+    </div>
+  );
+}
 
 export default function ResearchSessionCard({ session, onDeleted }) {
   const [open, setOpen] = useState(false);
@@ -32,6 +126,10 @@ export default function ResearchSessionCard({ session, onDeleted }) {
   async function handleDeleteKeyword(kwId) {
     await deleteKeyword(kwId);
     setKeywords(prev => prev.filter(k => k.id !== kwId));
+  }
+
+  function handleKeywordSave(updated) {
+    setKeywords(prev => prev.map(k => k.id === updated.id ? updated : k));
   }
 
   return (
@@ -101,32 +199,15 @@ export default function ResearchSessionCard({ session, onDeleted }) {
           )}
           {keywords.length > 0 && (
             <div>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Keywords</div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Keywords <span style={{ fontWeight: 400, opacity: 0.5 }}>— tap to edit</span></div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {keywords.map(k => (
-                  <div key={k.id} style={{
-                    display: 'flex', gap: 10, padding: '5px 10px',
-                    borderLeft: `3px solid ${KW_COLORS[k.tag_type] || KW_COLORS.watch}`,
-                    background: 'var(--charcoal-faint)', borderRadius: '0 2px 2px 0',
-                    alignItems: 'center', flexWrap: 'wrap',
-                  }}>
-                    <span style={{ flex: 1, minWidth: 120 }}>{k.keyword}</span>
-                    <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-                      {k.volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {k.volume}</span>}
-                      {k.competition && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>comp {k.competition}</span>}
-                      {k.score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {k.score}</span>}
-                      {k.updated_at && (
-                        <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.65rem', opacity: 0.7 }}>
-                          updated {new Date(k.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => handleDeleteKeyword(k.id)}
-                        style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}
-                        title="Remove keyword"
-                      >×</button>
-                    </span>
-                  </div>
+                  <EditableKeyword
+                    key={k.id}
+                    k={k}
+                    onSave={handleKeywordSave}
+                    onDelete={handleDeleteKeyword}
+                  />
                 ))}
               </div>
             </div>
