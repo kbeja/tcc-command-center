@@ -60,11 +60,48 @@ function StageTracker({ currentStage, onStageSelect, saved }) {
 
 // ─── Live Stats Panel ─────────────────────────────────────────────────────────
 
+function StatInput({ label, value, onChange, type = 'number', prefix, suffix }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <label style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {prefix && <span style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>{prefix}</span>}
+        <input
+          type={type}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          min="0"
+          step={type === 'number' ? '1' : '0.01'}
+          style={{ width: '100%', padding: '6px 8px', fontSize: '0.82rem' }}
+        />
+        {suffix && <span style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
 function LiveStats({ product, onSave }) {
+  const [wentLive, setWentLive] = useState(product.went_live_at || '');
+  // Everbee
+  const [moSales, setMoSales] = useState(product.mo_sales || 0);
+  const [moRevenue, setMoRevenue] = useState(product.mo_revenue || 0);
+  const [totalSales, setTotalSales] = useState(product.total_sales || 0);
+  const [reviews, setReviews] = useState(product.reviews || 0);
+  const [moReviews, setMoReviews] = useState(product.mo_reviews || 0);
   const [views, setViews] = useState(product.views || 0);
   const [favorites, setFavorites] = useState(product.favorites || 0);
-  const [sales, setSales] = useState(product.total_sales || 0);
-  const [wentLive, setWentLive] = useState(product.went_live_at || '');
+  const [conversionRate, setConversionRate] = useState(product.conversion_rate || 0);
+  const [visibilityScore, setVisibilityScore] = useState(product.visibility_score || 0);
+  const [reviewRatio, setReviewRatio] = useState(product.review_ratio || 0);
+  // Ads
+  const [adViews, setAdViews] = useState(product.ad_views || 0);
+  const [adClicks, setAdClicks] = useState(product.ad_clicks || 0);
+  const [adClickRate, setAdClickRate] = useState(product.ad_click_rate || 0);
+  const [adOrders, setAdOrders] = useState(product.ad_orders || 0);
+  const [adRevenue, setAdRevenue] = useState(product.ad_revenue || 0);
+  const [adSpend, setAdSpend] = useState(product.ad_spend || 0);
+  const [adRoas, setAdRoas] = useState(product.ad_roas || 0);
+
   const [saved, setSaved] = useState(false);
 
   const daysLive = wentLive ? daysBetween(wentLive, today()) : null;
@@ -72,10 +109,24 @@ function LiveStats({ product, onSave }) {
 
   async function handleSave() {
     await onSave({
+      went_live_at: wentLive || null,
+      mo_sales: parseInt(moSales) || 0,
+      mo_revenue: parseFloat(moRevenue) || 0,
+      total_sales: parseInt(totalSales) || 0,
+      reviews: parseInt(reviews) || 0,
+      mo_reviews: parseInt(moReviews) || 0,
       views: parseInt(views) || 0,
       favorites: parseInt(favorites) || 0,
-      total_sales: parseInt(sales) || 0,
-      went_live_at: wentLive || null,
+      conversion_rate: parseFloat(conversionRate) || 0,
+      visibility_score: parseFloat(visibilityScore) || 0,
+      review_ratio: parseFloat(reviewRatio) || 0,
+      ad_views: parseInt(adViews) || 0,
+      ad_clicks: parseInt(adClicks) || 0,
+      ad_click_rate: parseFloat(adClickRate) || 0,
+      ad_orders: parseInt(adOrders) || 0,
+      ad_revenue: parseFloat(adRevenue) || 0,
+      ad_spend: parseFloat(adSpend) || 0,
+      ad_roas: parseFloat(adRoas) || 0,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -88,7 +139,7 @@ function LiveStats({ product, onSave }) {
         <div style={{
           background: daysTo30 === 0 ? 'rgba(201,123,123,0.12)' : 'var(--charcoal-faint)',
           border: `1px solid ${daysTo30 === 0 ? 'var(--alert)' : 'rgba(43,41,38,0.1)'}`,
-          borderRadius: 2, padding: '10px 14px', marginBottom: 14,
+          borderRadius: 2, padding: '10px 14px', marginBottom: 16,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div>
@@ -101,39 +152,48 @@ function LiveStats({ product, onSave }) {
               </div>
             )}
           </div>
-          {daysLive !== null && (
+          <div style={{ width: 80, height: 4, background: 'rgba(43,41,38,0.1)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{
-              width: 80, height: 4, background: 'rgba(43,41,38,0.1)', borderRadius: 2, overflow: 'hidden',
-            }}>
-              <div style={{
-                width: `${Math.min(100, (daysLive / 30) * 100)}%`,
-                height: '100%',
-                background: daysTo30 === 0 ? 'var(--alert)' : 'var(--dusty-rose)',
-                borderRadius: 2,
-              }} />
-            </div>
-          )}
+              width: `${Math.min(100, (daysLive / 30) * 100)}%`,
+              height: '100%',
+              background: daysTo30 === 0 ? 'var(--alert)' : 'var(--dusty-rose)',
+              borderRadius: 2,
+            }} />
+          </div>
         </div>
       )}
 
-      {/* Stats inputs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Went Live</label>
-          <input type="date" value={wentLive} onChange={e => setWentLive(e.target.value)} />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Sales</label>
-          <input type="number" value={sales} onChange={e => setSales(e.target.value)} min="0" />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Views</label>
-          <input type="number" value={views} onChange={e => setViews(e.target.value)} min="0" />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Favorites</label>
-          <input type="number" value={favorites} onChange={e => setFavorites(e.target.value)} min="0" />
-        </div>
+      {/* Went live date */}
+      <div className="form-group" style={{ marginBottom: 16 }}>
+        <label className="form-label">Went Live Date</label>
+        <input type="date" value={wentLive} onChange={e => setWentLive(e.target.value)} style={{ maxWidth: 200 }} />
+      </div>
+
+      {/* Everbee stats */}
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Everbee Stats</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <StatInput label="Mo. Sales" value={moSales} onChange={setMoSales} />
+        <StatInput label="Mo. Revenue" value={moRevenue} onChange={setMoRevenue} prefix="$" type="text" />
+        <StatInput label="Total Sales" value={totalSales} onChange={setTotalSales} />
+        <StatInput label="Views" value={views} onChange={setViews} />
+        <StatInput label="Favorites" value={favorites} onChange={setFavorites} />
+        <StatInput label="Reviews" value={reviews} onChange={setReviews} />
+        <StatInput label="Mo. Reviews" value={moReviews} onChange={setMoReviews} />
+        <StatInput label="Conversion %" value={conversionRate} onChange={setConversionRate} suffix="%" type="text" />
+        <StatInput label="Visibility %" value={visibilityScore} onChange={setVisibilityScore} suffix="%" type="text" />
+        <StatInput label="Review Ratio" value={reviewRatio} onChange={setReviewRatio} type="text" />
+      </div>
+
+      {/* Etsy Ads stats */}
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Etsy Ads</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <StatInput label="Ad Views" value={adViews} onChange={setAdViews} />
+        <StatInput label="Ad Clicks" value={adClicks} onChange={setAdClicks} />
+        <StatInput label="Click Rate" value={adClickRate} onChange={setAdClickRate} suffix="%" type="text" />
+        <StatInput label="Ad Orders" value={adOrders} onChange={setAdOrders} />
+        <StatInput label="Ad Revenue" value={adRevenue} onChange={setAdRevenue} prefix="$" type="text" />
+        <StatInput label="Spend" value={adSpend} onChange={setAdSpend} prefix="$" type="text" />
+        <StatInput label="ROAS" value={adRoas} onChange={setAdRoas} type="text" />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
