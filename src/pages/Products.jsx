@@ -31,7 +31,7 @@ export default function Products() {
       <div className="page-header">
         <div className="page-title">Products</div>
         <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[['all', 'All'], ['live', 'Live'], ['development', 'In Development'], ['paused', 'Paused/Killed']].map(([val, label]) => (
+          {[['all', 'All'], ['live', 'Live'], ['development', 'In Progress'], ['paused', 'Paused/Killed']].map(([val, label]) => (
             <button
               key={val}
               className={`btn btn-sm ${filter === val ? 'btn-primary' : 'btn-ghost'}`}
