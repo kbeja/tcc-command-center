@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { resolveWorkshopItem, createSpark } from '../lib/hooks';
+import { resolveWorkshopItem, createSpark, createProduct } from '../lib/hooks';
 
 export default function WorkshopItem({ item, onAction }) {
   const [confirm, setConfirm] = useState(null);
@@ -7,6 +7,9 @@ export default function WorkshopItem({ item, onAction }) {
   async function handle(action) {
     if (action === 'spark') {
       await createSpark(item.content);
+      await resolveWorkshopItem(item.id, 'reviewed');
+    } else if (action === 'pipeline') {
+      await createProduct({ name: item.content, stage: 'Idea' });
       await resolveWorkshopItem(item.id, 'reviewed');
     } else if (action === 'codex') {
       await resolveWorkshopItem(item.id, 'reviewed');
