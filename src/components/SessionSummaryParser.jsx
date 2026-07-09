@@ -138,8 +138,13 @@ export default function SessionSummaryParser({ products, onDone }) {
     const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, notes: 0 };
     const stageDetails = [];
 
+    const createdSparks = [];
     for (const content of parsed.sparks) {
-      if (content) { await createSpark(content); counts.sparks++; }
+      if (content) {
+        const { data } = await createSpark(content);
+        if (data) createdSparks.push(data);
+        counts.sparks++;
+      }
     }
 
     for (const update of parsed.stageUpdates) {
@@ -175,10 +180,11 @@ export default function SessionSummaryParser({ products, onDone }) {
       if (d) { await createWorkshopItem({ type: 'decision', content: d, source: 'Session Import' }); counts.decisions++; }
     }
 
-    // Notes: append to matched product, or save as Workshop note if no match
+    // Notes: append to matched product → matched spark → Workshop fallback
     if (parsed.notes.length > 0) {
-      // Find which product this session is most likely about
-      // Use stage updates as the primary signal, fall back to scanning note text
+      const noteText = `\n[Session notes ${today}]\n` + parsed.notes.map(n => `• ${n}`).join('\n');
+
+      // 1. Try existing product (via stage updates or name match in notes)
       const mentionedProduct = stageDetails[0]
         ? products?.find(p => p.id === stageDetails[0].productId)
         : products?.find(p =>
@@ -186,19 +192,36 @@ export default function SessionSummaryParser({ products, onDone }) {
           );
 
       if (mentionedProduct) {
-        const noteAppend = `\n[Session notes ${today}]\n` + parsed.notes.map(n => `• ${n}`).join('\n');
         const existing = mentionedProduct.notes || '';
         await supabase.from('products')
-          .update({ notes: existing + noteAppend, updated_at: now })
+          .update({ notes: existing + noteText, updated_at: now })
           .eq('id', mentionedProduct.id);
         counts.notes = parsed.notes.length;
         counts.notesTarget = mentionedProduct.name;
+        counts.notesType = 'product';
       } else {
-        // No product match — save as Workshop note so nothing is lost
-        const combined = parsed.notes.join('\n• ');
-        await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import' });
-        counts.notes = parsed.notes.length;
-        counts.notesTarget = null;
+        // 2. Try a spark created in this same import whose name appears in the notes
+        const matchedSpark = createdSparks.find(s =>
+          parsed.notes.some(n => n.toLowerCase().includes(s.content.toLowerCase().slice(0, 20)))
+          || parsed.sparks.some(sp => parsed.notes.some(n => n.toLowerCase().includes(sp.toLowerCase().slice(0, 20))))
+        ) || createdSparks[0]; // fall back to first spark created if any
+
+        if (matchedSpark) {
+          const existing = matchedSpark.notes || '';
+          await supabase.from('sparks')
+            .update({ notes: (existing ? existing + '\n' : '') + noteText.trim(), updated_at: now })
+            .eq('id', matchedSpark.id);
+          counts.notes = parsed.notes.length;
+          counts.notesTarget = matchedSpark.content.slice(0, 40);
+          counts.notesType = 'spark';
+        } else {
+          // 3. No match anywhere — save to Workshop so nothing is lost
+          const combined = parsed.notes.join('\n• ');
+          await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import' });
+          counts.notes = parsed.notes.length;
+          counts.notesTarget = null;
+          counts.notesType = 'workshop';
+        }
       }
     }
 
@@ -233,7 +256,11 @@ export default function SessionSummaryParser({ products, onDone }) {
           )}
           {result.notes > 0 && (
             <div style={{ fontSize: '0.85rem' }}>
-              ✓ {result.notes} note{result.notes !== 1 ? 's' : ''} {result.notesTarget ? `appended to ${result.notesTarget}` : 'saved to Workshop'}
+              ✓ {result.notes} note{result.notes !== 1 ? 's' : ''} {
+                result.notesType === 'product' ? `appended to product: ${result.notesTarget}` :
+                result.notesType === 'spark' ? `appended to spark: ${result.notesTarget}…` :
+                'saved to Workshop'
+              }
             </div>
           )}
           {total === 0 && (
