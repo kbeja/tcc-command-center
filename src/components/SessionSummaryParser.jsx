@@ -104,11 +104,24 @@ function parseSummary(text, products) {
       }
     }
 
+    const source = sourceMatch?.[1]?.trim() || 'Other';
+    const isInternalIdeation = /internal|ideation|no.*keyword|no.*etsy/i.test(source);
+
+    if (keywords.length === 0 || isInternalIdeation) {
+      // No real keyword data — send to Triage so user can decide where it goes
+      const label = colMatch[1].trim() + (nicheMatch ? ` / ${nicheMatch[1].trim()}` : '');
+      result.unparseable.push({
+        section: 'RESEARCH (no keywords)',
+        line: `${label} — ${source}`,
+      });
+      continue;
+    }
+
     result.research.push({
       collection: colMatch[1].trim(),
       niche: nicheMatch?.[1]?.trim() || null,
-      source: sourceMatch?.[1]?.trim() || 'Other',
-    keywords,
+      source,
+      keywords,
     });
   }
 

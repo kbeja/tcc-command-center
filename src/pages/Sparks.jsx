@@ -8,6 +8,7 @@ export default function Sparks() {
   const { collections } = useCollections();
   const [search, setSearch] = useState('');
   const [collectionFilter, setCollectionFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [bulkDone, setBulkDone] = useState('');
@@ -16,7 +17,8 @@ export default function Sparks() {
   const cold = sparks.filter(s => s.temperature === 'cold').filter(s => {
     const matchSearch = !search || s.content.toLowerCase().includes(search.toLowerCase());
     const matchColl = !collectionFilter || s.collection_tag === collectionFilter;
-    return matchSearch && matchColl;
+    const matchType = !typeFilter || (s.idea_type || 'Product Idea') === typeFilter;
+    return matchSearch && matchColl && matchType;
   });
 
   function toggleSelect(id) {
@@ -131,6 +133,12 @@ export default function Sparks() {
           <select value={collectionFilter} onChange={e => setCollectionFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All collections</option>
             {collections.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: 'auto' }}>
+            <option value="">All types</option>
+            <option value="Product Idea">Product Idea</option>
+            <option value="Strategy Idea">Strategy Idea</option>
+            <option value="Tool/Resource">Tool/Resource</option>
           </select>
         </div>
 

@@ -164,11 +164,20 @@ export function useSparks() {
   return { sparks, loading, refetch: fetch };
 }
 
-export async function createSpark(content, collectionTag) {
+export async function createSpark(content, extra = {}) {
   const now = new Date().toISOString();
+  const { collectionTag, idea_type, ...rest } = extra;
   const { data, error } = await supabase
     .from('sparks')
-    .insert({ content, collection_tag: collectionTag || null, temperature: 'cold', created_at: now, updated_at: now })
+    .insert({
+      content,
+      collection_tag: collectionTag || null,
+      idea_type: idea_type || 'Product Idea',
+      temperature: 'cold',
+      created_at: now,
+      updated_at: now,
+      ...rest,
+    })
     .select()
     .single();
   return { data, error };
