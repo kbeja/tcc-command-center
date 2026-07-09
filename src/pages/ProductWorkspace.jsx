@@ -210,17 +210,40 @@ function ContextBundle({ product, sessions }) {
   const [copied, setCopied] = useState(null);
 
   function buildBundle() {
-    const collection = collectionKnowledge[product.collection] || {};
-    const greenKeywords = sessions
-      .flatMap(s => (s.keywords || []).filter(k => k.tag_type === 'use').map(k => k.keyword))
+    const colKnowledge = collectionKnowledge[product.collection] || {};
+
+    // Deduplicate green keywords — keep highest score per keyword name
+    const kwMap = new Map();
+    for (const s of sessions) {
+      for (const k of (s.keywords || [])) {
+        if (k.tag_type !== 'use') continue;
+        const key = k.keyword.toLowerCase();
+        const existing = kwMap.get(key);
+        if (!existing || (k.score || 0) > (existing.score || 0)) {
+          kwMap.set(key, k);
+        }
+      }
+    }
+    const greenKeywords = [...kwMap.values()]
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
       .slice(0, 20);
     const keywordList = greenKeywords.length
-      ? greenKeywords.join('\n')
-      : collection.keywords?.topKeywords?.slice(0, 15).join('\n') || 'See keyword bank';
+      ? greenKeywords.map(k => `${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`).join('\n')
+      : colKnowledge.keywords?.topKeywords?.slice(0, 15).join('\n') || 'See keyword bank';
+
+    // Style guide: niche-specific session notes first, then collection guide
+    const nicheSessions = product.niche
+      ? sessions.filter(s => s.niche?.toLowerCase() === product.niche?.toLowerCase() && s.notes)
+      : [];
+    const nicheGuide = nicheSessions.length
+      ? `Niche (${product.niche}):\n${nicheSessions.map(s => s.notes).join('\n')}`
+      : '';
+    const styleGuide = [nicheGuide, colKnowledge.styleGuide || 'See TCC OS style guides.']
+      .filter(Boolean).join('\n\n');
 
     return `--- TCC CONTEXT BUNDLE ---
 Product: ${product.name}
-Collection: ${product.collection}
+Collection: ${product.collection}${product.niche ? `\nNiche: ${product.niche}` : ''}
 Stage: ${product.stage}
 Confidence: ${product.confidence || 'Not set'}
 Ecosystem: ${product.ecosystem_primary || '—'}
@@ -229,8 +252,8 @@ Emotional trigger: ${product.emotional_trigger || '—'}
 TOP KEYWORDS (confirmed green from research)
 ${keywordList}
 
-COLLECTION STYLE GUIDE
-${collection.styleGuide || 'See TCC OS style guides.'}
+STYLE GUIDE
+${styleGuide}
 
 PRODUCT NOTES
 ${product.notes || 'None.'}
@@ -321,15 +344,30 @@ export default function ProductWorkspace() {
   const navigate = useNavigate();
   const { product, loading, refetch } = useProduct(id);
   const [notes, setNotes] = useState('');
+  const [ecosystem, setEcosystem] = useState('');
+  const [emotionalTrigger, setEmotionalTrigger] = useState('');
+  const [niche, setNiche] = useState('');
   const [noteSaved, setNoteSaved] = useState(false);
   const [stageSaved, setStageSaved] = useState(false);
+  const [fieldSaved, setFieldSaved] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
 
   useEffect(() => {
-    if (product) setNotes(product.notes || '');
+    if (product) {
+      setNotes(product.notes || '');
+      setEcosystem(product.ecosystem_primary || '');
+      setEmotionalTrigger(product.emotional_trigger || '');
+      setNiche(product.niche || '');
+    }
   }, [product?.id]);
+
+  async function handleFieldBlur(field, value) {
+    await updateProduct(id, { [field]: value || null });
+    setFieldSaved(field);
+    setTimeout(() => setFieldSaved(''), 2000);
+  }
 
   async function handleStageUpdate(stage) {
     await updateProduct(id, { stage, stage_updated_at: new Date().toISOString() });
@@ -414,10 +452,53 @@ export default function ProductWorkspace() {
         </>
       )}
 
+      {/* ── Product Details ── */}
+      <div style={{ marginBottom: 24 }}>
+        <div className="section-label" style={{ marginBottom: 10 }}>Product Details</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">
+              Ecosystem {fieldSaved === 'ecosystem_primary' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
+            </label>
+            <input
+              value={ecosystem}
+              onChange={e => setEcosystem(e.target.value)}
+              onBlur={() => handleFieldBlur('ecosystem_primary', ecosystem)}
+              placeholder="e.g. Mom Life, Bookish"
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">
+              Emotional Trigger {fieldSaved === 'emotional_trigger' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
+            </label>
+            <input
+              value={emotionalTrigger}
+              onChange={e => setEmotionalTrigger(e.target.value)}
+              onBlur={() => handleFieldBlur('emotional_trigger', emotionalTrigger)}
+              placeholder="e.g. Identity, Humor, Belonging"
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+            <label className="form-label">
+              Niche <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span>
+              {fieldSaved === 'niche' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
+            </label>
+            <input
+              value={niche}
+              onChange={e => setNiche(e.target.value)}
+              onBlur={() => handleFieldBlur('niche', niche)}
+              placeholder="e.g. Camp Mom, Mom Humor, 90s Nostalgia"
+            />
+          </div>
+        </div>
+      </div>
+
+      <hr className="rule" />
+
       {/* ── Context Bundle ── */}
       <div style={{ marginBottom: 24 }}>
         <div className="section-label" style={{ marginBottom: 10 }}>Context Bundle</div>
-        <ContextBundle product={product} sessions={sessions} />
+        <ContextBundle product={{ ...product, ecosystem_primary: ecosystem, emotional_trigger: emotionalTrigger, niche }} sessions={sessions} />
       </div>
 
       <hr className="rule" />
