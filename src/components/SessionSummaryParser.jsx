@@ -135,7 +135,7 @@ export default function SessionSummaryParser({ products, onDone }) {
     const parsed = parseSummary(text, products);
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
-    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0 };
+    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, notes: 0 };
     const stageDetails = [];
 
     for (const content of parsed.sparks) {
@@ -175,12 +175,39 @@ export default function SessionSummaryParser({ products, onDone }) {
       if (d) { await createWorkshopItem({ type: 'decision', content: d, source: 'Session Import' }); counts.decisions++; }
     }
 
-    setResult({ ...counts, stageDetails, notes: parsed.notes, unparseable: parsed.unparseable });
+    // Notes: append to matched product, or save as Workshop note if no match
+    if (parsed.notes.length > 0) {
+      // Find which product this session is most likely about
+      // Use stage updates as the primary signal, fall back to scanning note text
+      const mentionedProduct = stageDetails[0]
+        ? products?.find(p => p.id === stageDetails[0].productId)
+        : products?.find(p =>
+            parsed.notes.some(n => n.toLowerCase().includes(p.name.toLowerCase()))
+          );
+
+      if (mentionedProduct) {
+        const noteAppend = `\n[Session notes ${today}]\n` + parsed.notes.map(n => `• ${n}`).join('\n');
+        const existing = mentionedProduct.notes || '';
+        await supabase.from('products')
+          .update({ notes: existing + noteAppend, updated_at: now })
+          .eq('id', mentionedProduct.id);
+        counts.notes = parsed.notes.length;
+        counts.notesTarget = mentionedProduct.name;
+      } else {
+        // No product match — save as Workshop note so nothing is lost
+        const combined = parsed.notes.join('\n• ');
+        await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import' });
+        counts.notes = parsed.notes.length;
+        counts.notesTarget = null;
+      }
+    }
+
+    setResult({ ...counts, stageDetails, unparseable: parsed.unparseable });
     setParsing(false);
   }
 
   if (result) {
-    const total = result.sparks + result.stages + result.research + result.decisions;
+    const total = result.sparks + result.stages + result.research + result.decisions + (result.notes || 0);
     return (
       <div>
         <div className="section-label" style={{ marginBottom: 12 }}>Imported</div>
@@ -203,6 +230,11 @@ export default function SessionSummaryParser({ products, onDone }) {
           )}
           {result.decisions > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {result.decisions} decision{result.decisions !== 1 ? 's' : ''} flagged for Codex review</div>
+          )}
+          {result.notes > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>
+              ✓ {result.notes} note{result.notes !== 1 ? 's' : ''} {result.notesTarget ? `appended to ${result.notesTarget}` : 'saved to Workshop'}
+            </div>
           )}
           {total === 0 && (
             <div style={{ fontSize: '0.85rem', color: 'var(--charcoal-soft)' }}>No structured data found. Check the summary format.</div>
