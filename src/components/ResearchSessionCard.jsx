@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { deleteResearchSession, deleteKeyword } from '../lib/hooks';
+import { supabase } from '../lib/supabase';
 
 const STATUS_STYLES = {
   'Complete': { background: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
@@ -13,8 +14,15 @@ export default function ResearchSessionCard({ session, onDeleted }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [keywords, setKeywords] = useState(session.keywords || []);
+  const [seasonal, setSeasonal] = useState(!!session.seasonal);
   const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
+
+  async function toggleSeasonal() {
+    const next = !seasonal;
+    setSeasonal(next);
+    await supabase.from('research_sessions').update({ seasonal: next }).eq('id', session.id);
+  }
 
   async function handleDelete() {
     await deleteResearchSession(session.id);
@@ -43,11 +51,19 @@ export default function ResearchSessionCard({ session, onDeleted }) {
                 {session.niche}
               </span>
             )}
-            {session.seasonal && (
-              <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: 'rgba(232,168,124,0.2)', color: '#7a4a1e' }}>
-                seasonal
-              </span>
-            )}
+            <button
+              onClick={e => { e.stopPropagation(); toggleSeasonal(); }}
+              title={seasonal ? 'Marked seasonal — click to unmark' : 'Mark as seasonal'}
+              style={{
+                fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20,
+                background: seasonal ? 'rgba(232,168,124,0.2)' : 'transparent',
+                color: seasonal ? '#7a4a1e' : 'var(--charcoal-soft)',
+                border: seasonal ? 'none' : '1px dashed rgba(43,41,38,0.2)',
+                cursor: 'pointer', opacity: seasonal ? 1 : 0.5,
+              }}
+            >
+              {seasonal ? 'seasonal' : '+ seasonal'}
+            </button>
             {session.status && (
               <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, ...statusStyle }}>
                 {session.status}
