@@ -18,7 +18,7 @@ export const STAGE_NEXT_ACTIONS = {
   'Validated': 'Move to Design Phase — open Kittl and start artwork',
   'Design Phase': 'Complete design, export PNG from Kittl',
   'SEO Ready': 'Run Everbee research for this collection, then add a Research Session below',
-  'Assets Ready': 'Generate listing images — use the Context Bundle above to get image prompts from Claude',
+  'Assets Ready': 'Generate listing images — open a fresh ChatGPT chat, upload your approved PNG, and generate one image at a time using the 90s Nostalgia style guide: warm butter yellows, faded denim, oversized comfort, retro serif typography. Follow the standard 10-slot listing order: Hero Lifestyle → Product Detail → Color Options → Product Benefits → Lifestyle Story → Flat Lay → Vibe → Gift → Size Guide → Care.',
   'Ready to Publish': 'Publish listing on Etsy, add to sale',
   'Live': 'Monitor for 30 days — check views, favorites, sales',
   'Reviewing': 'Review stats, decide: optimize, pause, or kill',
