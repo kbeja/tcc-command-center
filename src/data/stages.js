@@ -13,15 +13,15 @@ export const STAGES = [
 ];
 
 export const STAGE_NEXT_ACTIONS = {
-  'Idea': 'Run Amanda filter — evaluate market fit and customer alignment',
-  'Research': 'Complete research session — Everbee, Etsy search, Pinterest',
-  'Validated': 'Move to Design Phase — open Kittl and start artwork',
-  'Design Phase': 'Complete design, export PNG from Kittl',
-  'SEO Ready': 'Run Everbee research for this collection, then add a Research Session below',
+  'Idea': 'Ask three questions: Would Amanda buy this? Does it fit a TCC collection? Is there Everbee search volume? All yes → move to Research. Mixed → keep as Hot spark. All no → archive.',
+  'Research': 'Open Everbee and search your product idea — note search volume, competition score, and top 5 keywords. Search Etsy to see what\'s selling and at what price. Check Pinterest for trend signals. Log your findings in a Research Session below.',
+  'Validated': 'Open Kittl and start artwork using the collection\'s established color palette and typography. Export the final PNG at 4500×5400px, 300dpi when complete.',
+  'Design Phase': 'Finalize artwork in Kittl. Export PNG at 4500×5400px. Upload to Printify, select product type and color variants, set your price, and save as a draft.',
+  'SEO Ready': 'Open Everbee and search your primary keyword. Choose 1 primary keyword to lead your title (under 140 chars total) and 12 long-tail tags. Write a 3-paragraph Etsy description: what it is, who it\'s for, and product specs (material, fit, care). Add a Research Session below with your keyword list.',
   'Assets Ready': 'Generate listing images — open a fresh ChatGPT chat, upload your approved PNG, and generate one image at a time using the 90s Nostalgia style guide: warm butter yellows, faded denim, oversized comfort, retro serif typography. Follow the standard 10-slot listing order: Hero Lifestyle → Product Detail → Color Options → Product Benefits → Lifestyle Story → Flat Lay → Vibe → Gift → Size Guide → Care.',
-  'Ready to Publish': 'Publish listing on Etsy, add to sale',
-  'Live': 'Monitor for 30 days — check views, favorites, sales',
-  'Reviewing': 'Review stats, decide: optimize, pause, or kill',
+  'Ready to Publish': 'Go to Printify, publish your draft to Etsy. Set the sale price, confirm the shipping profile, and add to the active sale. Check the live listing on Etsy to confirm images and title look correct.',
+  'Live': 'Check Etsy Stats weekly: views, favorites, orders, conversion rate. Under 100 views at 30 days → update title and 2–3 tags. Conversion under 1% → swap the hero image. Flag for Reviewing once you have 30 days of data.',
+  'Reviewing': 'Pull stats from Etsy Studio. 0 orders at 60 days → rewrite title and tags, or kill. Orders converting → consider a color variant or companion product. Consistent performer → duplicate and expand the line.',
   'Paused': '—',
   'Killed': '—',
 };
