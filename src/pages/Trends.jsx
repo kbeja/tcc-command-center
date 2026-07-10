@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCollections } from '../lib/hooks';
+import { useProducts, useCollections, autoHotSparksForSignal } from '../lib/hooks';
 
 const STATUSES = [
   { key: 'pursue',    label: '🟢 Pursue',    color: '#2d6b3c', bg: 'rgba(124,175,138,0.15)' },
@@ -96,6 +96,9 @@ function SignalCard({ signal, products, onAction }) {
       last_updated: new Date().toISOString().split('T')[0],
       updated_at: new Date().toISOString(),
     }).eq('id', signal.id);
+    if (form.status === 'pursue' && signal.status !== 'pursue') {
+      await autoHotSparksForSignal(form.collection);
+    }
     setSaving(false);
     setEditing(false);
     onAction?.();

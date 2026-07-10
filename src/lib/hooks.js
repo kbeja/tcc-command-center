@@ -311,3 +311,42 @@ export async function updateCodexEntry(id, updates) {
 export async function deleteCodexEntry(id) {
   return supabase.from('codex_entries').delete().eq('id', id);
 }
+
+// ─── Trend Signals ───────────────────────────────────────────────────────────
+
+export function useTrendSignals() {
+  const [signals, setSignals] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('trend_signals')
+      .select('*')
+      .order('score', { ascending: false });
+    if (data) setSignals(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { signals, loading, refetch: fetch };
+}
+
+// When a signal is set to Pursue, mark cold sparks in the same collection as Hot
+export async function autoHotSparksForSignal(collection) {
+  if (!collection) return;
+  const { data: sparks } = await supabase
+    .from('sparks')
+    .select('id')
+    .eq('collection_tag', collection)
+    .eq('temperature', 'cold')
+    .is('archived_at', null);
+  if (!sparks?.length) return;
+  await supabase
+    .from('sparks')
+    .update({
+      temperature: 'hot',
+      trend_signal_reason: 'Trend signal: Pursue',
+      updated_at: new Date().toISOString(),
+    })
+    .in('id', sparks.map(s => s.id));
+}
