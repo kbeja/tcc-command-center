@@ -355,6 +355,7 @@ export default function ProductWorkspace() {
   const [ecosystem, setEcosystem] = useState('');
   const [emotionalTrigger, setEmotionalTrigger] = useState('');
   const [niche, setNiche] = useState('');
+  const [printifyCost, setPrintifyCost] = useState('');
   const [noteSaved, setNoteSaved] = useState(false);
   const [stageSaved, setStageSaved] = useState(false);
   const [fieldSaved, setFieldSaved] = useState('');
@@ -368,6 +369,7 @@ export default function ProductWorkspace() {
       setEcosystem(product.ecosystem_primary || '');
       setEmotionalTrigger(product.emotional_trigger || '');
       setNiche(product.niche || '');
+      setPrintifyCost(product.printify_cost != null ? String(product.printify_cost) : '');
     }
   }, [product?.id]);
 
@@ -496,6 +498,20 @@ export default function ProductWorkspace() {
               onChange={e => setNiche(e.target.value)}
               onBlur={() => handleFieldBlur('niche', niche)}
               placeholder="e.g. Camp Mom, Mom Humor, 90s Nostalgia"
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">
+              Printify Cost ($) {fieldSaved === 'printify_cost' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={printifyCost}
+              onChange={e => setPrintifyCost(e.target.value)}
+              onBlur={() => handleFieldBlur('printify_cost', printifyCost ? parseFloat(printifyCost) : null)}
+              placeholder="e.g. 12.50"
             />
           </div>
         </div>

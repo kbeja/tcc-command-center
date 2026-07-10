@@ -25,6 +25,10 @@ export default function Nav({ workshopCount }) {
         <span>Workshop</span>
         {workshopCount > 0 && <span className="nav-badge">{workshopCount}</span>}
       </NavLink>
+      <NavLink to="/analytics" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+        <span className="nav-icon">📊</span>
+        <span>Analytics</span>
+      </NavLink>
     </nav>
   );
 }
