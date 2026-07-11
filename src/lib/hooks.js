@@ -199,6 +199,7 @@ export async function archiveSpark(id) {
 
 // ─── Collections ─────────────────────────────────────────────────────────────
 
+// Returns just names — used by dropdowns throughout the app
 export function useCollections() {
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -206,7 +207,8 @@ export function useCollections() {
   const fetch = useCallback(async () => {
     const { data } = await supabase
       .from('collections')
-      .select('*')
+      .select('name')
+      .neq('status', 'archived')
       .order('name', { ascending: true });
     if (data) setCollections(data.map(c => c.name));
     setLoading(false);
@@ -216,10 +218,38 @@ export function useCollections() {
   return { collections, loading, refetch: fetch };
 }
 
+// Returns full collection objects — used by Collections page
+export function useCollectionObjects() {
+  const [collections, setCollections] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('collections')
+      .select('*')
+      .order('name', { ascending: true });
+    if (data) setCollections(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { collections, loading, refetch: fetch };
+}
+
+export async function updateCollection(id, updates) {
+  const { data, error } = await supabase
+    .from('collections')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
 export async function createCollection(name) {
   const { data, error } = await supabase
     .from('collections')
-    .insert({ name })
+    .insert({ name, status: 'active', priority: 'supporting', created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .select()
     .single();
   return { data, error };

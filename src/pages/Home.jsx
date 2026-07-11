@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProducts, useWorkshopItems, useSparks, useTrendSignals, getNeedsAttention, getPickUpProduct } from '../lib/hooks';
+import { useProducts, useWorkshopItems, useSparks, useTrendSignals, useCollectionObjects, getNeedsAttention, getPickUpProduct } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
 import { getNextReviewDates, daysBetween, today, seasonalWindows } from '../data/seasons';
 import ProductCard from '../components/ProductCard';
@@ -36,6 +36,7 @@ export default function Home() {
   const { items: workshopItems } = useWorkshopItems();
   const { sparks, refetch: refetchSparks } = useSparks();
   const { signals } = useTrendSignals();
+  const { collections: collectionObjects } = useCollectionObjects();
 
   const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
   const pickUp = getPickUpProduct(active);
@@ -50,6 +51,12 @@ export default function Home() {
   const pipelineCollections = new Set(active.map(p => p.collection).filter(Boolean));
   const trendAlerts = signals.filter(s =>
     s.status === 'pursue' && s.collection && !pipelineCollections.has(s.collection)
+  );
+
+  // Priority 1 collections with no products in pipeline
+  const p1WithNoProducts = collectionObjects.filter(c =>
+    c.priority === 'priority_1' && c.status !== 'archived' &&
+    !products.some(p => p.collection === c.name && !['Killed', 'Paused'].includes(p.stage))
   );
 
   // Watch signals with revisit_date within 7 days
@@ -96,12 +103,20 @@ export default function Home() {
       </Section>
 
       {/* Needs Attention */}
-      <Section icon="🔴" title="Needs Attention" badge={needsAttn.length + trendAlerts.length}>
-        {needsAttn.length === 0 && trendAlerts.length === 0 ? (
+      <Section icon="🔴" title="Needs Attention" badge={needsAttn.length + trendAlerts.length + p1WithNoProducts.length}>
+        {needsAttn.length === 0 && trendAlerts.length === 0 && p1WithNoProducts.length === 0 ? (
           <div style={{ fontSize: '0.82rem', color: 'var(--charcoal-soft)' }}>Nothing needs attention right now.</div>
         ) : (
           <>
             {needsAttn.map(p => <ProductCard key={p.id} product={p} alert />)}
+            {p1WithNoProducts.map(c => (
+              <div key={c.id} style={{ border: '1px solid rgba(43,41,38,0.12)', borderRadius: 2, padding: '12px 14px', marginBottom: 8, background: 'var(--warm-white)' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Priority 1 — No products yet</div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 4 }}>{c.name}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>{c.parent_chapter} · 0 products in pipeline</div>
+                <button className="btn btn-sm btn-ghost" onClick={() => navigate('/sparks')}>Activate a spark →</button>
+              </div>
+            ))}
             {trendAlerts.map(s => (
               <div key={s.id} style={{ background: 'rgba(124,175,138,0.1)', border: '1px solid var(--success)', borderRadius: 2, padding: '12px 14px', marginBottom: 8 }}>
                 <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2d6b3c', marginBottom: 4 }}>🟢 Trend Signal — Pursue</div>

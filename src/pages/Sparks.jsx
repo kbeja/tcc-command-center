@@ -1,13 +1,18 @@
-import { useState } from 'react';
-import { useSparks, updateSpark, archiveSpark, useCollections } from '../lib/hooks';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObjects } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
 
 export default function Sparks() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { sparks, loading, refetch } = useSparks();
   const { collections } = useCollections();
+  const { collections: collectionObjects } = useCollectionObjects();
   const [search, setSearch] = useState('');
-  const [collectionFilter, setCollectionFilter] = useState('');
+  const [collectionFilter, setCollectionFilter] = useState(searchParams.get('collection') || '');
+  const [specificCollection, setSpecificCollection] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState(new Set());
@@ -17,9 +22,15 @@ export default function Sparks() {
   const cold = sparks.filter(s => s.temperature === 'cold').filter(s => {
     const matchSearch = !search || s.content.toLowerCase().includes(search.toLowerCase());
     const matchColl = !collectionFilter || s.collection_tag === collectionFilter;
+    const matchSpecific = !specificCollection || s.collection_tag === specificCollection;
     const matchType = !typeFilter || (s.idea_type || 'Product Idea') === typeFilter;
-    return matchSearch && matchColl && matchType;
+    return matchSearch && matchColl && matchSpecific && matchType;
   });
+
+  // Collections within the current chapter filter for sub-filter
+  const collectionsInChapter = collectionFilter
+    ? collectionObjects.filter(c => c.parent_chapter === collectionFilter || c.name === collectionFilter)
+    : [];
 
   function toggleSelect(id) {
     setSelected(prev => {
@@ -130,10 +141,16 @@ export default function Sparks() {
             onChange={e => setSearch(e.target.value)}
             style={{ flex: 1, minWidth: 160 }}
           />
-          <select value={collectionFilter} onChange={e => setCollectionFilter(e.target.value)} style={{ width: 'auto' }}>
+          <select value={collectionFilter} onChange={e => { setCollectionFilter(e.target.value); setSpecificCollection(''); }} style={{ width: 'auto' }}>
             <option value="">All collections</option>
             {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          {collectionsInChapter.length > 1 && (
+            <select value={specificCollection} onChange={e => setSpecificCollection(e.target.value)} style={{ width: 'auto' }}>
+              <option value="">All in chapter</option>
+              {collectionsInChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          )}
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All types</option>
             <option value="Product Idea">Product Idea</option>

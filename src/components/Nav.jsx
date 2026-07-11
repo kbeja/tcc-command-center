@@ -33,6 +33,10 @@ export default function Nav({ workshopCount }) {
         <span className="nav-icon">📡</span>
         <span>Trends</span>
       </NavLink>
+      <NavLink to="/collections" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+        <span className="nav-icon">📚</span>
+        <span>Collections</span>
+      </NavLink>
     </nav>
   );
 }

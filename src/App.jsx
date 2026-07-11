@@ -10,6 +10,8 @@ import Research from './pages/Research';
 import Workshop from './pages/Workshop';
 import Analytics from './pages/Analytics';
 import Trends from './pages/Trends';
+import Collections from './pages/Collections';
+import CollectionDetail from './pages/CollectionDetail';
 import './styles/global.css';
 
 function AppInner() {
@@ -26,6 +28,8 @@ function AppInner() {
         <Route path="/workshop" element={<Workshop />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/trends" element={<Trends />} />
+        <Route path="/collections" element={<Collections />} />
+        <Route path="/collections/:name" element={<CollectionDetail />} />
       </Routes>
       <CaptureButton />
     </>
