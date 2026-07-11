@@ -266,9 +266,41 @@ function renderUpdateBody(u, editing, setEditing) {
 
 // ─── Updates Tab ─────────────────────────────────────────────────────────────
 
+function buildDiscussPrompt(u, playbookName, playbookSections) {
+  const section = playbookSections?.find(s => s.section_key === u.section_key);
+  let body;
+  try { body = JSON.parse(u.text); } catch { body = null; }
+
+  const lines = ['TCC Knowledge Base — Review Finding', ''];
+  if (u.source) lines.push(`Source: ${u.source}`, '');
+
+  if (body && !u.playbook_slug) {
+    if (body.summary) lines.push(`Finding: ${body.summary}`, '');
+    if (body.key_findings?.length) {
+      lines.push('Key findings:');
+      body.key_findings.forEach(f => lines.push(`- ${f}`));
+      lines.push('');
+    }
+  } else if (u.text) {
+    lines.push(`Finding: ${u.text}`, '');
+  }
+
+  if (u.playbook_slug) {
+    lines.push(`This may affect: ${playbookName} → ${u.section_key}`, '');
+    if (section?.body) lines.push(`Current standard:`, section.body, '');
+    lines.push(`Question: Should this update the "${u.section_key}" standard in the ${playbookName} playbook? If yes, propose the exact new wording to replace the current standard.`);
+  } else {
+    lines.push('Question: Based on these findings, are there any TCC standards that should be updated? If yes, identify which playbook and section, and propose the exact new wording.');
+  }
+
+  return lines.join('\n');
+}
+
 function UpdatesTab({ playbooks, updates = [], refetch }) {
+  const { playbooks: fullPlaybooks } = usePlaybooks();
   const [editing, setEditing] = useState({});
   const [confirming, setConfirming] = useState({});
+  const [copied, setCopied] = useState({});
 
   useEffect(() => { refetch?.(); }, []);
 
@@ -299,6 +331,26 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
     setTimeout(() => { setConfirming(prev => { const n = { ...prev }; delete n[id]; return n; }); refetch(); }, 1500);
   }
 
+  async function handleCopyPrompt(u) {
+    const pb = fullPlaybooks.find(p => p.slug === u.playbook_slug);
+    const prompt = buildDiscussPrompt(u, pb?.title || u.playbook_slug, pb?.playbook_sections);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(prev => ({ ...prev, [u.id]: true }));
+      setTimeout(() => setCopied(prev => { const n = { ...prev }; delete n[u.id]; return n; }), 2000);
+    } catch {
+      // Fallback for browsers that block clipboard
+      const ta = document.createElement('textarea');
+      ta.value = prompt;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(prev => ({ ...prev, [u.id]: true }));
+      setTimeout(() => setCopied(prev => { const n = { ...prev }; delete n[u.id]; return n; }), 2000);
+    }
+  }
+
   if (updates.length === 0) return <div className="empty-state"><p>No pending updates.</p></div>;
 
   return (
@@ -322,6 +374,15 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
             {u.playbook_slug ? 'Proposed update:' : 'Claude analysis:'}
           </div>
           {renderUpdateBody(u, editing, setEditing)}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => handleCopyPrompt(u)}
+              style={{ color: 'var(--dusty-rose)' }}
+            >
+              {copied[u.id] ? '✓ Copied!' : '💬 Copy prompt →'}
+            </button>
+          </div>
           {confirming[u.id] ? (
             <span className="inline-confirm">✓ {confirming[u.id] === 'approved' ? 'Approved' : 'Rejected'}</span>
           ) : (
