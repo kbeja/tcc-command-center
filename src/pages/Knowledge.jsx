@@ -251,13 +251,11 @@ function renderUpdateBody(u, editing, setEditing) {
 
 // ─── Updates Tab ─────────────────────────────────────────────────────────────
 
-function UpdatesTab({ playbooks }) {
-  const { updates, loading, refetch } = usePendingUpdates();
+function UpdatesTab({ playbooks, updates = [], refetch }) {
   const [editing, setEditing] = useState({});
   const [confirming, setConfirming] = useState({});
 
-  // Refetch when tab becomes visible
-  useEffect(() => { refetch(); }, []);
+  useEffect(() => { refetch?.(); }, []);
 
   function getPlaybookName(slug) {
     return playbooks.find(p => p.slug === slug)?.title || slug;
@@ -286,7 +284,6 @@ function UpdatesTab({ playbooks }) {
     setTimeout(() => { setConfirming(prev => { const n = { ...prev }; delete n[id]; return n; }); refetch(); }, 1500);
   }
 
-  if (loading) return <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>;
   if (updates.length === 0) return <div className="empty-state"><p>No pending updates.</p></div>;
 
   return (
@@ -574,12 +571,12 @@ function ProvenResultsTab() {
 
 export default function Knowledge() {
   const [activeTab, setActiveTab] = useState('Inbox');
-  const [pendingCount, setPendingCount] = useState(0);
   const { playbooks, loading: pbLoading, refetch: refetchPlaybooks } = usePlaybooks();
-  const { updates } = usePendingUpdates();
+  const { updates, refetch: refetchUpdates } = usePendingUpdates();
 
   useEffect(() => { runCodexMigrationIfNeeded(); }, []);
-  useEffect(() => { setPendingCount(updates.length); }, [updates]);
+
+  const pendingCount = updates.length;
 
   return (
     <div className="page">
@@ -620,10 +617,10 @@ export default function Knowledge() {
 
       {/* Tab content */}
       {activeTab === 'Inbox' && (
-        <InboxTab onNewUpdate={() => setPendingCount(c => c + 1)} />
+        <InboxTab onNewUpdate={refetchUpdates} />
       )}
       {activeTab === 'Updates' && (
-        <UpdatesTab playbooks={playbooks} />
+        <UpdatesTab playbooks={playbooks} updates={updates} refetch={refetchUpdates} />
       )}
       {activeTab === 'Playbooks' && (
         pbLoading

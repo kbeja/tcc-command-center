@@ -1,7 +1,9 @@
+const JSON_RULE = `\n\nCRITICAL: You must ALWAYS return valid JSON only. No explanations, no markdown, no conversational text. If you cannot extract information, return the JSON structure with empty arrays and a summary explaining what was missing. Never break out of JSON format for any reason.`;
+
 const SYSTEM_PROMPTS = {
   session_summary: `You are processing a TCC (The Current Chapter) session summary. Extract structured data and identify potential playbook updates.
 
-Return a JSON object with this exact structure:
+Return a JSON object with this exact structure:${JSON_RULE}
 {
   "sparks": [{ "content": "...", "collection_tag": "..." }],
   "stage_updates": [{ "product_name": "...", "new_stage": "...", "notes": "..." }],
@@ -18,36 +20,37 @@ For playbook_updates, only include if the session contains a clear standard chan
 
 Extract key findings relevant to TCC product strategy, SEO, design, or market trends. Identify if anything updates existing TCC standards.
 
-Return a JSON object:
+Return ONLY this JSON structure — no other text:
 {
-  "summary": "...",
-  "key_findings": ["..."],
+  "summary": "one sentence summary of what was analyzed",
+  "key_findings": ["finding 1", "finding 2"],
   "playbook_updates": [{ "playbook_slug": "...", "section_key": "...", "proposed_change": "...", "reason": "..." }],
-  "sparks": [{ "content": "...", "collection_tag": "..." }]
+  "sparks": [{ "content": "product idea", "collection_tag": "collection name or empty string" }]
 }
 
-playbook_slug options: product-research, design-standards, listing-photos, seo-standards, pinterest-standards, etsy-ads, ai-workflows`,
+playbook_slug options: product-research, design-standards, listing-photos, seo-standards, pinterest-standards, etsy-ads, ai-workflows
+If no transcript was available, set summary to "No transcript available" and return empty arrays.${JSON_RULE}`,
 
   cowork_paste: `You are processing a Cowork output paste for TCC (The Current Chapter). Cowork handles trend sweeps, research automation, and workflow outputs.
 
-Return a JSON object:
+Return ONLY this JSON — no other text:
 {
   "type": "trend_update|research_results|workflow_output",
   "inbox_items": [{ "input_type": "...", "content": "...", "tags": ["..."], "collection_tag": "..." }],
   "experiments": [{ "hypothesis": "...", "metric": "...", "timeline_days": 14, "collection": "..." }],
   "playbook_updates": [{ "playbook_slug": "...", "section_key": "...", "proposed_change": "...", "reason": "..." }]
-}`,
+}${JSON_RULE}`,
 
   manual_note: `You are classifying and routing a manual note for TCC (The Current Chapter).
 
-Return a JSON object:
+Return ONLY this JSON — no other text:
 {
   "classification": "spark|decision|research|standard_update|observation",
   "collection_tag": "...",
   "playbook_updates": [{ "playbook_slug": "...", "section_key": "...", "proposed_change": "...", "reason": "..." }],
   "sparks": [{ "content": "...", "collection_tag": "..." }],
   "summary": "..."
-}`,
+}${JSON_RULE}`,
 };
 
 // ─── YouTube transcript fetcher ───────────────────────────────────────────────
