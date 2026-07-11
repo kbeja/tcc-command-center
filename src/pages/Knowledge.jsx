@@ -25,7 +25,8 @@ const PLAYBOOK_ORDER = [
 // ─── Inbox Tab ────────────────────────────────────────────────────────────────
 
 function InboxTab({ onNewUpdate }) {
-  const { items, loading, refetch } = useKnowledgeInbox('pending');
+  // Fetch all non-dismissed items so processed items stay visible
+  const { items, loading, refetch } = useKnowledgeInbox('all');
   const [inputType, setInputType] = useState('session_summary');
   const [content, setContent] = useState('');
   const [adding, setAdding] = useState(false);
@@ -33,6 +34,9 @@ function InboxTab({ onNewUpdate }) {
   const [processResult, setProcessResult] = useState({});
 
   const typeInfo = INPUT_TYPES.find(t => t.key === inputType);
+
+  const pendingItems = items.filter(i => i.status === 'pending');
+  const processedItems = items.filter(i => i.status === 'processed');
 
   async function handleAdd() {
     if (!content.trim()) return;
@@ -46,28 +50,39 @@ function InboxTab({ onNewUpdate }) {
   async function handleProcess(item) {
     setProcessing(item.id);
     try {
-      const { parsed } = await processWithClaude(item.input_type, item.content);
-      if (parsed) {
-        setProcessResult(prev => ({ ...prev, [item.id]: parsed }));
-        await updateInboxItem(item.id, { status: 'processed', processed_at: new Date().toISOString() });
+      const { parsed, raw } = await processWithClaude(item.input_type, item.content);
+      const result = parsed || { raw_only: true, raw };
+      setProcessResult(prev => ({ ...prev, [item.id]: result }));
+      await updateInboxItem(item.id, { status: 'processed', processed_at: new Date().toISOString() });
 
-        // Auto-create pending updates from playbook_updates
-        if (parsed.playbook_updates?.length) {
-          for (const pu of parsed.playbook_updates) {
-            await createPendingUpdate({
-              source_type: item.input_type,
-              source_id: item.id,
-              playbook_slug: pu.playbook_slug,
-              section_key: pu.section_key,
-              proposed_body: pu.proposed_change,
-              reason: pu.reason,
-              status: 'pending',
-            });
-          }
-          onNewUpdate?.();
+      // Create a pending update for every processed item so it appears in Updates tab
+      const updates = parsed?.playbook_updates || [];
+      if (updates.length) {
+        for (const pu of updates) {
+          await createPendingUpdate({
+            source_type: item.input_type,
+            source_id: item.id,
+            playbook_slug: pu.playbook_slug,
+            section_key: pu.section_key,
+            proposed_body: pu.proposed_change,
+            reason: pu.reason,
+            status: 'pending',
+          });
         }
-        await refetch();
+      } else {
+        // Even with no playbook changes, create a review item so results are visible in Updates
+        await createPendingUpdate({
+          source_type: item.input_type,
+          source_id: item.id,
+          playbook_slug: null,
+          section_key: null,
+          proposed_body: JSON.stringify(parsed || raw, null, 2),
+          reason: 'No specific playbook update identified — review for manual action',
+          status: 'pending',
+        });
       }
+      onNewUpdate?.();
+      await refetch();
     } catch (err) {
       setProcessResult(prev => ({ ...prev, [item.id]: { error: err.message } }));
     }
@@ -115,10 +130,11 @@ function InboxTab({ onNewUpdate }) {
 
       {/* Pending items */}
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
-      {!loading && items.length === 0 && (
+      {!loading && pendingItems.length === 0 && processedItems.length === 0 && (
         <div className="empty-state"><p>Inbox is empty.</p></div>
       )}
-      {items.map(item => {
+
+      {pendingItems.map(item => {
         const result = processResult[item.id];
         return (
           <div key={item.id} className="card" style={{ marginBottom: 10 }}>
@@ -130,32 +146,16 @@ function InboxTab({ onNewUpdate }) {
                 {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--charcoal)', marginBottom: 10, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'hidden', position: 'relative' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--charcoal)', marginBottom: 10, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'hidden' }}>
               {item.content.slice(0, 300)}{item.content.length > 300 ? '…' : ''}
             </div>
-
-            {result && !result.error && (
-              <div style={{ background: 'var(--charcoal-faint)', borderRadius: 4, padding: '10px 12px', marginBottom: 10, fontSize: '0.75rem' }}>
-                {result.playbook_updates?.length > 0 && (
-                  <div style={{ marginBottom: 6 }}>
-                    <strong>{result.playbook_updates.length} playbook update{result.playbook_updates.length !== 1 ? 's' : ''}</strong> queued for review
-                  </div>
-                )}
-                {result.sparks?.length > 0 && <div>{result.sparks.length} spark{result.sparks.length !== 1 ? 's' : ''} identified</div>}
-                {result.decisions?.length > 0 && <div>{result.decisions.length} decision{result.decisions.length !== 1 ? 's' : ''} captured</div>}
-                {result.stage_updates?.length > 0 && <div>{result.stage_updates.length} stage update{result.stage_updates.length !== 1 ? 's' : ''} noted</div>}
-              </div>
-            )}
             {result?.error && (
               <div style={{ color: 'var(--alert)', fontSize: '0.75rem', marginBottom: 10 }}>Error: {result.error}</div>
             )}
-
             <div style={{ display: 'flex', gap: 8 }}>
-              {!result && (
-                <button className="btn btn-primary btn-sm" onClick={() => handleProcess(item)} disabled={processing === item.id}>
-                  {processing === item.id ? 'Processing…' : 'Process with Claude →'}
-                </button>
-              )}
+              <button className="btn btn-primary btn-sm" onClick={() => handleProcess(item)} disabled={processing === item.id}>
+                {processing === item.id ? 'Processing…' : 'Process with Claude →'}
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={() => handleDismiss(item.id)} style={{ color: 'var(--charcoal-soft)' }}>
                 Dismiss
               </button>
@@ -163,6 +163,23 @@ function InboxTab({ onNewUpdate }) {
           </div>
         );
       })}
+
+      {/* Processed items */}
+      {processedItems.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="section-label" style={{ marginBottom: 8 }}>Processed — results in Updates tab</div>
+          {processedItems.map(item => (
+            <div key={item.id} className="card" style={{ marginBottom: 8, opacity: 0.6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+                  {INPUT_TYPES.find(t => t.key === item.input_type)?.label || item.input_type} · {item.content.slice(0, 60)}…
+                </span>
+                <span style={{ fontSize: '0.65rem', color: 'var(--success)', fontWeight: 600 }}>✓ Done</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -174,6 +191,9 @@ function UpdatesTab({ playbooks }) {
   const [editing, setEditing] = useState({});
   const [confirming, setConfirming] = useState({});
 
+  // Refetch when tab becomes visible
+  useEffect(() => { refetch(); }, []);
+
   function getPlaybookName(slug) {
     return playbooks.find(p => p.slug === slug)?.title || slug;
   }
@@ -183,10 +203,14 @@ function UpdatesTab({ playbooks }) {
   }
 
   async function handleApprove(update) {
-    const body = editing[update.id] ?? update.proposed_body;
-    const pb = playbooks.find(p => p.slug === update.playbook_slug);
-    const pbId = pb?.id;
-    await approvePendingUpdate({ ...update, playbook_id: pbId }, body);
+    if (update.playbook_slug) {
+      const body = editing[update.id] ?? update.proposed_body;
+      const pb = playbooks.find(p => p.slug === update.playbook_slug);
+      await approvePendingUpdate({ ...update, playbook_id: pb?.id }, body);
+    } else {
+      // Review-only item — just mark approved
+      await rejectPendingUpdate(update.id); // reuses the "close" logic without playbook write
+    }
     setConfirming(prev => ({ ...prev, [update.id]: 'approved' }));
     setTimeout(() => { setConfirming(prev => { const n = { ...prev }; delete n[update.id]; return n; }); refetch(); }, 1500);
   }
@@ -205,7 +229,7 @@ function UpdatesTab({ playbooks }) {
       {updates.map(u => (
         <div key={u.id} className="card" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 6 }}>
-            {getPlaybookName(u.playbook_slug)} → {u.section_key}
+            {u.playbook_slug ? `${getPlaybookName(u.playbook_slug)} → ${u.section_key}` : `Review — ${u.source_type || 'inbox item'}`}
           </div>
           {u.reason && (
             <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8, fontStyle: 'italic' }}>
