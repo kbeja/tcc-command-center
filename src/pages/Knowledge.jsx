@@ -184,6 +184,71 @@ function InboxTab({ onNewUpdate }) {
   );
 }
 
+// ─── Updates Tab helpers ──────────────────────────────────────────────────────
+
+function renderUpdateBody(u, editing, setEditing) {
+  const raw = editing[u.id] ?? u.text ?? '';
+
+  // Try to parse as JSON and render nicely
+  if (!u.playbook_slug) {
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return (
+        <div style={{ fontSize: '0.8rem', marginBottom: 10 }}>
+          {parsed.summary && (
+            <div style={{ marginBottom: 8 }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Summary</div>
+              <div style={{ color: 'var(--charcoal)' }}>{parsed.summary}</div>
+            </div>
+          )}
+          {parsed.key_findings?.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Key Findings</div>
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                {parsed.key_findings.map((f, i) => <li key={i} style={{ marginBottom: 4 }}>{f}</li>)}
+              </ul>
+            </div>
+          )}
+          {parsed.sparks?.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Sparks Identified</div>
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                {parsed.sparks.map((s, i) => <li key={i}>{s.content}{s.collection_tag ? ` — ${s.collection_tag}` : ''}</li>)}
+              </ul>
+            </div>
+          )}
+          {parsed.playbook_updates?.length > 0 && (
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Playbook Updates Suggested</div>
+              {parsed.playbook_updates.map((pu, i) => (
+                <div key={i} style={{ background: 'var(--rose-faint)', borderRadius: 4, padding: '8px 10px', marginBottom: 6, fontSize: '0.75rem' }}>
+                  <strong>{pu.playbook_slug} → {pu.section_key}</strong>: {pu.proposed_change}
+                </div>
+              ))}
+            </div>
+          )}
+          {!parsed.summary && !parsed.key_findings?.length && (
+            <div style={{ color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
+              No findings extracted. The video may not have had accessible captions — try pasting the transcript text directly.
+            </div>
+          )}
+        </div>
+      );
+    } catch {
+      // Not JSON — show as plain text
+    }
+  }
+
+  return (
+    <textarea
+      value={raw}
+      onChange={e => setEditing(prev => ({ ...prev, [u.id]: e.target.value }))}
+      rows={5}
+      style={{ width: '100%', marginBottom: 10, fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}
+    />
+  );
+}
+
 // ─── Updates Tab ─────────────────────────────────────────────────────────────
 
 function UpdatesTab({ playbooks }) {
@@ -236,13 +301,10 @@ function UpdatesTab({ playbooks }) {
               "{u.reason}"
             </div>
           )}
-          <div className="section-label" style={{ marginBottom: 4 }}>Proposed update:</div>
-          <textarea
-            value={editing[u.id] ?? u.text ?? ''}
-            onChange={e => setEditing(prev => ({ ...prev, [u.id]: e.target.value }))}
-            rows={4}
-            style={{ width: '100%', marginBottom: 10, fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}
-          />
+          <div className="section-label" style={{ marginBottom: 4 }}>
+            {u.playbook_slug ? 'Proposed update:' : 'Claude analysis:'}
+          </div>
+          {renderUpdateBody(u, editing, setEditing)}
           {confirming[u.id] ? (
             <span className="inline-confirm">✓ {confirming[u.id] === 'approved' ? 'Approved' : 'Rejected'}</span>
           ) : (
