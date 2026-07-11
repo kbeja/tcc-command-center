@@ -69,12 +69,9 @@ function extractVideoId(url) {
 
 async function fetchYouTubeTranscript(videoId) {
   try {
-    const res = await fetch(
-      `${process.env.URL || 'https://tcc-command-center.netlify.app'}/.netlify/functions/youtube-transcript?videoId=${videoId}`
-    );
-    if (!res.ok) return { transcript: null };
-    const text = await res.text();
-    if (text.startsWith('No transcript')) return { transcript: null };
+    const { YoutubeTranscript } = require('youtube-transcript');
+    const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
+    const text = transcript.map(t => t.text).join(' ').replace(/\s+/g, ' ').trim();
     return { transcript: text.slice(0, 8000) };
   } catch {
     return { transcript: null };
