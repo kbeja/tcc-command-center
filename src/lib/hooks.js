@@ -361,6 +361,183 @@ export function useTrendSignals() {
   return { signals, loading, refetch: fetch };
 }
 
+// ─── Knowledge Base ──────────────────────────────────────────────────────────
+
+export function useKnowledgeInbox(statusFilter = 'pending') {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('knowledge_inbox').select('*').order('created_at', { ascending: false });
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+    const { data } = await q;
+    if (data) setItems(data);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { items, loading, refetch: fetch };
+}
+
+export async function createInboxItem(fields) {
+  return supabase.from('knowledge_inbox').insert([{ ...fields }]).select().single();
+}
+
+export async function updateInboxItem(id, updates) {
+  return supabase.from('knowledge_inbox').update({ ...updates }).eq('id', id);
+}
+
+export function usePlaybooks() {
+  const [playbooks, setPlaybooks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('playbooks')
+      .select('*, playbook_sections(*)')
+      .order('title');
+    if (data) setPlaybooks(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { playbooks, loading, refetch: fetch };
+}
+
+export async function updatePlaybookSection(id, body) {
+  return supabase
+    .from('playbook_sections')
+    .update({ body, updated_at: new Date().toISOString() })
+    .eq('id', id);
+}
+
+export async function incrementPlaybookVersion(playbookId) {
+  const { data } = await supabase.from('playbooks').select('current_version').eq('id', playbookId).single();
+  const next = (data?.current_version || 1) + 1;
+  return supabase.from('playbooks').update({ current_version: next, updated_at: new Date().toISOString() }).eq('id', playbookId);
+}
+
+export function usePendingUpdates() {
+  const [updates, setUpdates] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('pending_updates')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (data) setUpdates(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { updates, loading, refetch: fetch };
+}
+
+export async function createPendingUpdate(fields) {
+  return supabase.from('pending_updates').insert([{ ...fields }]).select().single();
+}
+
+export async function approvePendingUpdate(update, newBody) {
+  const { data: section } = await supabase
+    .from('playbook_sections')
+    .select('id, body, version, playbook_id')
+    .eq('section_key', update.section_key)
+    .eq('playbook_id', update.playbook_id)
+    .single();
+
+  if (section) {
+    await supabase.from('playbook_history').insert([{
+      playbook_section_id: section.id,
+      body: section.body,
+      version: section.version,
+      changed_by: 'user',
+      changed_at: new Date().toISOString(),
+    }]);
+    await supabase.from('playbook_sections').update({
+      body: newBody || update.proposed_body,
+      version: (section.version || 1) + 1,
+      updated_at: new Date().toISOString(),
+    }).eq('id', section.id);
+    await incrementPlaybookVersion(update.playbook_id || section.playbook_id);
+  }
+
+  return supabase.from('pending_updates').update({
+    status: 'approved',
+    reviewed_at: new Date().toISOString(),
+  }).eq('id', update.id);
+}
+
+export async function rejectPendingUpdate(id) {
+  return supabase.from('pending_updates').update({
+    status: 'rejected',
+    reviewed_at: new Date().toISOString(),
+  }).eq('id', id);
+}
+
+export function useExperiments(statusFilter = 'all') {
+  const [experiments, setExperiments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('experiments').select('*').order('started_at', { ascending: false });
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+    const { data } = await q;
+    if (data) setExperiments(data);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { experiments, loading, refetch: fetch };
+}
+
+export async function createExperiment(fields) {
+  return supabase.from('experiments').insert([{
+    ...fields,
+    status: 'running',
+    started_at: new Date().toISOString(),
+  }]).select().single();
+}
+
+export async function updateExperiment(id, updates) {
+  return supabase.from('experiments').update({ ...updates }).eq('id', id);
+}
+
+export async function closeExperiment(id, result, resultNotes) {
+  return supabase.from('experiments').update({
+    status: result === 'proven' ? 'proven' : 'closed',
+    result,
+    result_notes: resultNotes,
+    closed_at: new Date().toISOString(),
+  }).eq('id', id);
+}
+
+// ─── Codex Migration ─────────────────────────────────────────────────────────
+
+export async function runCodexMigrationIfNeeded() {
+  if (localStorage.getItem('codex_migration_done')) return;
+  const { data: entries } = await supabase.from('codex_entries').select('id').limit(1);
+  if (entries?.length) { localStorage.setItem('codex_migration_done', '1'); return; }
+
+  const { data: decisions } = await supabase.from('workshop_items')
+    .select('*')
+    .eq('type', 'decision')
+    .is('archived_at', null);
+
+  if (decisions?.length) {
+    const mapped = decisions.map(d => ({
+      category: 'decision',
+      title: d.content?.slice(0, 80) || 'Decision',
+      body: d.content,
+      source: 'workshop_migration',
+      created_at: d.created_at,
+    }));
+    await supabase.from('codex_entries').insert(mapped);
+  }
+  localStorage.setItem('codex_migration_done', '1');
+}
+
 // When a signal is set to Pursue, mark cold sparks in the same collection as Hot
 export async function autoHotSparksForSignal(collection) {
   if (!collection) return;
