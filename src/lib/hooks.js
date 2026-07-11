@@ -436,7 +436,17 @@ export function usePendingUpdates() {
 }
 
 export async function createPendingUpdate(fields) {
-  return supabase.from('pending_updates').insert([{ ...fields }]).select().single();
+  const row = {
+    playbook_slug: fields.playbook_slug || null,
+    section_key: fields.section_key || null,
+    section_title: fields.section_title || null,
+    action: fields.action || 'UPDATE',
+    text: fields.proposed_body || fields.text || null,
+    source: fields.source_type || fields.source || null,
+    source_ids: fields.source_id ? [fields.source_id] : (fields.source_ids || null),
+    status: fields.status || 'pending',
+  };
+  return supabase.from('pending_updates').insert([row]).select().single();
 }
 
 export async function approvePendingUpdate(update, newBody) {
@@ -456,7 +466,7 @@ export async function approvePendingUpdate(update, newBody) {
       changed_at: new Date().toISOString(),
     }]);
     await supabase.from('playbook_sections').update({
-      body: newBody || update.proposed_body,
+      body: newBody || update.text,
       version: (section.version || 1) + 1,
       updated_at: new Date().toISOString(),
     }).eq('id', section.id);
@@ -465,14 +475,14 @@ export async function approvePendingUpdate(update, newBody) {
 
   return supabase.from('pending_updates').update({
     status: 'approved',
-    reviewed_at: new Date().toISOString(),
+    resolved_at: new Date().toISOString(),
   }).eq('id', update.id);
 }
 
 export async function rejectPendingUpdate(id) {
   return supabase.from('pending_updates').update({
     status: 'rejected',
-    reviewed_at: new Date().toISOString(),
+    resolved_at: new Date().toISOString(),
   }).eq('id', id);
 }
 

@@ -238,7 +238,7 @@ function UpdatesTab({ playbooks }) {
           )}
           <div className="section-label" style={{ marginBottom: 4 }}>Proposed update:</div>
           <textarea
-            value={editing[u.id] ?? u.proposed_body}
+            value={editing[u.id] ?? u.text ?? ''}
             onChange={e => setEditing(prev => ({ ...prev, [u.id]: e.target.value }))}
             rows={4}
             style={{ width: '100%', marginBottom: 10, fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}
