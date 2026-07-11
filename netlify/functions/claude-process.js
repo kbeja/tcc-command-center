@@ -1,5 +1,3 @@
-const Anthropic = require('@anthropic-ai/sdk');
-
 const SYSTEM_PROMPTS = {
   session_summary: `You are processing a TCC (The Current Chapter) session summary. Extract structured data and identify potential playbook updates.
 
@@ -71,16 +69,23 @@ exports.handler = async (event) => {
   }
 
   try {
-    const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-
-    const message = await client.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: typeof payload === 'string' ? payload : JSON.stringify(payload) }],
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: typeof payload === 'string' ? payload : JSON.stringify(payload) }],
+      }),
     });
 
-    const text = message.content[0]?.text || '';
+    const data = await response.json();
+    const text = data.content?.[0]?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return { statusCode: 200, body: JSON.stringify({ raw: text, parsed: null }) };
