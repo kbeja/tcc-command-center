@@ -29,6 +29,7 @@ function InboxTab({ onNewUpdate }) {
   const { items, loading, refetch } = useKnowledgeInbox('all');
   const [inputType, setInputType] = useState('session_summary');
   const [content, setContent] = useState('');
+  const [source, setSource] = useState('');
   const [adding, setAdding] = useState(false);
   const [processing, setProcessing] = useState(null);
   const [processResult, setProcessResult] = useState({});
@@ -41,8 +42,9 @@ function InboxTab({ onNewUpdate }) {
   async function handleAdd() {
     if (!content.trim()) return;
     setAdding(true);
-    await createInboxItem({ input_type: inputType, content: content.trim(), status: 'pending' });
+    await createInboxItem({ input_type: inputType, content: content.trim(), url_type: source.trim() || null, status: 'pending' });
     setContent('');
+    setSource('');
     await refetch();
     setAdding(false);
   }
@@ -56,12 +58,14 @@ function InboxTab({ onNewUpdate }) {
       await updateInboxItem(item.id, { status: 'processed', processed_at: new Date().toISOString() });
 
       // Create a pending update for every processed item so it appears in Updates tab
+      const itemSource = item.url_type || item.input_type;
       const updates = parsed?.playbook_updates || [];
       if (updates.length) {
         for (const pu of updates) {
           await createPendingUpdate({
             source_type: item.input_type,
             source_id: item.id,
+            source: itemSource,
             playbook_slug: pu.playbook_slug,
             section_key: pu.section_key,
             proposed_body: pu.proposed_change,
@@ -70,10 +74,10 @@ function InboxTab({ onNewUpdate }) {
           });
         }
       } else {
-        // Even with no playbook changes, create a review item so results are visible in Updates
         await createPendingUpdate({
           source_type: item.input_type,
           source_id: item.id,
+          source: itemSource,
           playbook_slug: null,
           section_key: null,
           proposed_body: JSON.stringify(parsed || raw, null, 2),
@@ -116,6 +120,12 @@ function InboxTab({ onNewUpdate }) {
             </button>
           ))}
         </div>
+        <input
+          value={source}
+          onChange={e => setSource(e.target.value)}
+          placeholder="Source — URL, video title, filename, or where this came from (optional)"
+          style={{ width: '100%', marginBottom: 8, fontSize: '0.8rem' }}
+        />
         <textarea
           value={content}
           onChange={e => setContent(e.target.value)}
@@ -138,7 +148,7 @@ function InboxTab({ onNewUpdate }) {
         const result = processResult[item.id];
         return (
           <div key={item.id} className="card" style={{ marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <span style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)' }}>
                 {INPUT_TYPES.find(t => t.key === item.input_type)?.label || item.input_type}
               </span>
@@ -146,6 +156,11 @@ function InboxTab({ onNewUpdate }) {
                 {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
             </div>
+            {item.url_type && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--dusty-rose)', marginBottom: 6, wordBreak: 'break-all' }}>
+                📎 {item.url_type}
+              </div>
+            )}
             <div style={{ fontSize: '0.8rem', color: 'var(--charcoal)', marginBottom: 10, whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'hidden' }}>
               {item.content.slice(0, 300)}{item.content.length > 300 ? '…' : ''}
             </div>
@@ -293,6 +308,11 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
           <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 6 }}>
             {u.playbook_slug ? `${getPlaybookName(u.playbook_slug)} → ${u.section_key}` : `Review — ${u.source_type || 'inbox item'}`}
           </div>
+          {u.source && (
+            <div style={{ fontSize: '0.72rem', color: 'var(--dusty-rose)', marginBottom: 6, wordBreak: 'break-all' }}>
+              📎 {u.source}
+            </div>
+          )}
           {u.reason && (
             <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8, fontStyle: 'italic' }}>
               "{u.reason}"
