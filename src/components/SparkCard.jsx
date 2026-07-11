@@ -23,7 +23,7 @@ export default function SparkCard({ spark, onAction }) {
 
   // Evaluate panel state
   const [evaluating, setEvaluating] = useState(false);
-  const [evalAnswers, setEvalAnswers] = useState({ collection: null, amanda: null, market: null });
+  const [evalAnswers, setEvalAnswers] = useState({ collection: null, market: null, identity: null });
   const [suggestion, setSuggestion] = useState(null);
   const [activating, setActivating] = useState(false);
 
@@ -67,10 +67,10 @@ export default function SparkCard({ spark, onAction }) {
   }
 
   function computeSuggestion(answers) {
-    const { collection: c, amanda: a, market: m } = answers;
-    if (c === 'yes' && a === 'yes' && m === 'yes') return 'activate';
-    if (c === 'no' && a === 'no' && m === 'no') return 'archive';
-    if (c !== null && a !== null && m !== null) return 'hot';
+    const { collection: c, market: m, identity: i } = answers;
+    if (c === 'yes' && m === 'yes' && i === 'yes') return 'activate';
+    if (c === 'no' && m === 'no' && i === 'no') return 'archive';
+    if (c !== null && m !== null && i !== null) return 'hot';
     return null;
   }
 
@@ -176,9 +176,9 @@ export default function SparkCard({ spark, onAction }) {
           <div className="eyebrow" style={{ marginBottom: 10 }}>Quick Eval</div>
 
           {[
-            { key: 'collection', label: 'Fits an existing TCC collection?', opts: ['yes', 'no'] },
-            { key: 'amanda', label: 'Would Amanda buy this?', opts: ['yes', 'no'] },
-            { key: 'market', label: 'Market evidence?', opts: ['yes', 'no', 'unknown'] },
+            { key: 'collection', label: 'Does this fit an existing TCC collection?', opts: ['yes', 'no'] },
+            { key: 'market', label: 'Is there market evidence for this idea?', opts: ['yes', 'no', 'unknown'] },
+            { key: 'identity', label: 'Does this have identity or ecosystem potential — could it support multiple products?', opts: ['yes', 'no'] },
           ].map(({ key, label, opts }) => (
             <div key={key} style={{ marginBottom: 8 }}>
               <div style={{ fontSize: '0.75rem', marginBottom: 4 }}>{label}</div>
@@ -215,7 +215,7 @@ export default function SparkCard({ spark, onAction }) {
                 >
                   {activating ? 'Creating…' : 'Confirm →'}
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setEvaluating(false); setEvalAnswers({ collection: null, amanda: null, market: null }); setSuggestion(null); }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setEvaluating(false); setEvalAnswers({ collection: null, market: null, identity: null }); setSuggestion(null); }}>
                   Cancel
                 </button>
               </div>
@@ -223,7 +223,7 @@ export default function SparkCard({ spark, onAction }) {
           )}
 
           {!suggestion && (
-            <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => { setEvaluating(false); setEvalAnswers({ collection: null, amanda: null, market: null }); }}>
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => { setEvaluating(false); setEvalAnswers({ collection: null, market: null, identity: null }); }}>
               Cancel
             </button>
           )}
