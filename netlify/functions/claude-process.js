@@ -68,51 +68,17 @@ function extractVideoId(url) {
 }
 
 async function fetchYouTubeTranscript(videoId) {
-  // Try youtubetranscript.com API (no auth needed, reliable)
   try {
-    const res = await fetch(`https://youtubetranscript.com/?server_vid2=${videoId}`);
-    const xml = await res.text();
-    if (xml.includes('<text')) {
-      const texts = [...xml.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(m =>
-        m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
-      );
-      return { title: '', author: '', description: '', transcript: texts.join(' ').slice(0, 8000) };
-    }
-  } catch {}
-
-  // Fallback: fetch YouTube page and parse ytInitialPlayerResponse
-  const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  });
-  const html = await pageRes.text();
-
-  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*(?:var |const |let )?(?:yt|window)/s);
-  if (!match) return { title: '', author: '', description: '', transcript: null };
-
-  const playerResponse = JSON.parse(match[1]);
-  const videoDetails = playerResponse?.videoDetails || {};
-  const title = videoDetails.title || '';
-  const author = videoDetails.author || '';
-  const description = (videoDetails.shortDescription || '').slice(0, 500);
-
-  const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  if (!captionTracks?.length) return { title, author, description, transcript: null };
-
-  const track = captionTracks.find(t => t.languageCode === 'en') || captionTracks[0];
-  const captionRes = await fetch(track.baseUrl + '&fmt=json3');
-  const captionData = await captionRes.json();
-
-  const transcript = captionData.events
-    ?.filter(e => e.segs)
-    .map(e => e.segs.map(s => s.utf8).join(''))
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return { title, author, description, transcript: transcript?.slice(0, 8000) || null };
+    const res = await fetch(
+      `${process.env.URL || 'https://tcc-command-center.netlify.app'}/.netlify/functions/youtube-transcript?videoId=${videoId}`
+    );
+    if (!res.ok) return { transcript: null };
+    const text = await res.text();
+    if (text.startsWith('No transcript')) return { transcript: null };
+    return { transcript: text.slice(0, 8000) };
+  } catch {
+    return { transcript: null };
+  }
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
