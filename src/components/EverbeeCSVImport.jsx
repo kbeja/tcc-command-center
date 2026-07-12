@@ -253,31 +253,22 @@ export default function EverbeeCSVImport({ products, onImported }) {
           }
         }
 
-        // Competitors: upsert into competitor_listings
+        // Competitors: batch upsert into competitor_listings
         let competitorAdded = 0, competitorUpdated = 0, whiteSpace = 0;
-        for (const row of preview.competitors) {
-          if (!row.product_link) continue;
-          const { data: existing } = await supabase
+        const validCompetitors = preview.competitors
+          .filter(r => r.product_link)
+          .map(r => ({ ...r, import_context: importContext || null, last_updated_at: now, white_space_flag: true, first_seen_at: now }));
+
+        const CHUNK = 200;
+        for (let i = 0; i < validCompetitors.length; i += CHUNK) {
+          const chunk = validCompetitors.slice(i, i + CHUNK);
+          const { data: upserted, error } = await supabase
             .from('competitor_listings')
-            .select('id')
-            .eq('product_link', row.product_link)
-            .maybeSingle();
-
-          const record = {
-            ...row,
-            import_context: importContext || null,
-            last_updated_at: now,
-            white_space_flag: true, // default — signal matching would clear this
-          };
-
-          if (existing) {
-            await supabase.from('competitor_listings').update(record).eq('id', existing.id);
-            competitorUpdated++;
-          } else {
-            await supabase.from('competitor_listings').insert([{ ...record, first_seen_at: now }]);
-            competitorAdded++;
-            whiteSpace++;
-          }
+            .upsert(chunk, { onConflict: 'product_link', ignoreDuplicates: false })
+            .select('id');
+          if (error) throw new Error(`Upsert failed: ${error.message}`);
+          competitorAdded += chunk.length;
+          whiteSpace += chunk.length;
         }
 
         await supabase.from('import_history').insert({
