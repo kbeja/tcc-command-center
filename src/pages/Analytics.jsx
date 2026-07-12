@@ -112,14 +112,15 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
   if (listings.length === 0) return <div className="empty-state"><p>No competitor data yet. Import an Everbee listing export to get started.</p></div>;
 
   // ── Tag frequency analysis ──
+  const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
   const tagCounts = {};
   for (const l of listings) {
     for (let i = 1; i <= 13; i++) {
-      const tag = l[`tag_${i}`];
-      if (tag && tag.trim()) {
-        const t = tag.trim().toLowerCase();
-        tagCounts[t] = (tagCounts[t] || 0) + 1;
-      }
+      const raw = l[`tag_${i}`];
+      if (!raw) continue;
+      const t = String(raw).trim().toLowerCase();
+      if (!t || JUNK_TAG.test(t)) continue;
+      tagCounts[t] = (tagCounts[t] || 0) + 1;
     }
   }
   const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 15);

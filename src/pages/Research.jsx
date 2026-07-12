@@ -87,7 +87,9 @@ export default function Research() {
   const [adding, setAdding] = useState(false);
 
   // Filter by parent niche first if set
-  const visibleSessions = filterParent
+  const visibleSessions = filterParent === '__none'
+    ? sessions.filter(s => !s.parent_niche)
+    : filterParent
     ? sessions.filter(s => s.parent_niche === filterParent)
     : sessions;
 
