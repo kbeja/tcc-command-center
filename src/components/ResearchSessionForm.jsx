@@ -89,9 +89,12 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
   );
 }
 
-export default function ResearchSessionForm({ defaultCollection, defaultNiche, onSaved, onCancel }) {
+const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+
+export default function ResearchSessionForm({ defaultCollection, defaultNiche, defaultParentNiche, onSaved, onCancel }) {
   const { collections } = useCollections();
   const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
+  const [parentNiche, setParentNiche] = useState(defaultParentNiche || '');
   const [niche, setNiche] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [source, setSource] = useState('Everbee');
@@ -168,7 +171,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, o
         tag_type: k.status,
       }));
     await createResearchSession(
-      { collection, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
+      { collection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
       kwList
     );
     setSaving(false);
@@ -184,15 +187,25 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, o
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div className="form-group">
-          <label className="form-label">Collection</label>
-          <select value={collection} onChange={e => setCollection(e.target.value)}>
-            {collections.map(c => <option key={c} value={c}>{c}</option>)}
+          <label className="form-label">Main Niche</label>
+          <select value={parentNiche} onChange={e => setParentNiche(e.target.value)}>
+            <option value="">— Select main niche —</option>
+            {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div className="form-group">
           <label className="form-label">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="form-group">
+          <label className="form-label">Collection (sub-niche)</label>
+          <select value={collection} onChange={e => setCollection(e.target.value)}>
+            {collections.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="form-group" style={{ visibility: 'hidden' }} />
       </div>
 
       <div className="form-group">

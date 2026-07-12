@@ -18,7 +18,9 @@ For playbook_updates, only include if the session contains a clear standard chan
 
   research_note: `You are processing a TCC (The Current Chapter) research note or video transcript. TCC sells print-on-demand apparel and gifts on Etsy, primarily in the Mom Chapter and Reader Chapter niches.
 
-Extract key findings relevant to TCC product strategy, SEO, design, or market trends. Identify if anything updates existing TCC standards.
+CRITICAL SCOPE RULE: If the input is raw keyword data (lists of keywords with volume, competition, or score numbers), return an empty playbook_updates array and empty sparks array. Keyword scores are raw market data — they cannot support operational mandates, percentage targets, photo quotas, or strategy changes on their own. Do NOT synthesize keyword data into recommendations. Only generate playbook_updates when the input contains explicit human decisions, proven results, or approved standards changes.
+
+Extract key findings relevant to TCC product strategy, SEO, design, or market trends. Only flag playbook updates when the content contains a clear, explicit standard change — not when you are inferring one from data.
 
 Return ONLY this JSON structure — no other text:
 {

@@ -76,21 +76,39 @@ function CollectionsManager({ collections, refetch }) {
   );
 }
 
+const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+
 export default function Research() {
   const [tab, setTab] = useState('sessions');
+  const [filterParent, setFilterParent] = useState('');
   const [filterCollection, setFilterCollection] = useState('');
   const { sessions, loading, refetch } = useResearchSessions(filterCollection || undefined);
   const { collections, refetch: refetchCollections } = useCollections();
   const [adding, setAdding] = useState(false);
 
-  const grouped = sessions.reduce((acc, s) => {
-    const key = s.collection || 'Uncategorized';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(s);
+  // Filter by parent niche first if set
+  const visibleSessions = filterParent
+    ? sessions.filter(s => s.parent_niche === filterParent)
+    : sessions;
+
+  // Group by parent_niche → collection (two-level hierarchy)
+  const hierarchy = visibleSessions.reduce((acc, s) => {
+    const parent = s.parent_niche || 'Uncategorized';
+    const col = s.collection || 'Uncategorized';
+    if (!acc[parent]) acc[parent] = {};
+    if (!acc[parent][col]) acc[parent][col] = [];
+    acc[parent][col].push(s);
     return acc;
   }, {});
 
-  const groupKeys = Object.keys(grouped).sort();
+  // Sort: known niches first, then Uncategorized
+  const parentOrder = [...PARENT_NICHES, 'Uncategorized'];
+  const sortedParents = Object.keys(hierarchy).sort((a, b) => {
+    const ai = parentOrder.indexOf(a), bi = parentOrder.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  const totalSessions = visibleSessions.length;
 
   return (
     <div className="page">
@@ -129,46 +147,86 @@ export default function Research() {
             </div>
           )}
 
-          <div style={{ marginBottom: 20, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {/* Parent niche filter bar */}
+          <div style={{ marginBottom: 16, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
-              className={`btn btn-sm ${!filterCollection ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setFilterCollection('')}
+              className={`btn btn-sm ${!filterParent && !filterCollection ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => { setFilterParent(''); setFilterCollection(''); }}
             >
-              All
+              All ({sessions.length})
             </button>
-            {collections.map(c => (
+            {PARENT_NICHES.map(p => {
+              const count = sessions.filter(s => s.parent_niche === p).length;
+              if (!count) return null;
+              return (
+                <button
+                  key={p}
+                  className={`btn btn-sm ${filterParent === p ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => { setFilterParent(filterParent === p ? '' : p); setFilterCollection(''); }}
+                >
+                  {p} ({count})
+                </button>
+              );
+            })}
+            {sessions.some(s => !s.parent_niche) && (
               <button
-                key={c}
-                className={`btn btn-sm ${filterCollection === c ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setFilterCollection(c)}
+                className={`btn btn-sm ${filterParent === '__none' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => { setFilterParent(filterParent === '__none' ? '' : '__none'); setFilterCollection(''); }}
               >
-                {c}
+                Uncategorized ({sessions.filter(s => !s.parent_niche).length})
               </button>
-            ))}
+            )}
           </div>
 
           {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
-          {!loading && sessions.length === 0 && (
+          {!loading && totalSessions === 0 && (
             <div className="empty-state">
               <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>🔬</div>
               <p>No research sessions yet. Add one to start tracking keyword research by collection.</p>
             </div>
           )}
 
-          {groupKeys.map(col => (
-            <div key={col} style={{ marginBottom: 28 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                <div className="section-label" style={{ margin: 0 }}>{col}</div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
-                  {grouped[col].length} session{grouped[col].length !== 1 ? 's' : ''}
-                </span>
+          {sortedParents.map(parent => {
+            const cols = hierarchy[parent];
+            const parentTotal = Object.values(cols).flat().length;
+            return (
+              <div key={parent} style={{ marginBottom: 32 }}>
+                {/* Parent niche header */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+                  paddingBottom: 8, borderBottom: '2px solid rgba(43,41,38,0.12)',
+                }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem' }}>{parent}</div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
+                    {parentTotal} session{parentTotal !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {/* Sub-niches */}
+                {Object.keys(cols).sort().map(col => (
+                  <div key={col} style={{ marginBottom: 20, paddingLeft: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: 'var(--dusty-rose)', flexShrink: 0,
+                      }} />
+                      <div className="section-label" style={{ margin: 0 }}>{col}</div>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
+                        {cols[col].length} session{cols[col].length !== 1 ? 's' : ''} ·{' '}
+                        {cols[col].reduce((s, r) => s + (r.keywords?.length || 0), 0)} keywords
+                      </span>
+                    </div>
+                    <div className="card" style={{ paddingTop: 4 }}>
+                      {cols[col].map(s => (
+                        <ResearchSessionCard key={s.id} session={s} onDeleted={refetch} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="card">
-                {grouped[col].map(s => <ResearchSessionCard key={s.id} session={s} onDeleted={refetch} />)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
     </div>

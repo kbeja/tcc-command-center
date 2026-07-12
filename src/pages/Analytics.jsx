@@ -32,6 +32,43 @@ function listingStatus(p) {
   return { label: 'Review', title: '0 sales — worth investigating' };
 }
 
+const MAIN_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+
+function ClusterCard({ cluster, creating, onCreate }) {
+  const [selectedNiche, setSelectedNiche] = useState('');
+  const shops = [...new Set(cluster.listings.map(l => l.shop_name).filter(Boolean))].slice(0, 3);
+  return (
+    <div style={{ padding: '10px 14px', border: 'var(--border)', borderRadius: 2, background: 'var(--warm-white)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 500, fontSize: '0.82rem', textTransform: 'capitalize', marginBottom: 2 }}>{cluster.tag}</div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
+            {cluster.listings.length} listings · {shops.join(', ')}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+          <select
+            value={selectedNiche}
+            onChange={e => setSelectedNiche(e.target.value)}
+            style={{ fontSize: '0.72rem', padding: '3px 6px' }}
+          >
+            <option value="">No niche</option>
+            {MAIN_NICHES.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ whiteSpace: 'nowrap' }}
+            disabled={creating}
+            onClick={() => onCreate(cluster.tag, selectedNiche)}
+          >
+            {creating ? 'Creating…' : '+ Watch signal'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CompetitorsTab({ listings, loading, signals, onRefetch }) {
   const [sortCol, setSortCol] = useState('est_sales');
   const [sortDir, setSortDir] = useState('desc');
@@ -52,11 +89,12 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
     onRefetch?.();
   }
 
-  async function handleCreateSignalFromCluster(tag) {
+  async function handleCreateSignalFromCluster(tag, collection) {
     setCreatingCluster(tag);
     const now = new Date().toISOString();
     await supabase.from('trend_signals').insert({
       name: tag,
+      collection: collection || null,
       status: 'watch',
       score: 0,
       score_breakdown: {},
@@ -314,11 +352,15 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
         if (unmatched.length === 0) return null;
 
         // Count tag frequency across unmatched listings
+        // Filter out blank, null, "--", and dash-only values
+        const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
         const tagMap = {};
         for (const l of unmatched) {
           for (let i = 1; i <= 13; i++) {
-            const tag = (l[`tag_${i}`] || '').trim().toLowerCase();
-            if (!tag) continue;
+            const raw = l[`tag_${i}`];
+            if (!raw) continue;
+            const tag = String(raw).trim().toLowerCase();
+            if (!tag || JUNK_TAG.test(tag)) continue;
             if (!tagMap[tag]) tagMap[tag] = { tag, listings: [] };
             tagMap[tag].listings.push(l);
           }
@@ -341,22 +383,12 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {clusters.map(c => (
-                <div key={c.tag} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', border: 'var(--border)', borderRadius: 2, background: 'var(--warm-white)' }}>
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: '0.82rem', textTransform: 'capitalize' }}>{c.tag}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
-                      {c.listings.length} competitor listings · shops: {[...new Set(c.listings.map(l => l.shop_name).filter(Boolean))].slice(0, 3).join(', ')}
-                    </div>
-                  </div>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ whiteSpace: 'nowrap', flexShrink: 0, marginLeft: 12 }}
-                    disabled={creatingCluster === c.tag}
-                    onClick={() => handleCreateSignalFromCluster(c.tag)}
-                  >
-                    {creatingCluster === c.tag ? 'Creating…' : '+ Watch signal'}
-                  </button>
-                </div>
+                <ClusterCard
+                  key={c.tag}
+                  cluster={c}
+                  creating={creatingCluster === c.tag}
+                  onCreate={handleCreateSignalFromCluster}
+                />
               ))}
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { createResearchSession } from '../lib/hooks';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
   const [preview, setPreview] = useState(null);
   const [importContext, setImportContext] = useState('');
   const [nicheTag, setNicheTag] = useState('');
+  const [parentNiche, setParentNiche] = useState('');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -124,6 +126,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
     setPreview(null);
     setImportContext('');
     setNicheTag('');
+    setParentNiche('');
     setResult(null);
     if (fileRef.current) fileRef.current.value = '';
   }
@@ -216,39 +219,55 @@ export default function EverbeeCSVImport({ products, onImported }) {
 
     try {
       if (shape === 'keyword') {
-        // Write to knowledge_inbox as research note
-        const content = [
-          `EVERBEE KEYWORD IMPORT — ${nicheTag || 'General/Unassigned'}`,
-          `Imported: ${preview.keep.length} keywords (score ≥ 50)`,
-          `Discarded: ${preview.discard.length} garbage rows`,
-          `Misspellings (tags-only): ${preview.misspellings.length}`,
-          '',
-          '--- TOP KEYWORDS ---',
-          ...preview.keep
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 50)
-            .map(k => `${k.keyword} | Vol: ${k.volume} | Comp: ${k.competition} | Score: ${k.score}${k.misspelling ? ' [misspelling]' : ''}`),
-        ].join('\n');
+        // Route directly to Research → research_sessions + keywords (never through Claude/Inbox)
+        const collection = nicheTag.trim() || 'General';
+        const kwRows = [
+          ...preview.keep.map(k => ({
+            keyword: k.keyword,
+            volume: k.volume ?? null,
+            competition: k.competition ?? null,
+            score: k.score ?? null,
+            tag_type: (k.score ?? 0) >= 1000 ? 'use' : 'watch',
+          })),
+          ...preview.misspellings
+            .filter(k => !preview.keep.some(kk => kk.keyword === k.keyword))
+            .map(k => ({
+              keyword: k.keyword,
+              volume: k.volume ?? null,
+              competition: k.competition ?? null,
+              score: k.score ?? null,
+              tag_type: 'watch',
+            })),
+        ];
 
-        await supabase.from('knowledge_inbox').insert([{
-          input_type: 'research_note',
-          content,
-          url_type: `Everbee keyword export — ${nicheTag || 'general'}`,
-          status: 'pending',
-        }]);
+        const { error: sessionErr } = await createResearchSession(
+          {
+            collection,
+            parent_niche: parentNiche || null,
+            niche: nicheTag.trim() || null,
+            date: now.split('T')[0],
+            source: 'Everbee',
+            status: 'Complete',
+            notes: `Everbee keyword import — ${preview.keep.length} keywords (score ≥ 50), ${preview.discard.length} discarded, ${preview.misspellings.length} misspelling flags`,
+            seasonal: false,
+          },
+          kwRows
+        );
+        if (sessionErr) throw new Error(`Research session save failed: ${sessionErr.message}`);
 
         await supabase.from('import_history').insert({
           import_type: 'everbee_keywords',
           imported_at: now,
-          records_updated: preview.keep.length,
-          notes: `${preview.discard.length} discarded, ${preview.misspellings.length} misspellings, niche: ${nicheTag || 'general'}`,
+          records_updated: kwRows.length,
+          notes: `${preview.discard.length} discarded, ${preview.misspellings.length} misspellings, niche: ${collection}, parent: ${parentNiche || 'none'}`,
         });
 
         setResult({
           type: 'keyword',
-          added: preview.keep.length,
+          added: kwRows.length,
           discarded: preview.discard.length,
           misspellings: preview.misspellings.length,
+          collection,
         });
 
       } else {
@@ -357,9 +376,9 @@ export default function EverbeeCSVImport({ products, onImported }) {
           <div style={{ fontSize: '0.82rem', fontWeight: 500, marginBottom: 6 }}>Import complete</div>
           {result.type === 'keyword' ? (
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div>✓ {result.added} keywords added to Knowledge Inbox (score ≥ 50)</div>
+              <div>✓ {result.added} keywords saved to Research → {result.collection}</div>
               <div>✗ {result.discarded} garbage rows discarded</div>
-              {result.misspellings > 0 && <div>⚑ {result.misspellings} misspellings flagged (tags-only)</div>}
+              {result.misspellings > 0 && <div>⚑ {result.misspellings} misspellings included as Watch (tags-only)</div>}
             </div>
           ) : (
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -404,12 +423,26 @@ export default function EverbeeCSVImport({ products, onImported }) {
             Keyword export detected — {preview.total} rows
           </div>
 
-          <input
-            value={nicheTag}
-            onChange={e => setNicheTag(e.target.value)}
-            placeholder="Niche / product tag — e.g. 'Mom Chapter mugs' or 'general'"
-            style={{ width: '100%', marginBottom: 14, fontSize: '0.8rem' }}
-          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Main Niche</div>
+              <select value={parentNiche} onChange={e => setParentNiche(e.target.value)} style={{ width: '100%', fontSize: '0.8rem' }}>
+                <option value="">— Select main niche —</option>
+                <option value="Reader Chapter">Reader Chapter</option>
+                <option value="Mom Chapter">Mom Chapter</option>
+                <option value="Kids Chapter">Kids Chapter</option>
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Sub-Niche / Collection</div>
+              <input
+                value={nicheTag}
+                onChange={e => setNicheTag(e.target.value)}
+                placeholder="e.g. 'Mom Chapter mugs' or 'Elder Millennial Reader'"
+                style={{ width: '100%', fontSize: '0.8rem' }}
+              />
+            </div>
+          </div>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 14, fontSize: '0.78rem' }}>
             <div style={{ flex: 1, background: 'rgba(124,175,138,0.1)', border: '1px solid var(--success)', borderRadius: 2, padding: '10px 12px' }}>
