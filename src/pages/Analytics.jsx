@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useProducts, useCompetitorListings } from '../lib/hooks';
+import { supabase } from '../lib/supabase';
+import { useProducts, useCompetitorListings, useTrendSignals } from '../lib/hooks';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
@@ -31,12 +32,43 @@ function listingStatus(p) {
   return { label: 'Review', title: '0 sales — worth investigating' };
 }
 
-function CompetitorsTab({ listings, loading }) {
+function CompetitorsTab({ listings, loading, signals, onRefetch }) {
   const [sortCol, setSortCol] = useState('est_sales');
   const [sortDir, setSortDir] = useState('desc');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [whiteSpaceOnly, setWhiteSpaceOnly] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [savingMatch, setSavingMatch] = useState(null);
+  const [creatingCluster, setCreatingCluster] = useState(null);
+
+  async function handleManualMatch(listingId, signalId) {
+    setSavingMatch(listingId);
+    await supabase.from('competitor_listings').update({
+      matched_signal_id: signalId || null,
+      white_space_flag: !signalId,
+      last_updated_at: new Date().toISOString(),
+    }).eq('id', listingId);
+    setSavingMatch(null);
+    onRefetch?.();
+  }
+
+  async function handleCreateSignalFromCluster(tag) {
+    setCreatingCluster(tag);
+    const now = new Date().toISOString();
+    await supabase.from('trend_signals').insert({
+      name: tag,
+      status: 'watch',
+      score: 0,
+      score_breakdown: {},
+      evidence: `Auto-detected from competitor white-space cluster: ${tag}`,
+      first_spotted: now.split('T')[0],
+      last_updated: now.split('T')[0],
+      created_at: now,
+      updated_at: now,
+    });
+    setCreatingCluster(null);
+    onRefetch?.();
+  }
 
   if (loading) return <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>;
   if (listings.length === 0) return <div className="empty-state"><p>No competitor data yet. Import an Everbee listing export to get started.</p></div>;
@@ -225,6 +257,29 @@ function CompetitorsTab({ listings, loading }) {
                           {l.import_context && (
                             <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>Context: {l.import_context}</div>
                           )}
+                          {/* Signal match */}
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 6 }}>Signal Match</div>
+                            {l.matched_signal_id ? (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--success)', marginBottom: 6 }}>
+                                🎯 {signals.find(s => s.id === l.matched_signal_id)?.name || 'Matched signal'}
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>⚑ Unmatched (white-space)</div>
+                            )}
+                            <select
+                              value={l.matched_signal_id || ''}
+                              onChange={e => handleManualMatch(l.id, e.target.value || null)}
+                              disabled={savingMatch === l.id}
+                              style={{ fontSize: '0.72rem', padding: '3px 6px', width: '100%' }}
+                            >
+                              <option value="">— Assign to signal —</option>
+                              {signals.filter(s => s.status !== 'discarded').map(s => (
+                                <option key={s.id} value={s.id}>{s.name}{s.collection ? ` (${s.collection})` : ''}</option>
+                              ))}
+                            </select>
+                            {savingMatch === l.id && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>Saving…</div>}
+                          </div>
                         </div>
                       </div>
                       {/* Tags */}
@@ -252,13 +307,69 @@ function CompetitorsTab({ listings, loading }) {
           <div style={{ textAlign: 'center', padding: 20, color: 'var(--charcoal-soft)', fontSize: '0.82rem' }}>No listings match the current filter.</div>
         )}
       </div>
+
+      {/* White-space cluster discovery */}
+      {(() => {
+        const unmatched = listings.filter(l => l.white_space_flag && !l.matched_signal_id);
+        if (unmatched.length === 0) return null;
+
+        // Count tag frequency across unmatched listings
+        const tagMap = {};
+        for (const l of unmatched) {
+          for (let i = 1; i <= 13; i++) {
+            const tag = (l[`tag_${i}`] || '').trim().toLowerCase();
+            if (!tag) continue;
+            if (!tagMap[tag]) tagMap[tag] = { tag, listings: [] };
+            tagMap[tag].listings.push(l);
+          }
+        }
+
+        // Clusters = tags appearing in 3+ unmatched listings, not already a signal name
+        const signalNames = new Set(signals.map(s => s.name.toLowerCase()));
+        const clusters = Object.values(tagMap)
+          .filter(c => c.listings.length >= 3 && !signalNames.has(c.tag))
+          .sort((a, b) => b.listings.length - a.listings.length)
+          .slice(0, 8);
+
+        if (clusters.length === 0) return null;
+
+        return (
+          <div style={{ marginTop: 32, paddingTop: 20, borderTop: 'var(--border)' }}>
+            <div className="section-label" style={{ marginBottom: 4 }}>Possible New Signals</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 16, lineHeight: 1.5 }}>
+              These tags appear across {unmatched.length} unmatched competitor listings but don't correspond to any signal you're tracking. They may represent niches worth watching.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {clusters.map(c => (
+                <div key={c.tag} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', border: 'var(--border)', borderRadius: 2, background: 'var(--warm-white)' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '0.82rem', textTransform: 'capitalize' }}>{c.tag}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
+                      {c.listings.length} competitor listings · shops: {[...new Set(c.listings.map(l => l.shop_name).filter(Boolean))].slice(0, 3).join(', ')}
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ whiteSpace: 'nowrap', flexShrink: 0, marginLeft: 12 }}
+                    disabled={creatingCluster === c.tag}
+                    onClick={() => handleCreateSignalFromCluster(c.tag)}
+                  >
+                    {creatingCluster === c.tag ? 'Creating…' : '+ Watch signal'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
 export default function Analytics() {
   const { products, loading, refetch } = useProducts();
-  const { listings: competitors, loading: compLoading } = useCompetitorListings();
+  const { listings: competitors, loading: compLoading, refetch: refetchCompetitors } = useCompetitorListings();
+  const { signals } = useTrendSignals();
   const navigate = useNavigate();
   const [tab, setTab] = useState('overview');
   const [collectionFilter, setCollectionFilter] = useState('');
@@ -568,7 +679,7 @@ export default function Analytics() {
 
       {/* ── COMPETITORS TAB ── */}
       {tab === 'competitors' && (
-        <CompetitorsTab listings={competitors} loading={compLoading} />
+        <CompetitorsTab listings={competitors} loading={compLoading} signals={signals} onRefetch={refetchCompetitors} />
       )}
 
       {/* ── WEEKLY REVIEW TAB ── */}

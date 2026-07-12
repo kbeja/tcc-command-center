@@ -84,6 +84,30 @@ function isMisspelling(keyword) {
   return /[a-z]e\b/.test(keyword) && !/coffee|bee|free|see|tree|three/.test(keyword);
 }
 
+// ─── Signal Matching ──────────────────────────────────────────────────────────
+
+function matchListingToSignal(listing, signals) {
+  const listingTags = [1,2,3,4,5,6,7,8,9,10,11,12,13]
+    .map(i => (listing[`tag_${i}`] || '').toLowerCase())
+    .filter(Boolean);
+  const cat = (listing.category || '').toLowerCase();
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const signal of signals) {
+    const words = signal.name.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const col = (signal.collection || '').toLowerCase();
+    const tagMatches = listingTags.filter(tag => words.some(w => tag.includes(w))).length;
+    const catMatch = col && cat && (cat.includes(col) || col.includes(cat)) ? 2 : 0;
+    const score = tagMatches + catMatch;
+    if (score > bestScore) { bestScore = score; bestMatch = signal; }
+  }
+
+  if (bestScore >= 3) return { signal: bestMatch, score: bestScore, auto: true };
+  return null;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function EverbeeCSVImport({ products, onImported }) {
@@ -260,25 +284,36 @@ export default function EverbeeCSVImport({ products, onImported }) {
         }
 
         // Competitors: batch upsert into competitor_listings
-        let competitorAdded = 0, competitorUpdated = 0, whiteSpace = 0;
+        let competitorAdded = 0, competitorUpdated = 0, whiteSpace = 0, autoMatched = 0;
         const validCompetitors = preview.competitors
           .filter(r => r.product_link)
-          .map(r => ({ ...r, import_context: importContext || null, last_updated_at: now, white_space_flag: true, first_seen_at: now }));
+          .map(r => ({ ...r, import_context: importContext || null, last_updated_at: now, first_seen_at: now }));
 
         // Deduplicate by product_link within the import (keep last occurrence)
         const deduped = Object.values(
           validCompetitors.reduce((acc, r) => { acc[r.product_link] = r; return acc; }, {})
         );
 
+        // Fetch signals for auto-matching
+        const { data: signalRows } = await supabase.from('trend_signals').select('id, name, collection');
+        const signals = signalRows || [];
+
+        // Apply signal matching — high confidence (3+ tag matches) auto-assigns; rest are white-space
+        const dedupedWithMatch = deduped.map(r => {
+          const m = matchListingToSignal(r, signals);
+          if (m) { autoMatched++; return { ...r, matched_signal_id: m.signal.id, white_space_flag: false }; }
+          return { ...r, matched_signal_id: null, white_space_flag: true };
+        });
+        whiteSpace = dedupedWithMatch.filter(r => r.white_space_flag).length;
+
         const CHUNK = 200;
-        for (let i = 0; i < deduped.length; i += CHUNK) {
-          const chunk = deduped.slice(i, i + CHUNK);
+        for (let i = 0; i < dedupedWithMatch.length; i += CHUNK) {
+          const chunk = dedupedWithMatch.slice(i, i + CHUNK);
           const { error } = await supabase
             .from('competitor_listings')
             .upsert(chunk, { onConflict: 'product_link', ignoreDuplicates: false });
           if (error) throw new Error(`Upsert failed: ${error.message}`);
           competitorAdded += chunk.length;
-          whiteSpace += chunk.length;
         }
 
         await supabase.from('import_history').insert({
@@ -294,6 +329,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           competitorAdded,
           competitorUpdated,
           whiteSpace,
+          autoMatched,
           ambiguous: preview.ambiguous.length,
         });
       }
@@ -328,9 +364,10 @@ export default function EverbeeCSVImport({ products, onImported }) {
           ) : (
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', display: 'flex', flexDirection: 'column', gap: 3 }}>
               {result.ownUpdated > 0 && <div>✓ {result.ownUpdated} own listings updated</div>}
-              <div>✓ {result.competitorAdded} new competitor listings added</div>
+              <div>✓ {result.competitorAdded} competitor listings imported</div>
+              {result.autoMatched > 0 && <div>🎯 {result.autoMatched} auto-matched to existing signals</div>}
+              {result.whiteSpace > 0 && <div>⚑ {result.whiteSpace} flagged as white-space — check Competitors tab for clusters</div>}
               {result.competitorUpdated > 0 && <div>↺ {result.competitorUpdated} existing competitor listings updated</div>}
-              {result.whiteSpace > 0 && <div>⚑ {result.whiteSpace} flagged as white-space (unmatched to any signal)</div>}
               {result.ambiguous > 0 && <div style={{ color: 'var(--warning)' }}>⚠ {result.ambiguous} rows skipped — shop name blank or ambiguous</div>}
             </div>
           )}
