@@ -11,6 +11,7 @@ export default function Sparks() {
   const { collections } = useCollections();
   const { collections: collectionObjects } = useCollectionObjects();
   const [search, setSearch] = useState('');
+  const [chapterFilter, setChapterFilter] = useState('');
   const [collectionFilter, setCollectionFilter] = useState(searchParams.get('collection') || '');
   const [specificCollection, setSpecificCollection] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -18,19 +19,23 @@ export default function Sparks() {
   const [selected, setSelected] = useState(new Set());
   const [bulkDone, setBulkDone] = useState('');
 
+  const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+
+  // Collections belonging to the selected chapter
+  const collectionsInChapter = chapterFilter
+    ? collectionObjects.filter(c => c.parent_chapter === chapterFilter)
+    : [];
+  const chapterCollectionNames = new Set(collectionsInChapter.map(c => c.name));
+
   const hot = sparks.filter(s => s.temperature === 'hot');
   const cold = sparks.filter(s => s.temperature === 'cold').filter(s => {
     const matchSearch = !search || s.content.toLowerCase().includes(search.toLowerCase());
+    const matchChapter = !chapterFilter || chapterCollectionNames.has(s.collection_tag);
     const matchColl = !collectionFilter || s.collection_tag === collectionFilter;
     const matchSpecific = !specificCollection || s.collection_tag === specificCollection;
     const matchType = !typeFilter || (s.idea_type || 'Product Idea') === typeFilter;
-    return matchSearch && matchColl && matchSpecific && matchType;
+    return matchSearch && matchChapter && matchColl && matchSpecific && matchType;
   });
-
-  // Collections within the current chapter filter for sub-filter
-  const collectionsInChapter = collectionFilter
-    ? collectionObjects.filter(c => c.parent_chapter === collectionFilter || c.name === collectionFilter)
-    : [];
 
   function toggleSelect(id) {
     setSelected(prev => {
@@ -134,6 +139,30 @@ export default function Sparks() {
 
       <div>
         <div className="section-label" style={{ marginBottom: 10 }}>Cold Sparks</div>
+        {/* Chapter filter bar */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          <button
+            className={`btn btn-sm ${!chapterFilter ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => { setChapterFilter(''); setCollectionFilter(''); setSpecificCollection(''); }}
+          >
+            All ({sparks.filter(s => s.temperature === 'cold').length})
+          </button>
+          {PARENT_NICHES.map(p => {
+            const names = new Set(collectionObjects.filter(c => c.parent_chapter === p).map(c => c.name));
+            const count = sparks.filter(s => s.temperature === 'cold' && names.has(s.collection_tag)).length;
+            if (!count) return null;
+            return (
+              <button
+                key={p}
+                className={`btn btn-sm ${chapterFilter === p ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => { setChapterFilter(chapterFilter === p ? '' : p); setCollectionFilter(''); setSpecificCollection(''); }}
+              >
+                {p} ({count})
+              </button>
+            );
+          })}
+        </div>
+
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           <input
             placeholder="Search sparks…"
@@ -141,16 +170,17 @@ export default function Sparks() {
             onChange={e => setSearch(e.target.value)}
             style={{ flex: 1, minWidth: 160 }}
           />
-          <select value={collectionFilter} onChange={e => { setCollectionFilter(e.target.value); setSpecificCollection(''); }} style={{ width: 'auto' }}>
-            <option value="">All collections</option>
-            {collections.map(c => <option key={c} value={c}>{c}</option>)}
+          {/* Collection dropdown — scoped to chapter when one is selected */}
+          <select
+            value={collectionFilter}
+            onChange={e => { setCollectionFilter(e.target.value); setSpecificCollection(''); }}
+            style={{ width: 'auto' }}
+          >
+            <option value="">{chapterFilter ? `All in ${chapterFilter}` : 'All collections'}</option>
+            {(chapterFilter ? collectionsInChapter.map(c => c.name) : collections).map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
           </select>
-          {collectionsInChapter.length > 1 && (
-            <select value={specificCollection} onChange={e => setSpecificCollection(e.target.value)} style={{ width: 'auto' }}>
-              <option value="">All in chapter</option>
-              {collectionsInChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
-          )}
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All types</option>
             <option value="Product Idea">Product Idea</option>
