@@ -232,10 +232,16 @@ export default function EverbeeCSVImport({ products, onImported }) {
         let ownUpdated = 0;
         const liveProducts = products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing');
         for (const row of preview.ownShop) {
+          // Extract listing ID from Everbee product_link URL
+          const listingIdMatch = (row.product_link || '').match(/\/listing\/(\d+)\//);
+          const ebListingId = listingIdMatch ? listingIdMatch[1] : null;
+
           const match = liveProducts.find(p => {
-            if (row.product_link && p.etsy_listing_url) {
-              return row.product_link === p.etsy_listing_url;
+            // Match by Etsy listing ID (most reliable)
+            if (ebListingId && p.etsy_listing_id) {
+              return String(p.etsy_listing_id) === String(ebListingId);
             }
+            // Fallback: fuzzy title match
             const title = (row.product_name || '').toLowerCase();
             const name = (p.name || '').toLowerCase();
             return title.includes(name.slice(0, 20)) || name.includes(title.slice(0, 20));
