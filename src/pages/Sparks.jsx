@@ -25,12 +25,20 @@ export default function Sparks() {
   const collectionsInChapter = chapterFilter
     ? collectionObjects.filter(c => c.parent_chapter === chapterFilter)
     : [];
-  const chapterCollectionNames = new Set(collectionsInChapter.map(c => c.name));
+
+  // A spark belongs to a chapter if its collection_tag IS the chapter name,
+  // or if its collection_tag is one of the chapter's sub-collections
+  function sparkMatchesChapter(spark, chapter) {
+    if (!chapter) return true;
+    if (spark.collection_tag === chapter) return true;
+    const subNames = new Set(collectionObjects.filter(c => c.parent_chapter === chapter).map(c => c.name));
+    return subNames.has(spark.collection_tag);
+  }
 
   const hot = sparks.filter(s => s.temperature === 'hot');
   const cold = sparks.filter(s => s.temperature === 'cold').filter(s => {
     const matchSearch = !search || s.content.toLowerCase().includes(search.toLowerCase());
-    const matchChapter = !chapterFilter || chapterCollectionNames.has(s.collection_tag);
+    const matchChapter = sparkMatchesChapter(s, chapterFilter);
     const matchColl = !collectionFilter || s.collection_tag === collectionFilter;
     const matchSpecific = !specificCollection || s.collection_tag === specificCollection;
     const matchType = !typeFilter || (s.idea_type || 'Product Idea') === typeFilter;
@@ -148,8 +156,8 @@ export default function Sparks() {
             All ({sparks.filter(s => s.temperature === 'cold').length})
           </button>
           {PARENT_NICHES.map(p => {
-            const names = new Set(collectionObjects.filter(c => c.parent_chapter === p).map(c => c.name));
-            const count = sparks.filter(s => s.temperature === 'cold' && names.has(s.collection_tag)).length;
+            const subNames = new Set(collectionObjects.filter(c => c.parent_chapter === p).map(c => c.name));
+            const count = sparks.filter(s => s.temperature === 'cold' && (s.collection_tag === p || subNames.has(s.collection_tag))).length;
             if (!count) return null;
             return (
               <button
