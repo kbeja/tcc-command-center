@@ -503,29 +503,79 @@ function PlaybooksTab({ playbooks, refetch }) {
 
 // ─── Experiments Tab ──────────────────────────────────────────────────────────
 
+const BLANK_FORM = {
+  title: '', hypothesis: '', baseline: '', metric: '',
+  collection: '', start_date: new Date().toISOString().split('T')[0],
+  timeline_days: 14, reference_url: '',
+};
+
 function ExperimentsTab() {
   const { experiments, loading, refetch } = useExperiments('running');
+  const { playbooks } = usePlaybooks();
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ hypothesis: '', metric: '', timeline_days: 14, collection: '' });
+  const [form, setForm] = useState({ ...BLANK_FORM });
   const [saving, setSaving] = useState(false);
+  const [expanded, setExpanded] = useState({});
+  const [checkpointText, setCheckpointText] = useState({});
+  const [savingCp, setSavingCp] = useState({});
   const [closing, setClosing] = useState({});
   const [closeForm, setCloseForm] = useState({});
+  const [sendToKB, setSendToKB] = useState({});
+  const [kbPlaybook, setKBPlaybook] = useState({});
+  const [kbSection, setKBSection] = useState({});
 
   async function handleAdd() {
-    if (!form.hypothesis.trim()) return;
+    if (!form.title.trim()) return;
     setSaving(true);
-    await createExperiment(form);
-    setForm({ hypothesis: '', metric: '', timeline_days: 14, collection: '' });
+    await createExperiment({
+      title: form.title,
+      hypothesis: form.hypothesis,
+      baseline: form.baseline,
+      metric: form.metric,
+      collection: form.collection,
+      start_date: form.start_date,
+      timeline_days: form.timeline_days,
+      reference_url: form.reference_url || null,
+      checkpoints: [],
+    });
+    setForm({ ...BLANK_FORM, start_date: new Date().toISOString().split('T')[0] });
     setAdding(false);
     setSaving(false);
+    refetch();
+  }
+
+  async function handleLogCheckpoint(expId) {
+    const note = (checkpointText[expId] || '').trim();
+    if (!note) return;
+    setSavingCp(prev => ({ ...prev, [expId]: true }));
+    const exp = experiments.find(e => e.id === expId);
+    const existing = Array.isArray(exp.checkpoints) ? exp.checkpoints : [];
+    await updateExperiment(expId, {
+      checkpoints: [...existing, { note, logged_at: new Date().toISOString().split('T')[0] }],
+    });
+    setCheckpointText(prev => ({ ...prev, [expId]: '' }));
+    setSavingCp(prev => { const n = { ...prev }; delete n[expId]; return n; });
     refetch();
   }
 
   async function handleClose(exp, result) {
     const notes = closeForm[exp.id] || '';
     await closeExperiment(exp.id, result, notes);
+    if (sendToKB[exp.id]) {
+      await createPendingUpdate({
+        source_type: 'experiment',
+        source_id: exp.id,
+        source: `Experiment: ${exp.title || exp.hypothesis}`,
+        playbook_slug: kbPlaybook[exp.id] || null,
+        section_key: kbSection[exp.id] || null,
+        proposed_body: notes,
+        reason: `Proven experiment — ${exp.hypothesis || exp.title}`,
+        status: 'pending',
+      });
+    }
     setClosing(prev => { const n = { ...prev }; delete n[exp.id]; return n; });
     setCloseForm(prev => { const n = { ...prev }; delete n[exp.id]; return n; });
+    setSendToKB(prev => { const n = { ...prev }; delete n[exp.id]; return n; });
     refetch();
   }
 
@@ -537,36 +587,69 @@ function ExperimentsTab() {
         </button>
       ) : (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div className="section-label" style={{ marginBottom: 10 }}>New Experiment</div>
-          <textarea
-            placeholder="Hypothesis — what are you testing and what do you expect?"
-            value={form.hypothesis}
-            onChange={e => setForm(f => ({ ...f, hypothesis: e.target.value }))}
-            rows={3}
-            style={{ width: '100%', marginBottom: 8, fontSize: '0.82rem', fontFamily: 'var(--font-body)' }}
-          />
-          <input
-            placeholder="Success metric (e.g. CTR > 1% after 14 days)"
-            value={form.metric}
-            onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}
-            style={{ marginBottom: 8 }}
-          />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <div className="section-label" style={{ marginBottom: 12 }}>New Experiment</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <input
+              autoFocus
+              placeholder="Title — short name (e.g. Hero image test — Cozy Romance)"
+              value={form.title}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              style={{ fontSize: '0.9rem', fontWeight: 500 }}
+            />
+            <textarea
+              placeholder="Hypothesis — what do you predict will happen? (e.g. lifestyle image will outperform flat-lay on CTR)"
+              value={form.hypothesis}
+              onChange={e => setForm(f => ({ ...f, hypothesis: e.target.value }))}
+              rows={2}
+              style={{ fontSize: '0.82rem', fontFamily: 'var(--font-body)' }}
+            />
+            <textarea
+              placeholder="Baseline — what is true right now, before the change? (e.g. current CTR 0.8%, standard: flat-lay hero)"
+              value={form.baseline}
+              onChange={e => setForm(f => ({ ...f, baseline: e.target.value }))}
+              rows={2}
+              style={{ fontSize: '0.82rem', fontFamily: 'var(--font-body)' }}
+            />
+            <input
+              placeholder="Success metric — pass/fail threshold (e.g. CTR > 1.2% at 30 days)"
+              value={form.metric}
+              onChange={e => setForm(f => ({ ...f, metric: e.target.value }))}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', display: 'block', marginBottom: 4 }}>
+                  Start date <span style={{ opacity: 0.6 }}>(supports backdating)</span>
+                </label>
+                <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', display: 'block', marginBottom: 4 }}>Duration</label>
+                <select value={form.timeline_days} onChange={e => setForm(f => ({ ...f, timeline_days: Number(e.target.value) }))}>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                </select>
+              </div>
+            </div>
             <input
               placeholder="Collection (optional)"
               value={form.collection}
               onChange={e => setForm(f => ({ ...f, collection: e.target.value }))}
-              style={{ flex: 1 }}
             />
-            <select value={form.timeline_days} onChange={e => setForm(f => ({ ...f, timeline_days: Number(e.target.value) }))} style={{ width: 'auto' }}>
-              <option value={7}>7 days</option>
-              <option value={14}>14 days</option>
-              <option value={30}>30 days</option>
-              <option value={60}>60 days</option>
-            </select>
+            <div>
+              <input
+                placeholder="Reference image URL (optional) — paste a hosted image link for what's being tested"
+                value={form.reference_url}
+                onChange={e => setForm(f => ({ ...f, reference_url: e.target.value }))}
+              />
+              {form.reference_url && /\.(jpe?g|png|gif|webp)/i.test(form.reference_url) && (
+                <img src={form.reference_url} alt="Reference preview" style={{ maxWidth: '100%', maxHeight: 160, objectFit: 'contain', borderRadius: 2, border: 'var(--border)', marginTop: 6 }} />
+              )}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving || !form.hypothesis.trim()}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving || !form.title.trim()}>
               {saving ? 'Starting…' : 'Start Experiment →'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => setAdding(false)}>Cancel</button>
@@ -578,40 +661,167 @@ function ExperimentsTab() {
       {!loading && experiments.length === 0 && (
         <div className="empty-state"><p>No running experiments.</p></div>
       )}
-      {experiments.map(exp => {
-        const daysRunning = Math.floor((Date.now() - new Date(exp.started_at)) / 86400000);
-        const overdue = daysRunning > exp.timeline_days;
-        return (
-          <div key={exp.id} className="card" style={{ marginBottom: 10 }}>
-            {exp.collection && (
-              <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>
-                {exp.collection}
-              </div>
-            )}
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', marginBottom: 6 }}>{exp.hypothesis}</div>
-            {exp.metric && <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>Metric: {exp.metric}</div>}
-            <div style={{ fontSize: '0.72rem', color: overdue ? 'var(--alert)' : 'var(--charcoal-soft)', marginBottom: 10 }}>
-              {overdue ? `⚠ Overdue — running ${daysRunning}d (target: ${exp.timeline_days}d)` : `Running ${daysRunning}d of ${exp.timeline_days}d`}
-            </div>
 
-            {closing[exp.id] ? (
-              <div>
-                <textarea
-                  placeholder="What did you find? What changes as a result?"
-                  value={closeForm[exp.id] || ''}
-                  onChange={e => setCloseForm(prev => ({ ...prev, [exp.id]: e.target.value }))}
-                  rows={3}
-                  style={{ width: '100%', marginBottom: 8, fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}
-                />
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => handleClose(exp, 'proven')}>✓ Proven</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => handleClose(exp, 'inconclusive')}>Inconclusive</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => handleClose(exp, 'disproven')}>Disproven</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setClosing(prev => { const n = { ...prev }; delete n[exp.id]; return n; })}>Cancel</button>
+      {experiments.map(exp => {
+        const startDate = exp.start_date ? new Date(exp.start_date + 'T00:00:00') : new Date(exp.started_at);
+        const daysRunning = Math.floor((Date.now() - startDate) / 86400000);
+        const reviewDate = new Date(startDate);
+        reviewDate.setDate(reviewDate.getDate() + (exp.timeline_days || 14));
+        const isOverdue = daysRunning > (exp.timeline_days || 14);
+        const isNearDue = !isOverdue && daysRunning >= (exp.timeline_days || 14) - 3;
+        const isOpen = !!expanded[exp.id];
+        const checkpoints = Array.isArray(exp.checkpoints) ? exp.checkpoints : [];
+
+        return (
+          <div key={exp.id} className="card" style={{ marginBottom: 10, borderLeft: isOverdue ? '3px solid var(--alert)' : isNearDue ? '3px solid var(--warning)' : undefined }}>
+            {/* Collapsed header */}
+            <button
+              onClick={() => setExpanded(prev => ({ ...prev, [exp.id]: !prev[exp.id] }))}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+            >
+              <div style={{ flex: 1 }}>
+                {exp.collection && (
+                  <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 3 }}>
+                    {exp.collection}
+                  </div>
+                )}
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', marginBottom: 4 }}>
+                  {exp.title || exp.hypothesis}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: isOverdue ? 'var(--alert)' : isNearDue ? '#7a4a1e' : 'var(--charcoal-soft)' }}>
+                  {isOverdue
+                    ? `⚠ Review overdue — day ${daysRunning} of ${exp.timeline_days}`
+                    : `Day ${daysRunning} of ${exp.timeline_days} · review ${reviewDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                  {checkpoints.length > 0 && ` · ${checkpoints.length} checkpoint${checkpoints.length !== 1 ? 's' : ''}`}
                 </div>
               </div>
-            ) : (
-              <button className="btn btn-ghost btn-sm" onClick={() => setClosing(prev => ({ ...prev, [exp.id]: true }))}>Close Experiment</button>
+              <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginLeft: 8, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {/* Overdue CTA when collapsed */}
+            {!isOpen && isOverdue && (
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ marginTop: 10 }}
+                onClick={() => setExpanded(prev => ({ ...prev, [exp.id]: true }))}
+              >
+                ⚠ Log Final Result
+              </button>
+            )}
+
+            {/* Expanded body */}
+            {isOpen && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: 'var(--border)' }}>
+                {exp.title && exp.hypothesis && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>Hypothesis</div>
+                    <div style={{ fontSize: '0.8rem' }}>{exp.hypothesis}</div>
+                  </div>
+                )}
+                {exp.baseline && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>Baseline</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)' }}>{exp.baseline}</div>
+                  </div>
+                )}
+                {exp.metric && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>Success metric</div>
+                    <div style={{ fontSize: '0.8rem' }}>{exp.metric}</div>
+                  </div>
+                )}
+                {exp.reference_url && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div className="eyebrow" style={{ marginBottom: 6 }}>Reference</div>
+                    {/\.(jpe?g|png|gif|webp)/i.test(exp.reference_url)
+                      ? <img src={exp.reference_url} alt="Reference" style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 2, border: 'var(--border)' }} />
+                      : <a href={exp.reference_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.78rem', color: 'var(--dusty-rose)' }}>{exp.reference_url}</a>
+                    }
+                  </div>
+                )}
+
+                {/* Checkpoint log */}
+                <div style={{ marginBottom: 14 }}>
+                  <div className="eyebrow" style={{ marginBottom: 8 }}>Checkpoint log</div>
+                  {checkpoints.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                      {checkpoints.map((cp, i) => (
+                        <div key={i} style={{ borderLeft: '2px solid rgba(43,41,38,0.15)', paddingLeft: 10 }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginBottom: 2 }}>{cp.logged_at}</div>
+                          <div style={{ fontSize: '0.78rem' }}>{cp.note}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!closing[exp.id] && (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+                      <textarea
+                        placeholder="Log interim checkpoint — early signal, too early to call, CTR trending X…"
+                        value={checkpointText[exp.id] || ''}
+                        onChange={e => setCheckpointText(prev => ({ ...prev, [exp.id]: e.target.value }))}
+                        rows={2}
+                        style={{ flex: 1, fontSize: '0.78rem', fontFamily: 'var(--font-body)' }}
+                      />
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleLogCheckpoint(exp.id)}
+                        disabled={!checkpointText[exp.id]?.trim() || savingCp[exp.id]}
+                      >
+                        {savingCp[exp.id] ? 'Saving…' : 'Log →'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Final result */}
+                {closing[exp.id] ? (
+                  <div style={{ borderTop: 'var(--border)', paddingTop: 12 }}>
+                    <div className="eyebrow" style={{ marginBottom: 8 }}>Log Final Result</div>
+                    <textarea
+                      placeholder="What did you find? What changes as a result?"
+                      value={closeForm[exp.id] || ''}
+                      onChange={e => setCloseForm(prev => ({ ...prev, [exp.id]: e.target.value }))}
+                      rows={3}
+                      style={{ width: '100%', marginBottom: 10, fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}
+                    />
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: '0.8rem', marginBottom: 10 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!sendToKB[exp.id]}
+                        onChange={e => setSendToKB(prev => ({ ...prev, [exp.id]: e.target.checked }))}
+                        style={{ width: 'auto', margin: 0 }}
+                      />
+                      Send result to Knowledge Base → Updates
+                    </label>
+                    {sendToKB[exp.id] && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                        <select value={kbPlaybook[exp.id] || ''} onChange={e => setKBPlaybook(prev => ({ ...prev, [exp.id]: e.target.value }))}>
+                          <option value="">— Playbook (optional) —</option>
+                          {playbooks.map(p => <option key={p.id} value={p.slug}>{p.title}</option>)}
+                        </select>
+                        <input
+                          placeholder="Section key (optional)"
+                          value={kbSection[exp.id] || ''}
+                          onChange={e => setKBSection(prev => ({ ...prev, [exp.id]: e.target.value }))}
+                        />
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn btn-primary btn-sm" onClick={() => handleClose(exp, 'proven')}>✓ Proven</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleClose(exp, 'inconclusive')}>Inconclusive</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleClose(exp, 'disproven')}>Disproven</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setClosing(prev => { const n = { ...prev }; delete n[exp.id]; return n; })}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className={`btn btn-sm ${isOverdue ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setClosing(prev => ({ ...prev, [exp.id]: true }))}
+                  >
+                    {isOverdue ? '⚠ Log Final Result' : 'Close Experiment'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         );
@@ -624,29 +834,93 @@ function ExperimentsTab() {
 
 function ProvenResultsTab() {
   const { experiments, loading } = useExperiments('proven');
+  const [expanded, setExpanded] = useState({});
 
   if (loading) return <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>;
   if (experiments.length === 0) return <div className="empty-state"><p>No proven results yet.</p></div>;
 
   return (
     <div>
-      {experiments.map(exp => (
-        <div key={exp.id} className="card" style={{ marginBottom: 10, borderLeft: '3px solid var(--success)' }}>
-          {exp.collection && (
-            <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>
-              {exp.collection}
-            </div>
-          )}
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', marginBottom: 6 }}>{exp.hypothesis}</div>
-          {exp.result_notes && (
-            <div style={{ fontSize: '0.8rem', color: 'var(--charcoal)', marginBottom: 6 }}>{exp.result_notes}</div>
-          )}
-          <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>
-            Closed {new Date(exp.closed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            {exp.metric && ` · ${exp.metric}`}
+      {experiments.map(exp => {
+        const isOpen = !!expanded[exp.id];
+        const checkpoints = Array.isArray(exp.checkpoints) ? exp.checkpoints : [];
+        return (
+          <div key={exp.id} className="card" style={{ marginBottom: 10, borderLeft: '3px solid var(--success)' }}>
+            <button
+              onClick={() => setExpanded(prev => ({ ...prev, [exp.id]: !prev[exp.id] }))}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+            >
+              <div style={{ flex: 1 }}>
+                {exp.collection && (
+                  <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 3 }}>
+                    {exp.collection}
+                  </div>
+                )}
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', marginBottom: 4 }}>
+                  {exp.title || exp.hypothesis}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>
+                  Proven {exp.closed_at ? new Date(exp.closed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                  {exp.metric && ` · ${exp.metric}`}
+                  {checkpoints.length > 0 && ` · ${checkpoints.length} checkpoint${checkpoints.length !== 1 ? 's' : ''}`}
+                </div>
+              </div>
+              <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginLeft: 8, flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {exp.result_notes && !isOpen && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--charcoal)', marginTop: 8 }}>
+                {exp.result_notes.slice(0, 120)}{exp.result_notes.length > 120 ? '…' : ''}
+              </div>
+            )}
+
+            {isOpen && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: 'var(--border)' }}>
+                {exp.title && exp.hypothesis && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>Hypothesis</div>
+                    <div style={{ fontSize: '0.8rem' }}>{exp.hypothesis}</div>
+                  </div>
+                )}
+                {exp.baseline && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>Baseline</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)' }}>{exp.baseline}</div>
+                  </div>
+                )}
+                {exp.result_notes && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>Result</div>
+                    <div style={{ fontSize: '0.8rem' }}>{exp.result_notes}</div>
+                  </div>
+                )}
+                {exp.reference_url && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="eyebrow" style={{ marginBottom: 6 }}>Reference</div>
+                    {/\.(jpe?g|png|gif|webp)/i.test(exp.reference_url)
+                      ? <img src={exp.reference_url} alt="Reference" style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 2, border: 'var(--border)' }} />
+                      : <a href={exp.reference_url} target="_blank" rel="noreferrer" style={{ fontSize: '0.78rem', color: 'var(--dusty-rose)' }}>{exp.reference_url}</a>
+                    }
+                  </div>
+                )}
+                {checkpoints.length > 0 && (
+                  <div>
+                    <div className="eyebrow" style={{ marginBottom: 8 }}>Checkpoint log</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {checkpoints.map((cp, i) => (
+                        <div key={i} style={{ borderLeft: '2px solid rgba(43,41,38,0.15)', paddingLeft: 10 }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginBottom: 2 }}>{cp.logged_at}</div>
+                          <div style={{ fontSize: '0.78rem' }}>{cp.note}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
