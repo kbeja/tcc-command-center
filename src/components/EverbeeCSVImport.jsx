@@ -285,6 +285,9 @@ export default function EverbeeCSVImport({ products, onImported }) {
         });
       }
 
+      setPreview(null);
+      setShape(null);
+      if (fileRef.current) fileRef.current.value = '';
       onImported?.();
     } catch (err) {
       setPreview(prev => ({ ...prev, error: err.message }));
