@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProducts, useCollections, autoHotSparksForSignal } from '../lib/hooks';
 
+const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+
 const STATUSES = [
   { key: 'pursue',    label: '🟢 Pursue',    color: '#2d6b3c', bg: 'rgba(124,175,138,0.15)' },
   { key: 'watch',     label: '👁 Watch',      color: '#2d4270', bg: 'rgba(107,130,168,0.15)' },
@@ -69,7 +71,7 @@ function ScoreDials({ breakdown, onChange, editable }) {
   );
 }
 
-function SignalCard({ signal, products, onAction }) {
+function SignalCard({ signal, products, collections, onAction }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ ...signal });
@@ -87,6 +89,7 @@ function SignalCard({ signal, products, onAction }) {
     await supabase.from('trend_signals').update({
       name: form.name,
       collection: form.collection,
+      parent_niche: form.parent_niche || null,
       status: form.status,
       score: totalScore,
       score_breakdown: form.score_breakdown,
@@ -115,6 +118,16 @@ function SignalCard({ signal, products, onAction }) {
         <div className="eyebrow" style={{ marginBottom: 12 }}>Edit Signal</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
           <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Signal name" style={{ fontSize: '0.9rem' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <select value={form.parent_niche || ''} onChange={e => setForm(f => ({ ...f, parent_niche: e.target.value || null }))}>
+              <option value="">— Main niche —</option>
+              {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={form.collection || ''} onChange={e => setForm(f => ({ ...f, collection: e.target.value }))}>
+              <option value="">— Collection —</option>
+              {collections.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {STATUSES.map(s => (
               <button key={s.key} onClick={() => setForm(f => ({ ...f, status: s.key }))}
@@ -153,6 +166,11 @@ function SignalCard({ signal, products, onAction }) {
               {st.label}
             </span>
             <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>Score: {signal.score}/25</span>
+            {signal.parent_niche && (
+              <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(43,41,38,0.08)', color: 'var(--charcoal-soft)' }}>
+                {signal.parent_niche}
+              </span>
+            )}
             {signal.collection && (
               <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 20, background: 'var(--rose-faint)', color: 'var(--dusty-rose)' }}>
                 {signal.collection}
@@ -217,7 +235,7 @@ function SignalCard({ signal, products, onAction }) {
 
 function AddSignalForm({ collections, onSaved, onCancel }) {
   const [form, setForm] = useState({
-    name: '', collection: '', status: 'watch',
+    name: '', collection: '', parent_niche: '', status: 'watch',
     score_breakdown: {}, evidence: '', notes: '', revisit_date: '',
     first_spotted: new Date().toISOString().split('T')[0],
   });
@@ -244,10 +262,16 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
       <div className="eyebrow" style={{ marginBottom: 12 }}>Add Trend Signal</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Signal name" style={{ fontSize: '0.9rem' }} autoFocus />
-        <select value={form.collection} onChange={e => setForm(f => ({ ...f, collection: e.target.value }))}>
-          <option value="">No collection</option>
-          {collections.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <select value={form.parent_niche} onChange={e => setForm(f => ({ ...f, parent_niche: e.target.value }))}>
+            <option value="">— Main niche —</option>
+            {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={form.collection} onChange={e => setForm(f => ({ ...f, collection: e.target.value }))}>
+            <option value="">— Collection —</option>
+            {collections.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {STATUSES.map(s => (
             <button key={s.key} onClick={() => setForm(f => ({ ...f, status: s.key }))}
@@ -290,10 +314,14 @@ export default function Trends() {
   const { collections } = useCollections();
   const [adding, setAdding] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [nicheFilter, setNicheFilter] = useState('');
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
 
-  const filtered = signals.filter(s => !statusFilter || s.status === statusFilter);
+  const filtered = signals.filter(s =>
+    (!statusFilter || s.status === statusFilter) &&
+    (!nicheFilter || s.parent_niche === nicheFilter)
+  );
 
   const grouped = {
     pursue: filtered.filter(s => s.status === 'pursue'),
@@ -320,6 +348,20 @@ export default function Trends() {
             return (
               <button key={s.key} className={`btn btn-sm ${statusFilter === s.key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setStatusFilter(statusFilter === s.key ? '' : s.key)}>
                 {s.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${!nicheFilter ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setNicheFilter('')} style={{ fontSize: '0.68rem' }}>
+            All niches
+          </button>
+          {PARENT_NICHES.map(p => {
+            const count = signals.filter(s => s.parent_niche === p).length;
+            if (!count) return null;
+            return (
+              <button key={p} className={`btn btn-sm ${nicheFilter === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setNicheFilter(nicheFilter === p ? '' : p)} style={{ fontSize: '0.68rem' }}>
+                {p} ({count})
               </button>
             );
           })}
@@ -351,7 +393,7 @@ export default function Trends() {
           <div key={key} style={{ marginBottom: 24 }}>
             <div className="section-label" style={{ marginBottom: 10 }}>{st.label}</div>
             {items.map(s => (
-              <SignalCard key={s.id} signal={s} products={products} onAction={refetch} />
+              <SignalCard key={s.id} signal={s} products={products} collections={collections} onAction={refetch} />
             ))}
           </div>
         );

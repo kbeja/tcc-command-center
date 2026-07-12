@@ -6,7 +6,7 @@ function fmt$(n) {
 }
 
 export default function GoalCalculator({ liveProducts, totalMoRevenue, totalMoSales, avgOrderValue, conversionRate }) {
-  const [target, setTarget] = useState('');
+  const [target, setTarget] = useState(() => localStorage.getItem('tcc_goal_target') || '');
 
   const targetNum = parseFloat(target) || 0;
   const ordersNeeded = avgOrderValue && targetNum ? Math.ceil(targetNum / avgOrderValue) : null;
@@ -25,7 +25,7 @@ export default function GoalCalculator({ liveProducts, totalMoRevenue, totalMoSa
             <input
               type="number"
               value={target}
-              onChange={e => setTarget(e.target.value)}
+              onChange={e => { setTarget(e.target.value); localStorage.setItem('tcc_goal_target', e.target.value); }}
               placeholder="500"
               style={{ border: 'none', padding: '8px 10px', fontSize: '0.85rem', flex: 1, outline: 'none', background: 'transparent' }}
             />

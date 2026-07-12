@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCollectionObjects, useCollectionObjects as useColls, createCollection } from '../lib/hooks';
 import { useSparks, useProducts } from '../lib/hooks';
 
+const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 const PRIORITY_ORDER = ['flagship', 'priority_1', 'priority_2', 'supporting', 'archived'];
 
 const PRIORITY_LABELS = {
@@ -74,8 +75,10 @@ export default function Collections() {
   const { products } = useProducts();
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newChapter, setNewChapter] = useState('');
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [filterChapter, setFilterChapter] = useState('');
 
   function sparkCount(name) {
     return sparks.filter(s => s.collection_tag === name && !s.archived_at).length;
@@ -88,15 +91,20 @@ export default function Collections() {
   async function handleAdd() {
     if (!newName.trim()) return;
     setSaving(true);
-    await createCollection(newName.trim());
+    await createCollection(newName.trim(), newChapter ? { parent_chapter: newChapter } : {});
     setNewName('');
+    setNewChapter('');
     setSaving(false);
     setAdding(false);
     refetch();
   }
 
+  const chapterFiltered = filterChapter
+    ? collections.filter(c => c.parent_chapter === filterChapter)
+    : collections;
+
   const grouped = PRIORITY_ORDER.reduce((acc, p) => {
-    acc[p] = collections.filter(c => (c.priority || 'supporting') === p);
+    acc[p] = chapterFiltered.filter(c => (c.priority || 'supporting') === p);
     return acc;
   }, {});
 
@@ -114,24 +122,44 @@ export default function Collections() {
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>+ Add</button>
         </div>
+        {/* Chapter filter bar */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${!filterChapter ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterChapter('')}>
+            All ({collections.filter(c => c.status !== 'archived').length})
+          </button>
+          {PARENT_NICHES.map(p => {
+            const count = collections.filter(c => c.parent_chapter === p && c.status !== 'archived').length;
+            if (!count) return null;
+            return (
+              <button key={p} className={`btn btn-sm ${filterChapter === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterChapter(filterChapter === p ? '' : p)}>
+                {p} ({count})
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {adding && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="eyebrow" style={{ marginBottom: 10 }}>New Collection</div>
-          <input
-            autoFocus
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            placeholder="Collection name…"
-            style={{ marginBottom: 10 }}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            <input
+              autoFocus
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              placeholder="Collection name…"
+            />
+            <select value={newChapter} onChange={e => setNewChapter(e.target.value)}>
+              <option value="">— Main niche (optional) —</option>
+              {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving || !newName.trim()}>
               {saving ? 'Saving…' : 'Save →'}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); }}>Cancel</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); setNewChapter(''); }}>Cancel</button>
           </div>
         </div>
       )}

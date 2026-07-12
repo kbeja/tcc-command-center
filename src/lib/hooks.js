@@ -246,10 +246,10 @@ export async function updateCollection(id, updates) {
   return { data, error };
 }
 
-export async function createCollection(name) {
+export async function createCollection(name, extra = {}) {
   const { data, error } = await supabase
     .from('collections')
-    .insert({ name, status: 'active', priority: 'supporting', created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .insert({ name, status: 'active', priority: 'supporting', ...extra, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .select()
     .single();
   return { data, error };
