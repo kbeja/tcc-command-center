@@ -94,6 +94,7 @@ const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 export default function ResearchSessionForm({ defaultCollection, defaultNiche, defaultParentNiche, onSaved, onCancel }) {
   const { collections } = useCollections();
   const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
+  const [newCollectionName, setNewCollectionName] = useState('');
   const [parentNiche, setParentNiche] = useState(defaultParentNiche || '');
   const [niche, setNiche] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -159,7 +160,8 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   }
 
   async function handleSave() {
-    if (!collection) return;
+    const effectiveCollection = collection === '__new__' ? newCollectionName.trim() : collection;
+    if (!effectiveCollection) return;
     setSaving(true);
     const kwList = keywords
       .filter(k => k.keyword.trim())
@@ -171,7 +173,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         tag_type: k.status,
       }));
     await createResearchSession(
-      { collection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
+      { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
       kwList
     );
     setSaving(false);
@@ -201,9 +203,27 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div className="form-group">
           <label className="form-label">Collection (sub-niche)</label>
-          <select value={collection} onChange={e => setCollection(e.target.value)}>
-            {collections.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          {collection === '__new__' ? (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                autoFocus
+                placeholder="New collection name…"
+                value={newCollectionName}
+                onChange={e => setNewCollectionName(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-ghost btn-sm" onClick={() => { setCollection(''); setNewCollectionName(''); }}>✕</button>
+            </div>
+          ) : (
+            <select value={collection} onChange={e => {
+              if (e.target.value === '__new__') { setCollection('__new__'); setNewCollectionName(''); }
+              else setCollection(e.target.value);
+            }}>
+              <option value="">— Select —</option>
+              {collections.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="__new__">+ New collection…</option>
+            </select>
+          )}
         </div>
         <div className="form-group" style={{ visibility: 'hidden' }} />
       </div>
@@ -326,7 +346,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={!collection || saving}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={!(collection === '__new__' ? newCollectionName.trim() : collection) || saving}>
           {saving ? 'Saving…' : 'Save Session →'}
         </button>
         {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>}

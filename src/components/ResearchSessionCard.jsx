@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { deleteResearchSession, deleteKeyword } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 
+const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+
 const STATUS_STYLES = {
   'Complete': { background: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
   'Needs More Data': { background: 'rgba(232,168,124,0.25)', color: '#7a4a1e' },
@@ -104,13 +106,25 @@ function EditableKeyword({ k, onSave, onDelete }) {
   );
 }
 
-export default function ResearchSessionCard({ session, onDeleted }) {
+export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [keywords, setKeywords] = useState(session.keywords || []);
   const [seasonal, setSeasonal] = useState(!!session.seasonal);
+  const [parentNiche, setParentNiche] = useState(session.parent_niche || '');
+  const [savingParent, setSavingParent] = useState(false);
   const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
+
+  async function handleParentNicheChange(val) {
+    setParentNiche(val);
+    setSavingParent(true);
+    await supabase.from('research_sessions')
+      .update({ parent_niche: val || null })
+      .eq('id', session.id);
+    setSavingParent(false);
+    onUpdated?.();
+  }
 
   async function toggleSeasonal() {
     const next = !seasonal;
@@ -188,6 +202,20 @@ export default function ResearchSessionCard({ session, onDeleted }) {
 
       {open && (
         <div style={{ marginTop: 12, fontSize: '0.8rem' }}>
+          {/* Parent niche editor */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', flexShrink: 0 }}>Main niche:</span>
+            <select
+              value={parentNiche}
+              onChange={e => handleParentNicheChange(e.target.value)}
+              disabled={savingParent}
+              style={{ fontSize: '0.72rem', padding: '2px 6px' }}
+            >
+              <option value="">— Uncategorized —</option>
+              {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            {savingParent && <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>Saving…</span>}
+          </div>
           {session.notes && (
             <p style={{ color: 'var(--charcoal-soft)', marginBottom: 8, lineHeight: 1.5 }}>{session.notes}</p>
           )}

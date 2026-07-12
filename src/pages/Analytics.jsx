@@ -304,19 +304,66 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                                 🎯 {signals.find(s => s.id === l.matched_signal_id)?.name || 'Matched signal'}
                               </div>
                             ) : (
-                              <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>⚑ Unmatched (white-space)</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>⚑ Unmatched</div>
                             )}
+                            <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Assign to existing signal:</div>
                             <select
                               value={l.matched_signal_id || ''}
                               onChange={e => handleManualMatch(l.id, e.target.value || null)}
                               disabled={savingMatch === l.id}
-                              style={{ fontSize: '0.72rem', padding: '3px 6px', width: '100%' }}
+                              style={{ fontSize: '0.72rem', padding: '3px 6px', width: '100%', marginBottom: 8 }}
                             >
-                              <option value="">— Assign to signal —</option>
+                              <option value="">— Select signal —</option>
                               {signals.filter(s => s.status !== 'discarded').map(s => (
                                 <option key={s.id} value={s.id}>{s.name}{s.collection ? ` (${s.collection})` : ''}</option>
                               ))}
                             </select>
+                            {/* Tag-based: create new signal from listing's own tags */}
+                            {(() => {
+                              const listingTags = [1,2,3,4,5,6,7,8,9,10,11,12,13]
+                                .map(i => l[`tag_${i}`])
+                                .filter(t => t && !/^[-–—]+$/.test(t.trim()));
+                              const trackedNames = new Set(signals.map(s => s.name.toLowerCase()));
+                              const newTags = listingTags.filter(t => !trackedNames.has(t.toLowerCase())).slice(0, 6);
+                              if (!newTags.length) return null;
+                              return (
+                                <div>
+                                  <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Or create a signal from this listing's tags:</div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                    {newTags.map(tag => (
+                                      <button
+                                        key={tag}
+                                        disabled={savingMatch === l.id}
+                                        onClick={async () => {
+                                          setSavingMatch(l.id);
+                                          const now = new Date().toISOString();
+                                          const { data: newSignal } = await supabase.from('trend_signals').insert({
+                                            name: tag,
+                                            status: 'watch', score: 0, score_breakdown: {},
+                                            evidence: `Created from competitor listing: ${l.product_name || ''}`,
+                                            first_spotted: now.split('T')[0],
+                                            last_updated: now.split('T')[0],
+                                            created_at: now, updated_at: now,
+                                          }).select().single();
+                                          if (newSignal) {
+                                            await supabase.from('competitor_listings').update({
+                                              matched_signal_id: newSignal.id,
+                                              white_space_flag: false,
+                                              last_updated_at: now,
+                                            }).eq('id', l.id);
+                                          }
+                                          setSavingMatch(null);
+                                          onRefetch?.();
+                                        }}
+                                        style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20, cursor: 'pointer', border: '1px dashed rgba(43,41,38,0.3)', background: 'transparent', color: 'var(--charcoal-soft)' }}
+                                      >
+                                        + {tag}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             {savingMatch === l.id && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>Saving…</div>}
                           </div>
                         </div>
