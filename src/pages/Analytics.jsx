@@ -153,10 +153,10 @@ function CompetitorsTab({ listings, loading }) {
 
       {/* Listings table */}
       <div style={{ overflowX: 'auto', maxHeight: 500, overflowY: 'auto', marginBottom: 24, border: 'var(--border)', borderRadius: 2 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+        <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', fontSize: '0.75rem', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)', position: 'sticky', top: 0, background: 'var(--warm-white)', zIndex: 1 }}>
-              <th style={{ textAlign: 'left', padding: '8px 8px', fontWeight: 500, color: 'var(--charcoal-soft)' }}>Listing</th>
+              <th style={{ textAlign: 'left', padding: '8px 8px', fontWeight: 500, color: 'var(--charcoal-soft)', width: '30%' }}>Listing</th>
               {[
                 { key: 'price', label: 'Price' },
                 { key: 'est_sales', label: 'Est. Sales' },
