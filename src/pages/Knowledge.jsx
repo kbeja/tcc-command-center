@@ -42,7 +42,10 @@ function InboxTab({ onNewUpdate }) {
   async function handleAdd() {
     if (!content.trim()) return;
     setAdding(true);
-    await createInboxItem({ input_type: inputType, content: content.trim(), url_type: source.trim() || null, status: 'pending' });
+    const trimmedSource = source.trim();
+    const urlInContent = !trimmedSource && content.match(/https?:\/\/\S+/)?.[0];
+    const resolvedSource = trimmedSource || urlInContent || null;
+    await createInboxItem({ input_type: inputType, content: content.trim(), url_type: resolvedSource, status: 'pending' });
     setContent('');
     setSource('');
     await refetch();

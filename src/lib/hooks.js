@@ -442,7 +442,7 @@ export async function createPendingUpdate(fields) {
     section_title: fields.section_title || null,
     action: fields.action || 'UPDATE',
     text: fields.proposed_body || fields.text || null,
-    source: fields.source_type || fields.source || null,
+    source: fields.source || fields.source_type || null,
     source_ids: fields.source_id ? [fields.source_id] : (fields.source_ids || null),
     status: fields.status || 'pending',
   };

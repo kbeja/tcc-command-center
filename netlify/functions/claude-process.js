@@ -28,8 +28,7 @@ Return ONLY this JSON structure — no other text:
   "sparks": [{ "content": "product idea", "collection_tag": "collection name or empty string" }]
 }
 
-playbook_slug options: product-research, design-standards, listing-photos, seo-standards, pinterest-standards, etsy-ads, ai-workflows
-If no transcript was available, set summary to "No transcript available" and return empty arrays.${JSON_RULE}`,
+playbook_slug options: product-research, design-standards, listing-photos, seo-standards, pinterest-standards, etsy-ads, ai-workflows${JSON_RULE}`,
 
   cowork_paste: `You are processing a Cowork output paste for TCC (The Current Chapter). Cowork handles trend sweeps, research automation, and workflow outputs.
 
@@ -53,33 +52,6 @@ Return ONLY this JSON — no other text:
 }${JSON_RULE}`,
 };
 
-// ─── YouTube transcript fetcher ───────────────────────────────────────────────
-
-function extractVideoId(url) {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return m[1];
-  }
-  return null;
-}
-
-async function fetchYouTubeTranscript(videoId) {
-  try {
-    const { YoutubeTranscript } = require('youtube-transcript');
-    const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
-    const text = transcript.map(t => t.text).join(' ').replace(/\s+/g, ' ').trim();
-    return { transcript: text.slice(0, 8000) };
-  } catch {
-    return { transcript: null };
-  }
-}
-
-// ─── Main handler ─────────────────────────────────────────────────────────────
-
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
@@ -102,28 +74,7 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: `Unknown type: ${type}` }) };
   }
 
-  // Resolve content — detect YouTube URLs and fetch transcript
-  let content = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  let youtubeContext = '';
-
-  const youtubeUrlMatch = content.match(/https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\/\S+/);
-  if (youtubeUrlMatch) {
-    const videoId = extractVideoId(youtubeUrlMatch[0]);
-    if (videoId) {
-      try {
-        const { title, author, description, transcript } = await fetchYouTubeTranscript(videoId);
-        youtubeContext = `\n\nYOUTUBE VIDEO: "${title}" by ${author}\nDESCRIPTION: ${description}`;
-        if (transcript) {
-          youtubeContext += `\n\nTRANSCRIPT:\n${transcript.slice(0, 8000)}`;
-        } else {
-          youtubeContext += '\n\n(No transcript available for this video)';
-        }
-        content = content.replace(youtubeUrlMatch[0], '').trim() + youtubeContext;
-      } catch (err) {
-        content += `\n\n(Could not fetch YouTube transcript: ${err.message})`;
-      }
-    }
-  }
+  const content = typeof payload === 'string' ? payload : JSON.stringify(payload);
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -155,7 +106,6 @@ exports.handler = async (event) => {
       body: JSON.stringify({ parsed, raw: text }),
     };
   } catch (err) {
-    console.error('Claude API error:', err);
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };

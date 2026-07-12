@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
 import PinterestCSVImport from '../components/PinterestCSVImport';
+import EverbeeCSVImport from '../components/EverbeeCSVImport';
 import WeeklyReview from '../components/WeeklyReview';
 
 const PRINTIFY_COST_DEFAULT = 14; // fallback if no cost set
@@ -328,6 +329,9 @@ export default function Analytics() {
       {tab === 'import' && (
         <div>
           <div style={{ marginBottom: 32 }}>
+            <EverbeeCSVImport products={products} onImported={refetch} />
+          </div>
+          <div style={{ borderTop: 'var(--border)', paddingTop: 24, marginBottom: 32 }}>
             <EtsyCSVImport products={products} onImported={refetch} />
           </div>
           <div style={{ borderTop: 'var(--border)', paddingTop: 24 }}>
