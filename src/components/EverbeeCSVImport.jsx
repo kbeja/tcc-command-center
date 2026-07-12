@@ -259,13 +259,17 @@ export default function EverbeeCSVImport({ products, onImported }) {
           .filter(r => r.product_link)
           .map(r => ({ ...r, import_context: importContext || null, last_updated_at: now, white_space_flag: true, first_seen_at: now }));
 
+        // Deduplicate by product_link within the import (keep last occurrence)
+        const deduped = Object.values(
+          validCompetitors.reduce((acc, r) => { acc[r.product_link] = r; return acc; }, {})
+        );
+
         const CHUNK = 200;
-        for (let i = 0; i < validCompetitors.length; i += CHUNK) {
-          const chunk = validCompetitors.slice(i, i + CHUNK);
-          const { data: upserted, error } = await supabase
+        for (let i = 0; i < deduped.length; i += CHUNK) {
+          const chunk = deduped.slice(i, i + CHUNK);
+          const { error } = await supabase
             .from('competitor_listings')
-            .upsert(chunk, { onConflict: 'product_link', ignoreDuplicates: false })
-            .select('id');
+            .upsert(chunk, { onConflict: 'product_link', ignoreDuplicates: false });
           if (error) throw new Error(`Upsert failed: ${error.message}`);
           competitorAdded += chunk.length;
           whiteSpace += chunk.length;
