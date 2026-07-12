@@ -152,11 +152,11 @@ function CompetitorsTab({ listings, loading }) {
       </div>
 
       {/* Listings table */}
-      <div style={{ overflowX: 'auto', marginBottom: 24 }}>
+      <div style={{ overflowX: 'auto', maxHeight: 500, overflowY: 'auto', marginBottom: 24, border: 'var(--border)', borderRadius: 2 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)' }}>
-              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500, color: 'var(--charcoal-soft)' }}>Listing</th>
+            <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)', position: 'sticky', top: 0, background: 'var(--warm-white)', zIndex: 1 }}>
+              <th style={{ textAlign: 'left', padding: '8px 8px', fontWeight: 500, color: 'var(--charcoal-soft)' }}>Listing</th>
               {[
                 { key: 'price', label: 'Price' },
                 { key: 'est_sales', label: 'Est. Sales' },
@@ -165,7 +165,7 @@ function CompetitorsTab({ listings, loading }) {
                 { key: 'total_reviews', label: 'Reviews' },
                 { key: 'visibility_score', label: 'Visibility' },
               ].map(({ key, label }) => (
-                <th key={key} onClick={() => toggleSort(key)} style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500, color: 'var(--charcoal-soft)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <th key={key} onClick={() => toggleSort(key)} style={{ textAlign: 'right', padding: '8px 8px', fontWeight: 500, color: 'var(--charcoal-soft)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   {label}<SortArrow col={key} />
                 </th>
               ))}

@@ -3,25 +3,37 @@ import { supabase } from '../lib/supabase';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
-function parseCSV(text) {
-  const lines = [];
+function parseCSVLine(line) {
+  const fields = [];
   let current = '';
   let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') { inQuotes = !inQuotes; continue; }
-    if (ch === '\n' && !inQuotes) { lines.push(current); current = ''; continue; }
-    current += ch;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
   }
-  if (current.trim()) lines.push(current);
+  fields.push(current.trim());
+  return fields;
+}
 
+function parseCSV(text) {
+  // Normalize line endings
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n').filter(l => l.trim());
   if (lines.length < 2) return { headers: [], rows: [] };
 
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').trim());
   const rows = lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim());
+    const vals = parseCSVLine(line);
     const row = {};
-    headers.forEach((h, i) => { row[h] = vals[i] || ''; });
+    headers.forEach((h, i) => { row[h] = vals[i] !== undefined ? vals[i] : ''; });
     return row;
   }).filter(r => Object.values(r).some(v => v));
 
