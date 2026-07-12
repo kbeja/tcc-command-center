@@ -361,6 +361,25 @@ export function useTrendSignals() {
   return { signals, loading, refetch: fetch };
 }
 
+// ─── Competitor Listings ──────────────────────────────────────────────────────
+
+export function useCompetitorListings() {
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('competitor_listings')
+      .select('*')
+      .order('last_updated_at', { ascending: false });
+    if (data) setListings(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { listings, loading, refetch: fetch };
+}
+
 // ─── Knowledge Base ──────────────────────────────────────────────────────────
 
 export function useKnowledgeInbox(statusFilter = 'pending') {

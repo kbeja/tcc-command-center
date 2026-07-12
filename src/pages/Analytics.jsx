@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useProducts } from '../lib/hooks';
+import { useProducts, useCompetitorListings } from '../lib/hooks';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
@@ -31,8 +31,234 @@ function listingStatus(p) {
   return { label: 'Review', title: '0 sales — worth investigating' };
 }
 
+function CompetitorsTab({ listings, loading }) {
+  const [sortCol, setSortCol] = useState('est_sales');
+  const [sortDir, setSortDir] = useState('desc');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [whiteSpaceOnly, setWhiteSpaceOnly] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+
+  if (loading) return <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>;
+  if (listings.length === 0) return <div className="empty-state"><p>No competitor data yet. Import an Everbee listing export to get started.</p></div>;
+
+  // ── Tag frequency analysis ──
+  const tagCounts = {};
+  for (const l of listings) {
+    for (let i = 1; i <= 13; i++) {
+      const tag = l[`tag_${i}`];
+      if (tag && tag.trim()) {
+        const t = tag.trim().toLowerCase();
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+      }
+    }
+  }
+  const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 15);
+
+  // ── Shop dominance ──
+  const shopCounts = {};
+  for (const l of listings) {
+    if (l.shop_name) shopCounts[l.shop_name] = (shopCounts[l.shop_name] || 0) + 1;
+  }
+  const topShops = Object.entries(shopCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // ── Summary stats ──
+  const withSales = listings.filter(l => l.est_sales > 0);
+  const avgEstSales = withSales.length ? Math.round(withSales.reduce((s, l) => s + l.est_sales, 0) / withSales.length) : 0;
+  const avgPrice = listings.filter(l => l.price).length
+    ? (listings.filter(l => l.price).reduce((s, l) => s + l.price, 0) / listings.filter(l => l.price).length).toFixed(2)
+    : null;
+  const whiteSpaceCount = listings.filter(l => l.white_space_flag).length;
+
+  // ── Categories ──
+  const categories = [...new Set(listings.map(l => l.category).filter(Boolean))];
+
+  // ── Filtered + sorted table ──
+  const filtered = listings
+    .filter(l => !categoryFilter || l.category === categoryFilter)
+    .filter(l => !whiteSpaceOnly || l.white_space_flag)
+    .sort((a, b) => {
+      const av = a[sortCol] ?? 0, bv = b[sortCol] ?? 0;
+      return sortDir === 'desc' ? bv - av : av - bv;
+    });
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSortCol(col); setSortDir('desc'); }
+  }
+
+  const SortArrow = ({ col }) => sortCol === col
+    ? <span style={{ opacity: 0.6 }}>{sortDir === 'desc' ? ' ↓' : ' ↑'}</span>
+    : <span style={{ opacity: 0.2 }}> ↕</span>;
+
+  return (
+    <div>
+      {/* Summary stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 24 }}>
+        {[
+          { label: 'Total tracked', value: listings.length },
+          { label: 'Avg est. sales', value: avgEstSales },
+          { label: 'Avg price', value: avgPrice ? `$${avgPrice}` : '—' },
+          { label: 'White-space flags', value: whiteSpaceCount },
+        ].map(s => (
+          <div key={s.label} style={{ border: 'var(--border)', borderRadius: 2, padding: '12px 14px', background: 'var(--warm-white)' }}>
+            <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 6 }}>{s.label}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem' }}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Top tags */}
+      <div className="section-label" style={{ marginBottom: 10 }}>Most Used Tags Across Competitors</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 24 }}>
+        {topTags.map(([tag, count]) => (
+          <div key={tag} style={{
+            fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20,
+            background: 'var(--rose-faint)', border: '1px solid rgba(188,143,143,0.3)',
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <span>{tag}</span>
+            <span style={{ color: 'var(--dusty-rose)', fontWeight: 600 }}>{count}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Top shops */}
+      <div className="section-label" style={{ marginBottom: 10 }}>Top Competitor Shops</div>
+      <div style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {topShops.map(([shop, count]) => (
+          <div key={shop} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: 'var(--border)', borderRadius: 2, background: 'var(--warm-white)', fontSize: '0.8rem' }}>
+            <span>{shop}</span>
+            <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>{count} listing{count !== 1 ? 's' : ''}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="section-label" style={{ margin: 0 }}>All Listings</div>
+        {categories.length > 0 && (
+          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
+            <option value="">All categories</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.75rem', cursor: 'pointer' }}>
+          <input type="checkbox" checked={whiteSpaceOnly} onChange={e => setWhiteSpaceOnly(e.target.checked)} />
+          White-space only
+        </label>
+        {(categoryFilter || whiteSpaceOnly) && (
+          <button className="btn btn-ghost btn-sm" onClick={() => { setCategoryFilter(''); setWhiteSpaceOnly(false); }}>Clear</button>
+        )}
+      </div>
+
+      {/* Listings table */}
+      <div style={{ overflowX: 'auto', marginBottom: 24 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)' }}>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500, color: 'var(--charcoal-soft)' }}>Listing</th>
+              {[
+                { key: 'price', label: 'Price' },
+                { key: 'est_sales', label: 'Est. Sales' },
+                { key: 'est_revenue', label: 'Est. Rev' },
+                { key: 'growth_rate', label: 'Growth' },
+                { key: 'total_reviews', label: 'Reviews' },
+                { key: 'visibility_score', label: 'Visibility' },
+              ].map(({ key, label }) => (
+                <th key={key} onClick={() => toggleSort(key)} style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500, color: 'var(--charcoal-soft)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {label}<SortArrow col={key} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(l => (
+              <>
+                <tr
+                  key={l.id}
+                  onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+                  style={{ borderBottom: '1px solid rgba(43,41,38,0.06)', cursor: 'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--charcoal-faint)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <td style={{ padding: '8px 8px', maxWidth: 200 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.product_name}</div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
+                      {l.shop_name}{l.white_space_flag ? <span style={{ color: 'var(--dusty-rose)', marginLeft: 4 }}>⚑ white-space</span> : null}
+                    </div>
+                  </td>
+                  <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{l.price ? `$${Number(l.price).toFixed(2)}` : '—'}</td>
+                  <td style={{ textAlign: 'right', padding: '8px 8px', fontWeight: l.est_sales > 0 ? 500 : 400 }}>{l.est_sales ?? '—'}</td>
+                  <td style={{ textAlign: 'right', padding: '8px 8px' }}>{l.est_revenue ? `$${Number(l.est_revenue).toFixed(0)}` : '—'}</td>
+                  <td style={{ textAlign: 'right', padding: '8px 8px', color: l.growth_rate > 0 ? 'var(--success)' : 'var(--charcoal-soft)' }}>{l.growth_rate != null ? `${l.growth_rate}%` : '—'}</td>
+                  <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{l.total_reviews ?? '—'}</td>
+                  <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{l.visibility_score ?? '—'}</td>
+                </tr>
+                {expandedId === l.id && (
+                  <tr key={`${l.id}-expanded`} style={{ background: 'var(--charcoal-faint)' }}>
+                    <td colSpan={7} style={{ padding: '10px 12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: '0.75rem', marginBottom: 10 }}>
+                        <div>
+                          {[
+                            ['Category', l.category],
+                            ['Listing age', l.listing_age],
+                            ['Shop age', l.shop_age],
+                            ['Total shop sales', l.total_shop_sales?.toLocaleString()],
+                            ['Total favorites', l.total_favorites?.toLocaleString()],
+                            ['Total views', l.total_views?.toLocaleString()],
+                            ['Conversion rate', l.conversion_rate ? `${l.conversion_rate}%` : null],
+                            ['Listing type', l.listing_type],
+                            ['Title chars', l.title_character_count],
+                          ].filter(([, v]) => v != null).map(([label, value]) => (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <span style={{ color: 'var(--charcoal-soft)' }}>{label}</span>
+                              <span>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          {l.product_link && (
+                            <a href={l.product_link} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--dusty-rose)', display: 'block', marginBottom: 8, wordBreak: 'break-all' }}>
+                              View listing ↗
+                            </a>
+                          )}
+                          {l.import_context && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>Context: {l.import_context}</div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Tags */}
+                      {(() => {
+                        const tags = [1,2,3,4,5,6,7,8,9,10,11,12,13].map(i => l[`tag_${i}`]).filter(Boolean);
+                        return tags.length > 0 ? (
+                          <div>
+                            <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 6 }}>Tags</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {tags.map((tag, i) => (
+                                <span key={i} style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(188,143,143,0.15)', border: '1px solid rgba(188,143,143,0.25)' }}>{tag}</span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null;
+                      })()}
+                    </td>
+                  </tr>
+                )}
+              </>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 20, color: 'var(--charcoal-soft)', fontSize: '0.82rem' }}>No listings match the current filter.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Analytics() {
   const { products, loading, refetch } = useProducts();
+  const { listings: competitors, loading: compLoading } = useCompetitorListings();
   const navigate = useNavigate();
   const [tab, setTab] = useState('overview');
   const [collectionFilter, setCollectionFilter] = useState('');
@@ -108,13 +334,13 @@ export default function Analytics() {
       <div className="page-header">
         <div className="page-title">Analytics</div>
         <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-          {['overview', 'goals', 'import', 'weekly'].map(t => (
+          {['overview', 'goals', 'competitors', 'import', 'weekly'].map(t => (
             <button
               key={t}
               className={`btn btn-sm ${tab === t ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setTab(t)}
             >
-              {{ overview: 'Overview', goals: 'Goals', import: 'Import Data', weekly: 'Weekly Review' }[t]}
+              {{ overview: 'Overview', goals: 'Goals', competitors: 'Competitors', import: 'Import Data', weekly: 'Weekly Review' }[t]}
             </button>
           ))}
         </div>
@@ -338,6 +564,11 @@ export default function Analytics() {
             <PinterestCSVImport products={products} onImported={refetch} />
           </div>
         </div>
+      )}
+
+      {/* ── COMPETITORS TAB ── */}
+      {tab === 'competitors' && (
+        <CompetitorsTab listings={competitors} loading={compLoading} />
       )}
 
       {/* ── WEEKLY REVIEW TAB ── */}
