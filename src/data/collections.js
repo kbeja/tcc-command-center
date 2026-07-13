@@ -96,6 +96,26 @@ Colors: Buttermilk, warm white, washed denim, soft terracotta.
 Typography: Retro serif, slightly worn, reminiscent of 90s brand lettering.
 Motifs: Cassette tapes, butterfly clips, crimped hair, Saturday morning cartoons, after-school snacks.
 Vibe: The mom who grew up in the 90s and is raising her kids the same way — intentionally, warmly, with a little chaos.`,
+
+  'elder millennial': `ELDER MILLENNIAL — MOM CHAPTER STYLE GUIDE
+
+Aesthetic: Quiet, minimalist, intentional. The mom who curated her entire life before TikTok existed.
+Colors: Cream, soft white, warm oatmeal, muted sage, light clay. No neons, no electric brights.
+Typography: Clean serif or refined script. Understated but distinctive. Nothing varsity.
+Motifs: Simple line art, subtle texture, generous negative space. Less is more.
+Vibe: The millennial mom who knows exactly what she likes and says it without shouting.
+
+PHOTO NOTES: Lifestyle over flat-lay. Neutral backgrounds, natural light, minimal props. Worn-in context (coffee cup, couch, morning light) over staged studio.`,
+
+  'mom humor': `MOM HUMOR — MOM CHAPTER STYLE GUIDE
+
+Aesthetic: Punchy, irreverent, relatable. The group chat meme made wearable.
+Colors: Bold but not overwhelming — black text on cream, or a single accent color.
+Typography: Clean sans-serif for punchlines. Easy to read fast.
+Motifs: Minimal illustration, let the words do the work.
+Vibe: The mom who forwards you the meme at 11pm. The shirt IS the joke.
+
+PHOTO NOTES: Candid or semi-candid lifestyle. Genuine expression over posed.`,
 };
 
 export const collectionKnowledge = {

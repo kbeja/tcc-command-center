@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, deleteProduct, useResearchSessions } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
@@ -206,35 +206,39 @@ function LiveStats({ product, onSave }) {
 
 // ─── Context Bundle ───────────────────────────────────────────────────────────
 
-function ContextBundle({ product, sessions }) {
+function ContextBundle({ product, sessions, photoPlaybook }) {
   const [copied, setCopied] = useState(null);
 
   function buildBundle() {
     const colKnowledge = collectionKnowledge[product.collection] || {};
-
-    // Deduplicate green keywords — keep highest score per keyword name
-    // Exclude seasonal sessions unless the product itself is seasonal
     const isSeasonalProduct = product.portfolio_level === 'Seasonal';
+
+    // ── Keywords: split clean vs tags-only (misspelling variants) ──
     const kwMap = new Map();
+    const tagsOnlyMap = new Map();
     for (const s of sessions) {
       if (s.seasonal && !isSeasonalProduct) continue;
       for (const k of (s.keywords || [])) {
         if (k.tag_type !== 'use') continue;
         const key = k.keyword.toLowerCase();
-        const existing = kwMap.get(key);
-        if (!existing || (k.score || 0) > (existing.score || 0)) {
-          kwMap.set(key, k);
-        }
+        const target = k.tags_only ? tagsOnlyMap : kwMap;
+        const existing = target.get(key);
+        if (!existing || (k.score || 0) > (existing.score || 0)) target.set(key, k);
       }
     }
-    const greenKeywords = [...kwMap.values()]
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, 20);
-    const keywordList = greenKeywords.length
-      ? greenKeywords.map(k => `${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`).join('\n')
+    const fmt = k => `${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`;
+    const cleanKws = [...kwMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 20);
+    const tagsOnlyKws = [...tagsOnlyMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    const keywordBlock = cleanKws.length
+      ? cleanKws.map(fmt).join('\n')
       : colKnowledge.keywords?.topKeywords?.slice(0, 15).join('\n') || 'See keyword bank';
 
-    // Style guide: static niche guide first, then niche session notes, then collection guide
+    const tagsOnlyBlock = tagsOnlyKws.length
+      ? `\nTAGS-ONLY — misspelling variants (never use in title or description)\n${tagsOnlyKws.map(fmt).join('\n')}`
+      : '';
+
+    // ── Style guide: niche-specific first, fall back to collection ──
     const nicheKey = product.niche?.toLowerCase() || '';
     const staticNicheGuide = nicheKey ? nicheStyleGuides[nicheKey] : null;
     const nicheSessions = product.niche
@@ -243,11 +247,22 @@ function ContextBundle({ product, sessions }) {
     const nicheSessionNotes = nicheSessions.length
       ? `Niche research notes (${product.niche}):\n${nicheSessions.map(s => s.notes).join('\n')}`
       : '';
-    const styleGuide = [
-      staticNicheGuide,
-      nicheSessionNotes,
-      !staticNicheGuide ? (colKnowledge.styleGuide || 'See TCC OS style guides.') : null,
-    ].filter(Boolean).join('\n\n');
+
+    // Only fall back to collection guide if no niche guide exists
+    const collectionFallback = !staticNicheGuide ? (colKnowledge.styleGuide || null) : null;
+    const styleGuide = [staticNicheGuide, nicheSessionNotes, collectionFallback]
+      .filter(Boolean).join('\n\n') || 'No style guide found — add a niche to this product or check collections.js.';
+
+    // ── Emotional trigger ──
+    const triggerLine = product.emotional_trigger
+      ? `Emotional trigger: ${product.emotional_trigger}`
+      : `Emotional trigger: ⚠ NOT SET — add in Product Details for targeted style direction`;
+
+    // ── Listing Photo Standards (from playbook) ──
+    const photoSections = photoPlaybook?.playbook_sections || [];
+    const photoBlock = photoSections.length
+      ? photoSections.map(s => `${s.section_title}:\n${s.body || '(empty)'}`).join('\n\n')
+      : 'Listing Photo Standards not loaded — check Knowledge Base > Playbooks > Listing Photos.';
 
     return `--- TCC CONTEXT BUNDLE ---
 Product: ${product.name}
@@ -255,13 +270,17 @@ Collection: ${product.collection}${product.niche ? `\nNiche: ${product.niche}` :
 Stage: ${product.stage}
 Confidence: ${product.confidence || 'Not set'}
 Ecosystem: ${product.ecosystem_primary || '—'}
-Emotional trigger: ${product.emotional_trigger || '—'}
+${triggerLine}
 
-TOP KEYWORDS (confirmed green from research)
-${keywordList}
+TOP KEYWORDS (title + description safe)
+${keywordBlock}
+${tagsOnlyBlock}
 
 STYLE GUIDE
 ${styleGuide}
+
+LISTING PHOTO STANDARDS
+${photoBlock}
 
 PRODUCT NOTES
 ${product.notes || 'None.'}
@@ -362,6 +381,8 @@ export default function ProductWorkspace() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
+  const { playbooks } = usePlaybooks();
+  const photoPlaybook = playbooks.find(p => p.slug === 'listing-photos');
 
   useEffect(() => {
     if (product) {
@@ -522,7 +543,7 @@ export default function ProductWorkspace() {
       {/* ── Context Bundle ── */}
       <div style={{ marginBottom: 24 }}>
         <div className="section-label" style={{ marginBottom: 10 }}>Context Bundle</div>
-        <ContextBundle product={{ ...product, ecosystem_primary: ecosystem, emotional_trigger: emotionalTrigger, niche }} sessions={sessions} />
+        <ContextBundle product={{ ...product, ecosystem_primary: ecosystem, emotional_trigger: emotionalTrigger, niche }} sessions={sessions} photoPlaybook={photoPlaybook} />
       </div>
 
       <hr className="rule" />

@@ -20,6 +20,7 @@ function EditableKeyword({ k, onSave, onDelete }) {
   const [competition, setCompetition] = useState(k.competition ?? '');
   const [score, setScore] = useState(k.score ?? '');
   const [tagType, setTagType] = useState(k.tag_type || 'watch');
+  const [tagsOnly, setTagsOnly] = useState(!!k.tags_only);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -30,6 +31,7 @@ function EditableKeyword({ k, onSave, onDelete }) {
       competition: competition !== '' ? parseInt(competition) : null,
       score: score !== '' ? parseInt(score) : null,
       tag_type: tagType,
+      tags_only: tagsOnly,
       updated_at: new Date().toISOString(),
     };
     await supabase.from('keywords').update(updates).eq('id', k.id);
@@ -65,11 +67,15 @@ function EditableKeyword({ k, onSave, onDelete }) {
           <input value={score} onChange={e => setScore(e.target.value)} type="number"
             style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Score" />
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>
+            <input type="checkbox" checked={tagsOnly} onChange={e => setTagsOnly(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
+            Tags-only (misspelling variant)
+          </label>
           <button onClick={() => onDelete(k.id)}
             style={{ marginLeft: 'auto', color: 'var(--alert)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>
             Delete
@@ -85,21 +91,21 @@ function EditableKeyword({ k, onSave, onDelete }) {
       style={{
         display: 'flex', gap: 10, padding: '5px 10px',
         borderLeft: `3px solid ${KW_COLORS[tagType] || KW_COLORS.watch}`,
-        background: 'var(--charcoal-faint)', borderRadius: '0 2px 2px 0',
+        background: k.tags_only ? 'rgba(43,41,38,0.04)' : 'var(--charcoal-faint)',
+        borderRadius: '0 2px 2px 0',
         alignItems: 'center', flexWrap: 'wrap', cursor: 'pointer',
       }}
       title="Click to edit"
     >
-      <span style={{ flex: 1, minWidth: 120 }}>{keyword}</span>
+      <span style={{ flex: 1, minWidth: 120, fontStyle: k.tags_only ? 'italic' : 'normal' }}>{keyword}</span>
       <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-        {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {volume}</span>}
-        {competition && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>comp {competition}</span>}
-        {score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {score}</span>}
-        {k.updated_at && (
-          <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.65rem', opacity: 0.7 }}>
-            updated {new Date(k.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+        {k.tags_only && (
+          <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(43,41,38,0.12)', color: 'var(--charcoal-soft)', whiteSpace: 'nowrap' }}>
+            tags only
           </span>
         )}
+        {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {volume}</span>}
+        {score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {score}</span>}
         <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', opacity: 0.4 }}>✎</span>
       </span>
     </div>
