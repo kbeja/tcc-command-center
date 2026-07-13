@@ -71,6 +71,54 @@ exports.handler = async (event) => {
   }
 
   const { type, payload } = body;
+
+  // ── Vision: extract keyword table from Everbee screenshot ──
+  if (type === 'extract_keywords_image') {
+    const { imageBase64, mediaType } = payload || {};
+    if (!imageBase64) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'No image data' }) };
+    }
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.CLAUDE_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2000,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: mediaType || 'image/png', data: imageBase64 },
+              },
+              {
+                type: 'text',
+                text: 'Extract the keyword data table from this Everbee screenshot. Return ONLY a JSON array — no other text, no markdown. Each object must have: {"keyword": string, "volume": number or null, "competition": number or null, "score": number or null}. Strip commas from numbers (e.g. "1,234" → 1234). Skip the header row. If a value is unclear return null. Example output: [{"keyword":"mom life svg","volume":4368,"competition":5,"score":873750}]',
+              },
+            ],
+          }],
+        }),
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '[]';
+      const match = text.match(/\[[\s\S]*\]/);
+      const keywords = match ? JSON.parse(match[0]) : [];
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords }),
+      };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
+  // ── Text-based processing ──
   const systemPrompt = SYSTEM_PROMPTS[type];
   if (!systemPrompt) {
     return { statusCode: 400, body: JSON.stringify({ error: `Unknown type: ${type}` }) };
