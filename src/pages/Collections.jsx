@@ -76,6 +76,7 @@ export default function Collections() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newChapter, setNewChapter] = useState('');
+  const [newStyleGuide, setNewStyleGuide] = useState('');
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [filterChapter, setFilterChapter] = useState('');
@@ -91,9 +92,13 @@ export default function Collections() {
   async function handleAdd() {
     if (!newName.trim()) return;
     setSaving(true);
-    await createCollection(newName.trim(), newChapter ? { parent_chapter: newChapter } : {});
+    await createCollection(newName.trim(), {
+      ...(newChapter ? { parent_chapter: newChapter } : {}),
+      ...(newStyleGuide.trim() ? { style_guide: newStyleGuide.trim() } : {}),
+    });
     setNewName('');
     setNewChapter('');
+    setNewStyleGuide('');
     setSaving(false);
     setAdding(false);
     refetch();
@@ -154,12 +159,18 @@ export default function Collections() {
               <option value="">— Main niche (optional) —</option>
               {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
+            <textarea
+              value={newStyleGuide}
+              onChange={e => setNewStyleGuide(e.target.value)}
+              placeholder="Style guide — aesthetic, colors, typography, vibe, photo notes… (strongly recommended)"
+              rows={4}
+            />
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving || !newName.trim()}>
               {saving ? 'Saving…' : 'Save →'}
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); setNewChapter(''); }}>Cancel</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); setNewChapter(''); setNewStyleGuide(''); }}>Cancel</button>
           </div>
         </div>
       )}

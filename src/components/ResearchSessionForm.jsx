@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createResearchSession, useCollections } from '../lib/hooks';
+import { createResearchSession, useCollections, createCollection } from '../lib/hooks';
 
 const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
@@ -100,6 +100,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   const { collections } = useCollections();
   const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
   const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionStyleGuide, setNewCollectionStyleGuide] = useState('');
   const [parentNiche, setParentNiche] = useState(defaultParentNiche || '');
   const [niche, setNiche] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -168,6 +169,12 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
     const effectiveCollection = collection === '__new__' ? newCollectionName.trim() : collection;
     if (!effectiveCollection) return;
     setSaving(true);
+    if (collection === '__new__' && effectiveCollection) {
+      await createCollection(effectiveCollection, {
+        ...(parentNiche ? { parent_chapter: parentNiche } : {}),
+        ...(newCollectionStyleGuide.trim() ? { style_guide: newCollectionStyleGuide.trim() } : {}),
+      });
+    }
     const kwList = keywords
       .filter(k => k.keyword.trim())
       .map(k => ({
@@ -210,15 +217,24 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         <div className="form-group">
           <label className="form-label">Collection (sub-niche)</label>
           {collection === '__new__' ? (
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input
-                autoFocus
-                placeholder="New collection name…"
-                value={newCollectionName}
-                onChange={e => setNewCollectionName(e.target.value)}
-                style={{ flex: 1 }}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  autoFocus
+                  placeholder="New collection name…"
+                  value={newCollectionName}
+                  onChange={e => setNewCollectionName(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn btn-ghost btn-sm" onClick={() => { setCollection(''); setNewCollectionName(''); setNewCollectionStyleGuide(''); }}>✕</button>
+              </div>
+              <textarea
+                value={newCollectionStyleGuide}
+                onChange={e => setNewCollectionStyleGuide(e.target.value)}
+                placeholder="Style guide — aesthetic, colors, typography, vibe… (strongly recommended; used in Context Bundle)"
+                rows={3}
+                style={{ fontSize: '0.78rem' }}
               />
-              <button className="btn btn-ghost btn-sm" onClick={() => { setCollection(''); setNewCollectionName(''); }}>✕</button>
             </div>
           ) : (
             <select value={collection} onChange={e => {

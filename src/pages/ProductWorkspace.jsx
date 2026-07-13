@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
@@ -206,40 +206,97 @@ function LiveStats({ product, onSave }) {
 
 // ─── Context Bundle ───────────────────────────────────────────────────────────
 
-function ContextBundle({ product, sessions, photoPlaybook }) {
+const SEO_STANDARDS_FALLBACK = `TITLE FORMAT
+[Opening phrase, title case] | [Keyword chain]
+Rule: Human-readable opening + overlapping keyword chain. Title case throughout.
+Example: "Cool Mom Sweatshirt | Mom Life Crewneck | Mama Bear Pullover"
+
+KEYWORD BUCKETS
+B1 Visibility — High-volume anchors the algorithm uses to place you. Put in title + first tags.
+B2 Reach — Medium-volume, specific. Qualified buyers. Title + tags where it fits.
+B3 Bestseller — Exact phrases from top competitor listings. Identify via Everbee/Trend Radar.
+
+TAG FORMAT
+• Fill all 13 tags to 20 characters when possible
+• Split long phrases across tags (e.g. "cozy mom sweatshirt" → "cozy mom sweat" + "shirt gift for mom")
+• No single-word tags unless the word fills 20 characters
+
+DESCRIPTION — 6-SECTION STRUCTURE
+1. SEO Opener: 2 sentences, keyword-dense, naturally phrased. First 40 words matter most.
+2. Product Details: Size/color/format, file type (if digital), what's included.
+3. Ordering Steps: How to customize, download, or place the order.
+4. Cross-Sell: "Shop our [collection] for more designs like this…"
+5. Shipping: [Standard shop policy language]
+6. Brand Voice Closer: 1–2 sentences. TCC voice. No Hallmark energy.`;
+
+const BRAND_VOICE_FALLBACK = `THE THREE GEARS
+Aspirational: "You already know who you are. This is just the shirt that proves it."
+Honest & Grounding: "It's not always beautiful. But it's always real."
+Sarcastic & Warm: "Fine. You didn't ask for advice. Here's a shirt instead."
+
+TARGET CUSTOMER VOICE
+Present, capable, carries chaos lightly — without performing it.
+She's not surviving motherhood as a brand. She just lives it.
+✅ Dry, specific, occasionally delighted by small things
+❌ No Hallmark energy — no sappy, wistful, or inspirational-quote copy
+❌ No "Every moment is precious" / "You are enough" / "You've got this"
+❌ No wistful past-tense ("Remember when…") — she lives in the present tense
+
+NOTE: Customer recognition is one input within the Product Validation Framework
+(alongside market evidence, human truth, and authentic expression) — not a standalone gate.`;
+
+function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoicePlaybook, collectionObj, validationNotes }) {
   const [copied, setCopied] = useState(null);
 
   function buildBundle() {
     const colKnowledge = collectionKnowledge[product.collection] || {};
     const isSeasonalProduct = product.portfolio_level === 'Seasonal';
 
-    // ── Keywords: split clean vs tags-only (misspelling variants) ──
-    const kwMap = new Map();
+    // ── Keywords: B1/B2/Watch/Tags-only ──
+    const useMap = new Map();
+    const watchMap = new Map();
     const tagsOnlyMap = new Map();
     for (const s of sessions) {
       if (s.seasonal && !isSeasonalProduct) continue;
       for (const k of (s.keywords || [])) {
-        if (k.tag_type !== 'use') continue;
         const key = k.keyword.toLowerCase();
-        const target = k.tags_only ? tagsOnlyMap : kwMap;
-        const existing = target.get(key);
-        if (!existing || (k.score || 0) > (existing.score || 0)) target.set(key, k);
+        if (k.tags_only) {
+          const ex = tagsOnlyMap.get(key);
+          if (!ex || (k.score || 0) > (ex.score || 0)) tagsOnlyMap.set(key, k);
+          continue;
+        }
+        if (k.tag_type === 'use') {
+          const ex = useMap.get(key);
+          if (!ex || (k.score || 0) > (ex.score || 0)) useMap.set(key, k);
+        } else if (k.tag_type === 'watch') {
+          const ex = watchMap.get(key);
+          if (!ex || (k.score || 0) > (ex.score || 0)) watchMap.set(key, k);
+        }
       }
     }
-    const fmt = k => `${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`;
-    const cleanKws = [...kwMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 20);
-    const tagsOnlyKws = [...tagsOnlyMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const fmt = k => `  ${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`;
+    const sortedUse = [...useMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const sortedWatch = [...watchMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10);
+    const sortedTagsOnly = [...tagsOnlyMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    const keywordBlock = cleanKws.length
-      ? cleanKws.map(fmt).join('\n')
-      : colKnowledge.keywords?.topKeywords?.slice(0, 15).join('\n') || 'See keyword bank';
+    const kwFallback = colKnowledge.keywords?.topKeywords?.slice(0, 15) || [];
+    let keywordSection;
+    if (sortedUse.length === 0 && kwFallback.length === 0) {
+      keywordSection = 'No keywords found — add research sessions to this collection.';
+    } else if (sortedUse.length === 0) {
+      keywordSection = `B1 — Visibility\n${kwFallback.slice(0, 5).join('\n')}\n\nB2 — Reach\n${kwFallback.slice(5).join('\n')}\n\nB3 — Bestseller\n  ⚠ Not yet mapped — pull from competitor bestseller listings in Trend Radar.`;
+    } else {
+      const b1 = sortedUse.slice(0, 5);
+      const b2 = sortedUse.slice(5, 20);
+      keywordSection = `B1 — Visibility (title anchor + first tags)\n${b1.map(fmt).join('\n')}\n\nB2 — Reach (supporting title + description terms)\n${b2.length ? b2.map(fmt).join('\n') : '  (none beyond B1)'}\n\nB3 — Bestseller (exact phrases from top competitor listings)\n  ⚠ Not yet mapped — pull from competitor bestseller research in Trend Radar.\n\nWatch List (monitoring — not yet confirmed)\n${sortedWatch.length ? sortedWatch.map(fmt).join('\n') : '  (none)'}`;
+    }
 
-    const tagsOnlyBlock = tagsOnlyKws.length
-      ? `\nTAGS-ONLY — misspelling variants (never use in title or description)\n${tagsOnlyKws.map(fmt).join('\n')}`
+    const tagsOnlyBlock = sortedTagsOnly.length
+      ? `\nTAGS-ONLY — misspelling variants (never use in title or description)\n${sortedTagsOnly.map(fmt).join('\n')}`
       : '';
 
-    // ── Style guide: niche-specific first, fall back to collection ──
-    const nicheKey = product.niche?.toLowerCase() || '';
+    // ── Style guide: niche-specific → collection DB guide → warning (no chapter fallback) ──
+    const nicheKey = (product.niche || '').toLowerCase();
     const staticNicheGuide = nicheKey ? nicheStyleGuides[nicheKey] : null;
     const nicheSessions = product.niche
       ? sessions.filter(s => s.niche?.toLowerCase() === nicheKey && s.notes)
@@ -247,18 +304,44 @@ function ContextBundle({ product, sessions, photoPlaybook }) {
     const nicheSessionNotes = nicheSessions.length
       ? `Niche research notes (${product.niche}):\n${nicheSessions.map(s => s.notes).join('\n')}`
       : '';
+    const dbCollectionGuide = collectionObj?.style_guide || null;
 
-    // Only fall back to collection guide if no niche guide exists
-    const collectionFallback = !staticNicheGuide ? (colKnowledge.styleGuide || null) : null;
-    const styleGuide = [staticNicheGuide, nicheSessionNotes, collectionFallback]
-      .filter(Boolean).join('\n\n') || 'No style guide found — add a niche to this product or check collections.js.';
+    let styleGuide;
+    if (staticNicheGuide) {
+      styleGuide = [staticNicheGuide, nicheSessionNotes].filter(Boolean).join('\n\n');
+    } else if (dbCollectionGuide) {
+      styleGuide = [dbCollectionGuide, nicheSessionNotes].filter(Boolean).join('\n\n');
+    } else {
+      styleGuide = `⚠ No style guide found for "${product.niche || product.collection}" — add one in Collections to fix this. Do not substitute a chapter-level default.`;
+    }
 
     // ── Emotional trigger ──
     const triggerLine = product.emotional_trigger
       ? `Emotional trigger: ${product.emotional_trigger}`
       : `Emotional trigger: ⚠ NOT SET — add in Product Details for targeted style direction`;
 
-    // ── Listing Photo Standards (from playbook) ──
+    // ── Validation status ──
+    const vn = validationNotes || {};
+    const validationBlock = [
+      `Market evidence: ${vn.market_evidence || '⚠ NOT SET'}`,
+      `Human truth: ${vn.human_truth || '⚠ NOT SET'}`,
+      `Authentic expression: ${vn.authentic_expression || '⚠ NOT SET'}`,
+      `Customer recognition: ${vn.customer_recognition || '⚠ NOT SET'}`,
+    ].join('\n');
+
+    // ── SEO Standards ──
+    const seoSections = seoPlaybook?.playbook_sections || [];
+    const seoBlock = seoSections.length
+      ? seoSections.map(s => `${s.section_title}:\n${s.body || '(empty)'}`).join('\n\n')
+      : SEO_STANDARDS_FALLBACK;
+
+    // ── Brand Voice ──
+    const brandSections = brandVoicePlaybook?.playbook_sections || [];
+    const brandVoiceBlock = brandSections.length
+      ? brandSections.map(s => `${s.section_title}:\n${s.body || '(empty)'}`).join('\n\n')
+      : BRAND_VOICE_FALLBACK;
+
+    // ── Listing Photo Standards ──
     const photoSections = photoPlaybook?.playbook_sections || [];
     const photoBlock = photoSections.length
       ? photoSections.map(s => `${s.section_title}:\n${s.body || '(empty)'}`).join('\n\n')
@@ -272,12 +355,21 @@ Confidence: ${product.confidence || 'Not set'}
 Ecosystem: ${product.ecosystem_primary || '—'}
 ${triggerLine}
 
-TOP KEYWORDS (title + description safe)
-${keywordBlock}
+PRODUCT VALIDATION STATUS
+${validationBlock}
+
+TOP KEYWORDS
+${keywordSection}
 ${tagsOnlyBlock}
 
 STYLE GUIDE
 ${styleGuide}
+
+SEO STANDARDS
+${seoBlock}
+
+BRAND VOICE
+${brandVoiceBlock}
 
 LISTING PHOTO STANDARDS
 ${photoBlock}
@@ -375,6 +467,7 @@ export default function ProductWorkspace() {
   const [emotionalTrigger, setEmotionalTrigger] = useState('');
   const [niche, setNiche] = useState('');
   const [printifyCost, setPrintifyCost] = useState('');
+  const [validationNotes, setValidationNotes] = useState({ market_evidence: '', human_truth: '', authentic_expression: '', customer_recognition: '' });
   const [noteSaved, setNoteSaved] = useState(false);
   const [stageSaved, setStageSaved] = useState(false);
   const [fieldSaved, setFieldSaved] = useState('');
@@ -383,6 +476,10 @@ export default function ProductWorkspace() {
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
   const { playbooks } = usePlaybooks();
   const photoPlaybook = playbooks.find(p => p.slug === 'listing-photos');
+  const seoPlaybook = playbooks.find(p => p.slug === 'seo-standards');
+  const brandVoicePlaybook = playbooks.find(p => p.slug === 'brand-voice');
+  const { collections: allCollections } = useCollectionObjects();
+  const collectionObj = allCollections.find(c => c.name === product?.collection);
 
   useEffect(() => {
     if (product) {
@@ -391,6 +488,13 @@ export default function ProductWorkspace() {
       setEmotionalTrigger(product.emotional_trigger || '');
       setNiche(product.niche || '');
       setPrintifyCost(product.printify_cost != null ? String(product.printify_cost) : '');
+      const vn = product.validation_notes || {};
+      setValidationNotes({
+        market_evidence: vn.market_evidence || '',
+        human_truth: vn.human_truth || '',
+        authentic_expression: vn.authentic_expression || '',
+        customer_recognition: vn.customer_recognition || '',
+      });
     }
   }, [product?.id]);
 
@@ -540,10 +644,48 @@ export default function ProductWorkspace() {
 
       <hr className="rule" />
 
+      {/* ── Product Validation ── */}
+      <div style={{ marginBottom: 24 }}>
+        <div className="section-label" style={{ marginBottom: 6 }}>
+          Product Validation
+          {fieldSaved === 'validation_notes' && <span className="inline-confirm" style={{ marginLeft: 8 }}>✓</span>}
+        </div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 10, lineHeight: 1.5 }}>
+          Four-input framework — market evidence · human truth · authentic expression · customer recognition
+        </div>
+        {[
+          { key: 'market_evidence', label: 'Market Evidence', placeholder: 'Everbee data, trend signals, search volume…' },
+          { key: 'human_truth', label: 'Human Truth', placeholder: 'What real feeling or experience does this tap into?' },
+          { key: 'authentic_expression', label: 'Authentic Expression', placeholder: 'Does TCC have a genuine perspective here?' },
+          { key: 'customer_recognition', label: 'Customer Recognition', placeholder: 'Would the target customer see themselves in this?' },
+        ].map(({ key, label, placeholder }) => (
+          <div key={key} className="form-group" style={{ margin: '0 0 8px 0' }}>
+            <label className="form-label">{label}</label>
+            <textarea
+              value={validationNotes[key] || ''}
+              onChange={e => setValidationNotes(prev => ({ ...prev, [key]: e.target.value }))}
+              onBlur={() => handleFieldBlur('validation_notes', { ...validationNotes })}
+              placeholder={placeholder}
+              rows={2}
+            />
+          </div>
+        ))}
+      </div>
+
+      <hr className="rule" />
+
       {/* ── Context Bundle ── */}
       <div style={{ marginBottom: 24 }}>
         <div className="section-label" style={{ marginBottom: 10 }}>Context Bundle</div>
-        <ContextBundle product={{ ...product, ecosystem_primary: ecosystem, emotional_trigger: emotionalTrigger, niche }} sessions={sessions} photoPlaybook={photoPlaybook} />
+        <ContextBundle
+          product={{ ...product, ecosystem_primary: ecosystem, emotional_trigger: emotionalTrigger, niche }}
+          sessions={sessions}
+          photoPlaybook={photoPlaybook}
+          seoPlaybook={seoPlaybook}
+          brandVoicePlaybook={brandVoicePlaybook}
+          collectionObj={collectionObj}
+          validationNotes={validationNotes}
+        />
       </div>
 
       <hr className="rule" />
