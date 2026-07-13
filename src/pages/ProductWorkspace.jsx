@@ -481,12 +481,21 @@ function parseKeywordCSV(text) {
   return rows;
 }
 
+function opportunityScore(k) {
+  const score = k.score || 0;
+  const comp = k.competition ?? null;
+  if (comp === null) return score;
+  // Penalise high competition: divide by log of competition+2 so the penalty
+  // is meaningful but doesn't obliterate a high-volume keyword with moderate comp
+  return score / Math.log2((comp || 0) + 2);
+}
+
 function computeGaps(keywords, title, tags) {
   const haystack = `${title || ''} ${tags || ''}`.toLowerCase();
   return keywords
     .filter(k => k.tag_type !== 'discard')
-    .map(k => ({ ...k, inListing: haystack.includes(k.keyword.toLowerCase()) }))
-    .sort((a, b) => (b.score || 0) - (a.score || 0));
+    .map(k => ({ ...k, inListing: haystack.includes(k.keyword.toLowerCase()), oppScore: opportunityScore(k) }))
+    .sort((a, b) => b.oppScore - a.oppScore);
 }
 
 function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditComplete }) {
@@ -514,7 +523,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
   const isDue = cadenceDays === null || cadenceDays >= 15;
 
   useEffect(() => {
-    if (auditRows || screenshotExtracting) return;
+    if (screenshotExtracting) return;
     function onPaste(e) {
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
@@ -528,7 +537,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
     }
     document.addEventListener('paste', onPaste);
     return () => document.removeEventListener('paste', onPaste);
-  }, [auditRows, screenshotExtracting]);
+  }, [screenshotExtracting]);
 
   async function handleCSVFile(file) {
     if (!file) return;
@@ -551,7 +560,22 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
           body: JSON.stringify({ type: 'extract_keywords_image', payload: { imageBase64: base64, mediaType } }),
         });
         const data = await resp.json();
-        if (data.keywords?.length) setAuditRows(data.keywords.map(k => ({ ...k, tag_type: 'watch' })));
+        if (data.keywords?.length) {
+          const incoming = data.keywords.map(k => ({ ...k, tag_type: 'watch' }));
+          setAuditRows(prev => {
+            if (!prev) return incoming;
+            const merged = [...prev];
+            for (const r of incoming) {
+              const idx = merged.findIndex(m => m.keyword.toLowerCase() === r.keyword.toLowerCase());
+              if (idx >= 0) {
+                if ((r.score || 0) > (merged[idx].score || 0)) merged[idx] = { ...merged[idx], ...r };
+              } else {
+                merged.push(r);
+              }
+            }
+            return merged;
+          });
+        }
       } catch (err) {
         console.error('Screenshot extraction failed:', err);
       }
@@ -607,7 +631,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
       {auditRows ? (
         <div>
           <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
-            Review and correct any values before saving — especially large numbers from screenshots:
+            {auditRows?.length} keywords — review before saving. Ctrl+V to paste another screenshot and merge.
           </div>
           <div style={{ maxHeight: 280, overflowY: 'auto', marginBottom: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 60px 80px 24px', gap: 4, padding: '3px 8px 6px', fontSize: '0.63rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -686,13 +710,19 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
               <div style={{ fontSize: '0.7rem', color: 'var(--alert)', fontWeight: 500, marginBottom: 6 }}>
                 ⚠ {gaps.length} keyword{gaps.length !== 1 ? 's' : ''} not in your title or tags:
               </div>
-              {gaps.slice(0, 12).map((k, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, padding: '4px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.78rem', alignItems: 'center' }}>
-                  <span style={{ flex: 1 }}>{k.keyword}</span>
-                  {k.score != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem' }}>score {k.score.toLocaleString()}</span>}
-                  {k.volume != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem' }}>vol {k.volume.toLocaleString()}</span>}
-                </div>
-              ))}
+              {gaps.slice(0, 12).map((k, i) => {
+                const lowComp = k.competition != null && k.competition < 500;
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.78rem', alignItems: 'center' }}>
+                    <span style={{ flex: 1 }}>{k.keyword}</span>
+                    {lowComp && (
+                      <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', whiteSpace: 'nowrap', fontWeight: 500 }}>low comp</span>
+                    )}
+                    {k.competition != null && <span style={{ color: k.competition < 500 ? '#2d6b3c' : k.competition > 10000 ? 'var(--alert)' : 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 60, textAlign: 'right' }}>comp {k.competition.toLocaleString()}</span>}
+                    {k.score != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 72, textAlign: 'right' }}>score {k.score.toLocaleString()}</span>}
+                  </div>
+                );
+              })}
               {gaps.length > 12 && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>+{gaps.length - 12} more</div>}
             </div>
           ) : (
