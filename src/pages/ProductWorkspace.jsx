@@ -494,6 +494,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
   const [screenshotExtracting, setScreenshotExtracting] = useState(false);
   const [auditSaving, setAuditSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [pasteHint, setPasteHint] = useState(false);
 
   const auditSessions = sessions
     .filter(s => s.product_id === product.id)
@@ -511,6 +512,23 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
     ? Math.floor((Date.now() - new Date(lastAuditDate).getTime()) / 86400000)
     : null;
   const isDue = cadenceDays === null || cadenceDays >= 15;
+
+  useEffect(() => {
+    if (auditRows || screenshotExtracting) return;
+    function onPaste(e) {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      const items = e.clipboardData?.items || [];
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) { e.preventDefault(); handleScreenshotExtract(file); return; }
+        }
+      }
+    }
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [auditRows, screenshotExtracting]);
 
   async function handleCSVFile(file) {
     if (!file) return;
@@ -647,7 +665,9 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
                 <span className="btn btn-ghost btn-sm">{screenshotExtracting ? 'Extracting…' : '🖼 Screenshot'}</span>
                 <input type="file" accept="image/*" disabled={screenshotExtracting} style={{ display: 'none' }} onChange={e => { handleScreenshotExtract(e.target.files[0]); e.target.value = ''; }} />
               </label>
-              <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', opacity: 0.6 }}>or drag & drop</span>
+              <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', opacity: 0.7 }}>
+                {screenshotExtracting ? 'Extracting from screenshot…' : 'Snip tool → Ctrl+V to paste'}
+              </span>
               {!liveTitle && !liveTags && (
                 <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
                   · Add live title + tags above to enable gap analysis
