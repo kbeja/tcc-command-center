@@ -36,55 +36,60 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
       borderLeft: `3px solid ${KW_STATUS[kw.status].color}`,
       background: 'var(--warm-white)', borderRadius: '0 2px 2px 0',
       marginBottom: 4,
     }}>
-      <button
-        onClick={cycleStatus}
-        title="Click to cycle status"
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: '1rem', color: KW_STATUS[kw.status].color,
-          flexShrink: 0, lineHeight: 1, padding: 0,
-        }}
-      >
-        {KW_STATUS[kw.status].label}
-      </button>
-      <input
-        value={kw.keyword}
-        onChange={e => onChange(index, { ...kw, keyword: e.target.value })}
-        style={{ flex: 2, minWidth: 0, padding: '4px 8px', fontSize: '0.78rem' }}
-        placeholder="Keyword"
-      />
-      <input
-        value={kw.volume}
-        onChange={e => onChange(index, { ...kw, volume: e.target.value })}
-        type="number"
-        style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }}
-        placeholder="Vol"
-      />
-      <input
-        value={kw.competition}
-        onChange={e => onChange(index, { ...kw, competition: e.target.value })}
-        type="number"
-        style={{ width: 60, padding: '4px 8px', fontSize: '0.78rem' }}
-        placeholder="Comp"
-      />
-      <input
-        value={kw.score}
-        onChange={e => onChange(index, { ...kw, score: e.target.value })}
-        type="number"
-        style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }}
-        placeholder="Score"
-      />
-      <button
-        onClick={() => onRemove(index)}
-        style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}
-      >
-        ×
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px' }}>
+        <button
+          onClick={cycleStatus}
+          title="Click to cycle status"
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: '1rem', color: KW_STATUS[kw.status].color,
+            flexShrink: 0, lineHeight: 1, padding: 0,
+          }}
+        >
+          {KW_STATUS[kw.status].label}
+        </button>
+        <input
+          value={kw.keyword}
+          onChange={e => onChange(index, { ...kw, keyword: e.target.value })}
+          style={{ flex: 2, minWidth: 0, padding: '4px 8px', fontSize: '0.78rem' }}
+          placeholder="Keyword"
+        />
+        <input
+          value={kw.volume}
+          onChange={e => onChange(index, { ...kw, volume: e.target.value })}
+          type="number"
+          style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }}
+          placeholder="Vol"
+        />
+        <input
+          value={kw.competition}
+          onChange={e => onChange(index, { ...kw, competition: e.target.value })}
+          type="number"
+          style={{ width: 60, padding: '4px 8px', fontSize: '0.78rem' }}
+          placeholder="Comp"
+        />
+        <input
+          value={kw.score}
+          onChange={e => onChange(index, { ...kw, score: e.target.value })}
+          type="number"
+          style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }}
+          placeholder="Score"
+        />
+        <button
+          onClick={() => onRemove(index)}
+          style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', flexShrink: 0 }}
+        >
+          ×
+        </button>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px 6px 32px', cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
+        <input type="checkbox" checked={!!kw.tags_only} onChange={e => onChange(index, { ...kw, tags_only: e.target.checked })} style={{ width: 'auto', margin: 0 }} />
+        Tags-only (misspelling variant)
+      </label>
     </div>
   );
 }
@@ -156,7 +161,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   }
 
   function addBlankKeyword() {
-    setKeywords(prev => [...prev, { keyword: '', volume: '', competition: '', score: '', status: 'watch' }]);
+    setKeywords(prev => [...prev, { keyword: '', volume: '', competition: '', score: '', status: 'watch', tags_only: false }]);
   }
 
   async function handleSave() {
@@ -171,6 +176,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         competition: k.competition ? parseInt(k.competition) : null,
         score: k.score ? parseInt(k.score) : null,
         tag_type: k.status,
+        tags_only: !!k.tags_only,
       }));
     await createResearchSession(
       { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
