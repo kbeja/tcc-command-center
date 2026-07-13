@@ -498,6 +498,25 @@ function computeGaps(keywords, title, tags) {
     .sort((a, b) => b.oppScore - a.oppScore);
 }
 
+function KeywordGapRow({ k }) {
+  const lowComp = k.competition != null && k.competition < 500;
+  const compColor = k.competition == null ? 'var(--charcoal-soft)'
+    : k.competition < 500 ? '#2d6b3c'
+    : k.competition > 10000 ? 'var(--alert)'
+    : 'var(--charcoal-soft)';
+  return (
+    <div style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.78rem', alignItems: 'center' }}>
+      <span style={{ flex: 1 }}>{k.keyword}</span>
+      {lowComp && (
+        <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', whiteSpace: 'nowrap', fontWeight: 500 }}>low comp</span>
+      )}
+      {k.volume != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 54, textAlign: 'right' }}>vol {k.volume.toLocaleString()}</span>}
+      {k.competition != null && <span style={{ color: compColor, fontSize: '0.68rem', minWidth: 66, textAlign: 'right' }}>comp {k.competition.toLocaleString()}</span>}
+      {k.score != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 72, textAlign: 'right' }}>score {k.score.toLocaleString()}</span>}
+    </div>
+  );
+}
+
 function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditComplete }) {
   const [auditRows, setAuditRows] = useState(null);
   const [screenshotExtracting, setScreenshotExtracting] = useState(false);
@@ -710,19 +729,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
               <div style={{ fontSize: '0.7rem', color: 'var(--alert)', fontWeight: 500, marginBottom: 6 }}>
                 ⚠ {gaps.length} keyword{gaps.length !== 1 ? 's' : ''} not in your title or tags:
               </div>
-              {gaps.slice(0, 12).map((k, i) => {
-                const lowComp = k.competition != null && k.competition < 500;
-                return (
-                  <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.78rem', alignItems: 'center' }}>
-                    <span style={{ flex: 1 }}>{k.keyword}</span>
-                    {lowComp && (
-                      <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', whiteSpace: 'nowrap', fontWeight: 500 }}>low comp</span>
-                    )}
-                    {k.competition != null && <span style={{ color: k.competition < 500 ? '#2d6b3c' : k.competition > 10000 ? 'var(--alert)' : 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 60, textAlign: 'right' }}>comp {k.competition.toLocaleString()}</span>}
-                    {k.score != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 72, textAlign: 'right' }}>score {k.score.toLocaleString()}</span>}
-                  </div>
-                );
-              })}
+              {gaps.slice(0, 12).map((k, i) => <KeywordGapRow key={i} k={k} />)}
               {gaps.length > 12 && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>+{gaps.length - 12} more</div>}
             </div>
           ) : (
@@ -733,10 +740,8 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
               <summary style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
                 ✓ Already using ({using.length})
               </summary>
-              <div style={{ paddingLeft: 8, marginTop: 4 }}>
-                {using.map((k, i) => (
-                  <div key={i} style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', padding: '2px 0' }}>{k.keyword}</div>
-                ))}
+              <div style={{ marginTop: 4 }}>
+                {using.map((k, i) => <KeywordGapRow key={i} k={k} />)}
               </div>
             </details>
           )}
