@@ -493,6 +493,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
   const [auditRows, setAuditRows] = useState(null);
   const [screenshotExtracting, setScreenshotExtracting] = useState(false);
   const [auditSaving, setAuditSaving] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const auditSessions = sessions
     .filter(s => s.product_id === product.id)
@@ -612,19 +613,47 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: gapResults.length ? 14 : 0 }}>
-          <label style={{ cursor: 'pointer', display: 'inline-block' }}>
-            <span className="btn btn-ghost btn-sm">📥 Import CSV</span>
-            <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={e => { handleCSVFile(e.target.files[0]); e.target.value = ''; }} />
-          </label>
-          <label style={{ cursor: screenshotExtracting ? 'wait' : 'pointer', display: 'inline-block', opacity: screenshotExtracting ? 0.6 : 1 }}>
-            <span className="btn btn-ghost btn-sm">{screenshotExtracting ? 'Extracting…' : '🖼 Upload screenshot'}</span>
-            <input type="file" accept="image/*" disabled={screenshotExtracting} style={{ display: 'none' }} onChange={e => { handleScreenshotExtract(e.target.files[0]); e.target.value = ''; }} />
-          </label>
-          {!liveTitle && !liveTags && (
-            <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
-              Add live title + tags in Product Details to enable gap analysis
-            </span>
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => {
+            e.preventDefault();
+            setDragOver(false);
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+            if (file.type.startsWith('image/')) handleScreenshotExtract(file);
+            else handleCSVFile(file);
+          }}
+          style={{
+            border: dragOver ? '2px dashed var(--dusty-rose)' : '2px dashed transparent',
+            borderRadius: 4,
+            padding: dragOver ? '10px 12px' : '0',
+            marginBottom: gapResults.length ? 14 : 0,
+            transition: 'all 0.12s',
+            background: dragOver ? 'var(--rose-faint)' : 'transparent',
+          }}
+        >
+          {dragOver ? (
+            <div style={{ fontSize: '0.78rem', color: 'var(--dusty-rose)', textAlign: 'center', padding: '4px 0' }}>
+              Drop image or CSV to import
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <label style={{ cursor: 'pointer', display: 'inline-block' }}>
+                <span className="btn btn-ghost btn-sm">📥 Import CSV</span>
+                <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={e => { handleCSVFile(e.target.files[0]); e.target.value = ''; }} />
+              </label>
+              <label style={{ cursor: screenshotExtracting ? 'wait' : 'pointer', display: 'inline-block', opacity: screenshotExtracting ? 0.6 : 1 }}>
+                <span className="btn btn-ghost btn-sm">{screenshotExtracting ? 'Extracting…' : '🖼 Screenshot'}</span>
+                <input type="file" accept="image/*" disabled={screenshotExtracting} style={{ display: 'none' }} onChange={e => { handleScreenshotExtract(e.target.files[0]); e.target.value = ''; }} />
+              </label>
+              <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', opacity: 0.6 }}>or drag & drop</span>
+              {!liveTitle && !liveTags && (
+                <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
+                  · Add live title + tags above to enable gap analysis
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -876,6 +905,26 @@ export default function ProductWorkspace() {
               placeholder="Current listing tags, comma-separated — used for keyword gap analysis"
               rows={2}
             />
+          </div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={async () => {
+                await updateProduct(id, {
+                  ecosystem_primary: ecosystem || null,
+                  emotional_trigger: emotionalTrigger || null,
+                  niche: niche || null,
+                  printify_cost: printifyCost ? parseFloat(printifyCost) : null,
+                  live_title: liveTitle || null,
+                  live_tags: liveTags || null,
+                });
+                setFieldSaved('details');
+                setTimeout(() => setFieldSaved(''), 2000);
+              }}
+            >
+              Save Details
+            </button>
+            {fieldSaved === 'details' && <span className="inline-confirm">✓ Saved</span>}
           </div>
         </div>
       </div>
