@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, usePlaybooks } from '../lib/hooks';
+import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createProduct } from '../lib/hooks';
 import { nicheStyleGuides } from '../data/collections';
+import { STAGES } from '../data/stages';
 
 const SEO_STANDARDS_FALLBACK = `TITLE FORMAT
 [Opening phrase, title case] | [Keyword chain]
@@ -335,6 +336,30 @@ export default function ListingBuilder() {
     setGenerating(false);
   }
 
+  // Save as new product (standalone mode only)
+  const [saveStage, setSaveStage]   = useState('Live');
+  const [saving, setSaving]         = useState(false);
+  const [savedProductId, setSavedProductId] = useState(null);
+
+  async function handleSaveProduct() {
+    if (!form.productName.trim() || !form.collection) return;
+    setSaving(true);
+    const { data, error } = await createProduct({
+      name:              form.productName.trim(),
+      collection:        form.collection,
+      niche:             form.niche || null,
+      emotional_trigger: form.emotionalTrigger || null,
+      stage:             saveStage,
+      live_title:        editTitle || null,
+      live_tags:         editTags.filter(Boolean).join(', ') || null,
+      stage_updated_at:  new Date().toISOString(),
+    });
+    setSaving(false);
+    if (!error && data?.id) {
+      setSavedProductId(data.id);
+    }
+  }
+
   // Editable output state (initialized from generated output)
   const [editTitle, setEditTitle]   = useState('');
   const [editTags, setEditTags]     = useState([]);
@@ -516,6 +541,45 @@ export default function ListingBuilder() {
               {output.research_flags.map((f, i) => (
                 <div key={i} style={{ fontSize: '0.78rem', color: '#7a4a1e', lineHeight: 1.6 }}>⚠ {f}</div>
               ))}
+            </div>
+          )}
+
+          {/* Save as new product — standalone only */}
+          {!productId && (
+            <div style={{ background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.12)', borderRadius: 4, padding: '14px 16px', marginBottom: 20 }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Save as New Product</div>
+              {savedProductId ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.82rem', color: '#3d6b4a' }}>✓ Saved</span>
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate(`/products/${savedProductId}`)}>
+                    Open Product →
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select
+                    value={saveStage}
+                    onChange={e => setSaveStage(e.target.value)}
+                    style={{ width: 'auto', fontSize: '0.82rem' }}
+                  >
+                    {STAGES.filter(s => !['Killed', 'Paused'].includes(s)).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSaveProduct}
+                    disabled={saving || !form.productName.trim() || !form.collection}
+                  >
+                    {saving ? 'Saving…' : 'Save as New Product →'}
+                  </button>
+                  {(!form.productName.trim() || !form.collection) && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+                      Requires product name + collection
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
