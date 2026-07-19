@@ -299,8 +299,16 @@ export default function ListingBuilder() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'generate_listing', payload: { imageBase64: imageBase64 || null, mediaType: imageMediaType, context } }),
       });
-      const data = await res.json();
-      if (!data.parsed) { setGenError('Generation failed — no structured output returned. Try again.'); setGenerating(false); return; }
+      const rawText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setGenError(`HTTP ${res.status} — server returned non-JSON: ${rawText.slice(0, 300)}`);
+        setGenerating(false);
+        return;
+      }
+      if (!data.parsed) { setGenError(`Generation failed — ${data.error || data.raw?.slice(0, 200) || 'no output returned'}`); setGenerating(false); return; }
       setOutput(data.parsed);
     } catch (err) {
       setGenError(err.message);
