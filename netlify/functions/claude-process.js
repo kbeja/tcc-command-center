@@ -158,8 +158,8 @@ exports.handler = async (event) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 4096,
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 3000,
           system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC\'s exact standards. CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
           messages: [{ role: 'user', content: userContent }],
         }),
