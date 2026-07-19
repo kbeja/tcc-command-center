@@ -83,6 +83,25 @@ function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, ph
 
   return `Generate a complete Etsy listing for TCC (The Current Chapter).
 
+━━━ TITLE RULE (follow exactly) ━━━
+FORMAT: [Human-readable opening phrase] | [Keyword] | [Keyword] | [Keyword]
+- Pipe character | separates every phrase — always
+- Title Case Throughout Every Word
+- Max 140 characters total
+- Opening phrase: what a person would naturally call the product (NOT a keyword dump)
+- Keywords after the pipe: chain the top B1 keywords, overlapping where possible
+
+CORRECT examples:
+  "Elder Millennial Sweatshirt | 90s Mom Crewneck | Millennial Mom Gift | Funny Mom Sweatshirt"
+  "Cool Mom Tote Bag | Funny Mom Gift | Mom Life Tote | Gift for Mom"
+  "Bookish Sweatshirt | Book Lover Gift | Reader Crewneck | Book Club Shirt"
+
+WRONG (never do this):
+  ✗ "Elder Millennial Sweatshirt for Moms Who Love the 90s and Need Coffee" (no pipes, no keyword chain)
+  ✗ "mom sweatshirt elder millennial gift funny crewneck" (not title case, no pipes)
+  ✗ "Elder Millennial | 90s | Mom | Funny | Gift | Crewneck | Sweatshirt" (too fragmented, no natural opener)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 PRODUCT:
 Name: ${form.productName || 'Untitled product'}
 Product Type: ${form.productType || 'print-on-demand item'}
