@@ -118,6 +118,63 @@ exports.handler = async (event) => {
     }
   }
 
+  // ── Vision: analyze design mockup ──
+  if (type === 'analyze_design_image') {
+    const { imageBase64, mediaType } = payload || {};
+    if (!imageBase64) return { statusCode: 400, body: JSON.stringify({ error: 'No image data' }) };
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 500,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/png', data: imageBase64 } },
+              { type: 'text', text: 'Analyze this Printify product mockup for an Etsy listing. In 3-4 sentences describe: product type, primary colors and palette, visual style (minimalist, illustrated, typographic, etc.), any visible text or graphics, and the mood or customer it appeals to. Be specific and visual — this will be used to write listing copy.' },
+            ],
+          }],
+        }),
+      });
+      const data = await response.json();
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ analysis: data.content?.[0]?.text || '' }) };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
+  // ── Generate complete Etsy listing ──
+  if (type === 'generate_listing') {
+    const { imageBase64, mediaType, context } = payload || {};
+    if (!context) return { statusCode: 400, body: JSON.stringify({ error: 'No context provided' }) };
+    try {
+      const userContent = [
+        ...(imageBase64 ? [{ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/png', data: imageBase64 } }] : []),
+        { type: 'text', text: context },
+      ];
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 4096,
+          system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC\'s exact standards. CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
+          messages: [{ role: 'user', content: userContent }],
+        }),
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '';
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: text, parsed: null }) };
+      const parsed = JSON.parse(match[0]);
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
   // ── Text-based processing ──
   const systemPrompt = SYSTEM_PROMPTS[type];
   if (!systemPrompt) {

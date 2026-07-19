@@ -840,8 +840,17 @@ export default function ProductWorkspace() {
         <button className="btn btn-ghost btn-sm" onClick={() => navigate('/products')} style={{ marginBottom: 14 }}>
           ← Back
         </button>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', fontWeight: 300, lineHeight: 1.2, marginBottom: 8 }}>
-          {product.name}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', fontWeight: 300, lineHeight: 1.2, marginBottom: 8 }}>
+            {product.name}
+          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ flexShrink: 0, marginTop: 4 }}
+            onClick={() => navigate(`/listing-builder?product=${id}`)}
+          >
+            Create Listing →
+          </button>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
           {product.collection && <span style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>{product.collection}</span>}

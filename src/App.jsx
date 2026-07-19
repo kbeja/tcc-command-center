@@ -13,6 +13,7 @@ import Trends from './pages/Trends';
 import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
 import Knowledge from './pages/Knowledge';
+import ListingBuilder from './pages/ListingBuilder';
 import './styles/global.css';
 
 function AppInner() {
@@ -32,6 +33,7 @@ function AppInner() {
         <Route path="/collections" element={<Collections />} />
         <Route path="/collections/:name" element={<CollectionDetail />} />
         <Route path="/knowledge" element={<Knowledge />} />
+        <Route path="/listing-builder" element={<ListingBuilder />} />
       </Routes>
       <CaptureButton />
     </>
