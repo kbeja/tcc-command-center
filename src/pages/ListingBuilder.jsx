@@ -692,13 +692,16 @@ export default function ListingBuilder() {
               {output.research_flags.map((f, i) => (
                 <div key={i} style={{ fontSize: '0.78rem', color: '#7a4a1e', lineHeight: 1.6 }}>⚠ {f}</div>
               ))}
-              <KeywordPatchPanel
-                currentTitle={editTitle}
-                currentTags={editTags}
-                researchFlags={output.research_flags}
-                onApply={(title, tags) => { setEditTitle(title); setEditTags(tags); }}
-              />
             </div>
+          )}
+
+          {output.research_flags?.length > 0 && (
+            <KeywordPatchPanel
+              currentTitle={editTitle}
+              currentTags={editTags}
+              researchFlags={output.research_flags}
+              onApply={(title, tags) => { setEditTitle(title); setEditTags(tags); }}
+            />
           )}
 
           {/* Save as new product — standalone only */}
