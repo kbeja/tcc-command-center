@@ -92,6 +92,125 @@ function SaveFlagsButton({ flags, productId }) {
   );
 }
 
+function KeywordPatchPanel({ currentTitle, currentTags, researchFlags, onApply }) {
+  const [open, setOpen]                   = useState(false);
+  const [manualText, setManualText]       = useState('');
+  const [extracted, setExtracted]         = useState([]);
+  const [extracting, setExtracting]       = useState(false);
+  const [patching, setPatching]           = useState(false);
+  const [proposal, setProposal]           = useState(null);
+  const [error, setError]                 = useState('');
+
+  async function handleScreenshot(file) {
+    setExtracting(true);
+    setError('');
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target.result.split(',')[1];
+      try {
+        const res = await fetch('/.netlify/functions/claude-process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'extract_keywords_image', payload: { imageBase64: base64, mediaType: file.type || 'image/png' } }),
+        });
+        const data = await res.json();
+        setExtracted(data.keywords || []);
+      } catch { setError('Screenshot extraction failed'); }
+      setExtracting(false);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function parseManual() {
+    return manualText.trim().split('\n').filter(Boolean).map(line => {
+      const [keyword, volume, competition, score] = line.split('|').map(p => p.trim());
+      return { keyword, volume: volume ? parseInt(volume) : null, competition: competition ? parseInt(competition) : null, score: score ? parseInt(score) : null };
+    }).filter(k => k.keyword);
+  }
+
+  const keywords = extracted.length > 0 ? extracted : parseManual();
+  const hasInput = extracted.length > 0 || manualText.trim().length > 0;
+
+  async function handlePatch() {
+    setPatching(true);
+    setError('');
+    try {
+      const res = await fetch('/.netlify/functions/claude-process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'patch_listing_keywords', payload: { currentTitle, currentTags, newKeywords: keywords, researchFlags } }),
+      });
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); } catch { setError(`Server error: ${raw.slice(0, 150)}`); setPatching(false); return; }
+      if (!data.parsed) { setError(data.error || 'No output returned'); setPatching(false); return; }
+      setProposal(data.parsed);
+    } catch (err) { setError(err.message); }
+    setPatching(false);
+  }
+
+  function reset() { setOpen(false); setManualText(''); setExtracted([]); setProposal(null); setError(''); }
+
+  if (!open) {
+    return (
+      <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, fontSize: '0.75rem' }} onClick={() => setOpen(true)}>
+        + Found new keywords? Apply to title & tags →
+      </button>
+    );
+  }
+
+  if (proposal) {
+    const titleChanged = proposal.title !== currentTitle;
+    const tagsChanged  = JSON.stringify(proposal.tags) !== JSON.stringify(currentTags);
+    const anyChange    = titleChanged || tagsChanged;
+    return (
+      <div style={{ marginTop: 12, background: 'rgba(124,175,138,0.08)', border: '1px solid rgba(124,175,138,0.3)', borderRadius: 4, padding: '12px 14px' }}>
+        <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2d6b3c', marginBottom: 6 }}>Proposed Update</div>
+        <div style={{ fontSize: '0.82rem', color: '#2d6b3c', lineHeight: 1.6, marginBottom: 10 }}>{proposal.changes}</div>
+        {anyChange ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => { onApply(proposal.title, proposal.tags); reset(); }}>Accept changes</button>
+            <button className="btn btn-ghost btn-sm" onClick={reset}>Dismiss</button>
+          </div>
+        ) : (
+          <button className="btn btn-ghost btn-sm" onClick={reset}>OK</button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12, background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 4, padding: '12px 14px' }}>
+      <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 10 }}>Apply New Keywords</div>
+      {extracted.length > 0 ? (
+        <div style={{ fontSize: '0.78rem', color: '#2d6b3c', marginBottom: 10 }}>✓ {extracted.length} keywords extracted — ready to apply</div>
+      ) : (
+        <>
+          <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>Upload an Everbee screenshot or enter keywords manually (keyword | volume | competition | score):</div>
+          <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer', marginBottom: 8, display: 'inline-block' }}>
+            {extracting ? 'Extracting…' : 'Upload screenshot'}
+            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={extracting} onChange={e => { if (e.target.files[0]) handleScreenshot(e.target.files[0]); }} />
+          </label>
+          <textarea
+            value={manualText}
+            onChange={e => setManualText(e.target.value)}
+            placeholder={'beach reads shirt | 2400 | 180 | 52000\nspicy book shirt | 1800 | 95 | 38000'}
+            rows={3}
+            style={{ width: '100%', fontSize: '0.78rem', fontFamily: 'monospace' }}
+          />
+        </>
+      )}
+      {error && <div style={{ fontSize: '0.75rem', color: '#c97b7b', marginBottom: 8 }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={handlePatch} disabled={patching || !hasInput}>
+          {patching ? 'Applying…' : 'Apply to title & tags →'}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={reset}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ title }) {
   return (
     <div className="section-label" style={{ marginTop: 24, marginBottom: 12 }}>{title}</div>
@@ -573,6 +692,12 @@ export default function ListingBuilder() {
               {output.research_flags.map((f, i) => (
                 <div key={i} style={{ fontSize: '0.78rem', color: '#7a4a1e', lineHeight: 1.6 }}>⚠ {f}</div>
               ))}
+              <KeywordPatchPanel
+                currentTitle={editTitle}
+                currentTags={editTags}
+                researchFlags={output.research_flags}
+                onApply={(title, tags) => { setEditTitle(title); setEditTags(tags); }}
+              />
             </div>
           )}
 

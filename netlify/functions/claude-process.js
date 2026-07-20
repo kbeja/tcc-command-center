@@ -175,6 +175,61 @@ exports.handler = async (event) => {
     }
   }
 
+  // ── Patch title & tags with new keyword research ──
+  if (type === 'patch_listing_keywords') {
+    const { currentTitle, currentTags, newKeywords, researchFlags } = payload || {};
+    if (!currentTitle || !currentTags) return { statusCode: 400, body: JSON.stringify({ error: 'Missing listing data' }) };
+    const kwList = (newKeywords || []).map(k =>
+      `  "${k.keyword}"${k.score ? ` (score: ${k.score}` : ''}${k.competition != null ? `, comp: ${k.competition}` : ''}${k.score ? ')' : ''}`
+    ).join('\n') || '  [none provided]';
+    const prompt = `Update an Etsy listing's title and tags with newly discovered keywords.
+
+TITLE FORMAT: [Opening phrase] | [Keyword] | [Keyword] | [Keyword]
+- Pipe | separates every phrase — always
+- Title Case Throughout Every Word
+- Max 140 characters
+
+CURRENT TITLE:
+${currentTitle}
+
+CURRENT TAGS (13):
+${(currentTags || []).map((t, i) => `  ${i + 1}. "${t}"`).join('\n')}
+
+NEW KEYWORDS FOUND:
+${kwList}
+
+${researchFlags?.length ? `CONTEXT (what prompted this research):\n${researchFlags.map(f => `  - ${f}`).join('\n')}` : ''}
+
+Only make changes if a new keyword clearly improves the title or replaces a weaker tag. Keep changes minimal and intentional. If nothing is an improvement, return the current values unchanged.
+
+Return ONLY this JSON:
+{
+  "title": "string",
+  "tags": ["string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string"],
+  "changes": "1-2 sentences: what changed and why, or 'No changes — existing keywords are already optimal'"
+}`;
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 800,
+          system: 'You are an Etsy SEO specialist. Update listings with new keyword data. Return ONLY valid JSON — no markdown, no explanation.',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '';
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: text, parsed: null }) };
+      const parsed = JSON.parse(match[0]);
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
   // ── Text-based processing ──
   const systemPrompt = SYSTEM_PROMPTS[type];
   if (!systemPrompt) {
