@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProducts, getNeedsAttention } from '../lib/hooks';
+import { useProducts, getNeedsAttention, useLatestSessionDates } from '../lib/hooks';
 import { STAGE_ORDER } from '../data/stages';
 import ProductCard from '../components/ProductCard';
 
@@ -8,6 +8,15 @@ export default function Products() {
   const [filter, setFilter] = useState('all');
   const needsAttn = getNeedsAttention(products);
   const attnIds = new Set(needsAttn.map(p => p.id));
+  const latestSessionDates = useLatestSessionDates();
+
+  function hasNewKeywords(product) {
+    if (!product.collection) return false;
+    const latest = latestSessionDates[product.collection];
+    if (!latest) return false;
+    if (!product.last_keyword_audit) return true;
+    return latest > product.last_keyword_audit;
+  }
 
   const sorted = [...products].sort((a, b) => {
     const aAlert = attnIds.has(a.id) ? 0 : 1;
@@ -52,7 +61,7 @@ export default function Products() {
         </div>
       )}
 
-      {filtered.map(p => <ProductCard key={p.id} product={p} alert={attnIds.has(p.id)} />)}
+      {filtered.map(p => <ProductCard key={p.id} product={p} alert={attnIds.has(p.id)} kwAlert={hasNewKeywords(p)} />)}
     </div>
   );
 }

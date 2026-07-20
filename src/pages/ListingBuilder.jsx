@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createProduct } from '../lib/hooks';
+import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createProduct, updateProduct } from '../lib/hooks';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
 
@@ -59,6 +59,35 @@ function CopyButton({ text }) {
       onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
     >
       {copied ? '✓' : 'Copy'}
+    </button>
+  );
+}
+
+function SaveFlagsButton({ flags, productId }) {
+  const [state, setState] = useState('idle'); // idle | saving | saved | copied
+  if (!flags?.length) return null;
+
+  const flagText = `--- Listing Builder Flags ---\n${flags.map(f => `⚠ ${f}`).join('\n')}`;
+
+  async function handleSave() {
+    if (!productId) {
+      navigator.clipboard.writeText(flagText);
+      setState('copied');
+      setTimeout(() => setState('idle'), 2000);
+      return;
+    }
+    setState('saving');
+    const { data: current } = await supabase.from('products').select('notes').eq('id', productId).single();
+    const existing = current?.notes || '';
+    const newNotes = existing ? `${existing}\n\n${flagText}` : flagText;
+    await updateProduct(productId, { notes: newNotes });
+    setState('saved');
+    setTimeout(() => setState('idle'), 3000);
+  }
+
+  return (
+    <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.68rem' }} onClick={handleSave} disabled={state === 'saving'}>
+      {state === 'saved' ? '✓ Saved to notes' : state === 'copied' ? '✓ Copied' : state === 'saving' ? 'Saving…' : productId ? 'Save to notes' : 'Copy flags'}
     </button>
   );
 }
@@ -537,7 +566,10 @@ export default function ListingBuilder() {
           {/* Research flags */}
           {output.research_flags?.length > 0 && (
             <div style={{ background: 'rgba(232,168,124,0.1)', border: '1px solid rgba(232,168,124,0.3)', borderRadius: 4, padding: '10px 14px', marginBottom: 20 }}>
-              <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a4a1e', marginBottom: 6 }}>Research Gaps Flagged</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a4a1e' }}>Research Gaps Flagged</div>
+                <SaveFlagsButton flags={output.research_flags} productId={productId || savedProductId} />
+              </div>
               {output.research_flags.map((f, i) => (
                 <div key={i} style={{ fontSize: '0.78rem', color: '#7a4a1e', lineHeight: 1.6 }}>⚠ {f}</div>
               ))}

@@ -120,6 +120,23 @@ export function useResearchSessions(collection) {
   return { sessions, loading, refetch: fetch };
 }
 
+export function useLatestSessionDates() {
+  const [dates, setDates] = useState({});
+  useEffect(() => {
+    supabase.from('research_sessions').select('collection, date, created_at')
+      .then(({ data }) => {
+        if (!data) return;
+        const map = {};
+        for (const s of data) {
+          const d = s.date || s.created_at?.slice(0, 10) || '';
+          if (d && (!map[s.collection] || d > map[s.collection])) map[s.collection] = d;
+        }
+        setDates(map);
+      });
+  }, []);
+  return dates;
+}
+
 export async function deleteResearchSession(id) {
   return supabase.from('research_sessions').delete().eq('id', id);
 }

@@ -1054,6 +1054,16 @@ export default function ProductWorkspace() {
 
       {/* ── Keyword Audit ── */}
       <div style={{ marginBottom: 24 }}>
+        {(() => {
+          const latestSession = sessions.reduce((max, s) => (s.date || '') > (max.date || '') ? s : max, {});
+          const latestDate = latestSession.date || '';
+          const showBadge = latestDate && (!product.last_keyword_audit || latestDate > product.last_keyword_audit);
+          return showBadge ? (
+            <div style={{ fontSize: '0.75rem', padding: '8px 12px', marginBottom: 12, borderRadius: 4, background: 'rgba(124,175,138,0.12)', border: '1px solid rgba(124,175,138,0.3)', color: '#2d6b3c' }}>
+              ✦ New research available since last audit — scroll down to Keyword Audit to check for gaps
+            </div>
+          ) : null;
+        })()}
         <KeywordAuditSection
           product={product}
           sessions={sessions}
