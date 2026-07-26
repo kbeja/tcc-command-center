@@ -206,27 +206,35 @@ function LiveStats({ product, onSave }) {
 
 // ─── Context Bundle ───────────────────────────────────────────────────────────
 
-const SEO_STANDARDS_FALLBACK = `TITLE FORMAT
-[Opening phrase, title case] | [Keyword chain]
-Rule: Human-readable opening + overlapping keyword chain. Title case throughout.
-Example: "Cool Mom Sweatshirt | Mom Life Crewneck | Mama Bear Pullover"
+const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — Keyword Hierarchy & Listing Builder Logic
 
-KEYWORD BUCKETS
-B1 Visibility — High-volume anchors the algorithm uses to place you. Put in title + first tags.
-B2 Reach — Medium-volume, specific. Qualified buyers. Title + tags where it fits.
-B3 Bestseller — Exact phrases from top competitor listings. Identify via Everbee/Trend Radar.
+KEYWORD TIERS
+Tier 1 — Unicorn (Primary Search Intent): ONE per listing. High volume, low competition. Exact buyer search behavior.
+Tier 2 — Supporting: High volume, medium competition. Reinforce Tier 1, same buyer intent.
+Tier 3 — Broad: High volume, high competition. Category terms (e.g. "book lover shirt", "comfort colors shirt"). Discoverability only.
+Tier 4 — Seasonal: Only when directly relevant (Halloween, Fall, Beach Vacation, etc.).
+Tier 5 — Buyer Intent: Why someone shops, not what the product is ("gift for her", "birthday gift", "booktok gift").
 
-TAG FORMAT
-• Fill all 13 tags to 20 characters when possible
-• Split long phrases across tags (e.g. "cozy mom sweatshirt" → "cozy mom sweat" + "shirt gift for mom")
-• No single-word tags unless the word fills 20 characters
+TITLE STRUCTURE — ORDER IS FIXED
+[Tier 1 Unicorn] , [Tier 2 Supporting] , [Tier 3 Broad] , [Tier 5 Buyer Intent]
+• Comma ( , ) marks every tier boundary — NOT pipes, NOT dashes
+• First 30–50 characters must immediately communicate primary search intent
+• Title Case Throughout, max 140 characters
+• CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Comfort Colors Tee"
+• Never stack near-duplicate phrasings unless each reflects genuinely distinct buyer behavior
+
+TAG RULES
+• Tier 1 keyword repeats directly in tags — intentional, not redundant
+• Tiers 2–5: reinforce-not-duplicate — extend reach into adjacent phrasings rather than restating title terms verbatim
+• Misspellings: tags only, and only when listed explicitly — never invented
+• Fill each tag to 18–20 characters, max 20
 
 DESCRIPTION — 6-SECTION STRUCTURE
-1. SEO Opener: 2 sentences, keyword-dense, naturally phrased. First 40 words matter most.
-2. Product Details: Size/color/format, file type (if digital), what's included.
-3. Ordering Steps: How to customize, download, or place the order.
+1. SEO Opener: keyword-dense, naturally phrased. First 40 words matter most.
+2. Product Details: size, color, material, format, what's included.
+3. Ordering Steps: how to order, customize, or download.
 4. Cross-Sell: "Shop our [collection] for more designs like this…"
-5. Shipping: [Standard shop policy language]
+5. Shipping: standard policy language.
 6. Brand Voice Closer: 1–2 sentences. TCC voice. No Hallmark energy.`;
 
 const BRAND_VOICE_FALLBACK = `THE THREE GEARS

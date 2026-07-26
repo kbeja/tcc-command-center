@@ -182,12 +182,13 @@ exports.handler = async (event) => {
     const kwList = (newKeywords || []).map(k =>
       `  "${k.keyword}"${k.score ? ` (score: ${k.score}` : ''}${k.competition != null ? `, comp: ${k.competition}` : ''}${k.score ? ')' : ''}`
     ).join('\n') || '  [none provided]';
-    const prompt = `Update an Etsy listing's title and tags with newly discovered keywords.
+    const prompt = `Update an Etsy listing's title and tags with newly discovered keywords, following TCC SEO Standards v2.
 
-TITLE FORMAT: [Opening phrase] | [Keyword] | [Keyword] | [Keyword]
-- Pipe | separates every phrase — always
-- Title Case Throughout Every Word
-- Max 140 characters
+TITLE FORMAT — TCC v2 COMMA-TIER STRUCTURE:
+[Tier 1 Unicorn] , [Tier 2 Supporting] , [Tier 3 Broad] , [Tier 5 Buyer Intent]
+- Comma ( , ) marks every tier boundary — NOT pipes, NOT dashes
+- Tier 1 is the highest-opportunity keyword (low competition relative to volume)
+- Title Case Throughout Every Word, max 140 characters
 
 CURRENT TITLE:
 ${currentTitle}
