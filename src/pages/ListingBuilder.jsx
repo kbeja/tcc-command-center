@@ -5,36 +5,30 @@ import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createP
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
 
-const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — Keyword Hierarchy & Listing Builder Logic
+const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — 3-Bucket Keyword Framework (Taylor Posada method)
 
-KEYWORD TIERS
-Tier 1 — Unicorn (Primary Search Intent): ONE per listing. High volume, low competition. Exact buyer search behavior.
-Tier 2 — Supporting: High volume, medium competition. Reinforce Tier 1, same buyer intent.
-Tier 3 — Broad: High volume, high competition. Category terms (e.g. "book lover shirt", "comfort colors shirt"). Discoverability only.
-Tier 4 — Seasonal: Only when directly relevant (Halloween, Fall, Beach Vacation, etc.).
-Tier 5 — Buyer Intent: Why someone shops, not what the product is ("gift for her", "birthday gift", "booktok gift").
+KEYWORD BUCKETS
+Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. Usually just ONE per listing — scarce by design. Represents what the buyer actually types first.
+Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. Where most keywords live. This is the real depth of a listing — expect the most usable keywords here.
+Bucket 3 — Scalability (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift", "booktok gift") all fold into Bucket 3 — they are content within it, not a separate tier.
+
+BALANCE RULE: all three buckets must have real representation in both title and tags — not just ordered correctly, but genuinely covered. A listing missing any bucket is incomplete.
 
 TITLE STRUCTURE — ORDER IS FIXED
-[Tier 1 Unicorn] , [Tier 2 Supporting] , [Tier 3 Broad] , [Tier 5 Buyer Intent]
-• Comma ( , ) marks every tier boundary — NOT pipes, NOT dashes
-• First 30–50 characters must immediately communicate primary search intent
+[Bucket 1] , [Bucket 2] , [Bucket 3]
+• Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
+• First 30–50 characters must contain the Bucket 1 phrase
 • Title Case Throughout, max 140 characters
-• CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Comfort Colors Tee"
-• Never stack near-duplicate phrasings unless each reflects genuinely distinct buyer behavior
+• CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
+• Overlap check: if two keywords significantly overlap (e.g. "SLP grad" + "SLP grad student"), use the longer phrase — Etsy direct-matches the shorter within it, so both is redundant
 
 TAG RULES
-• Tier 1 keyword repeats directly in tags — intentional, not redundant
-• Tiers 2–5: reinforce-not-duplicate — extend reach into adjacent phrasings rather than restating title terms verbatim
-• Misspellings: tags only, and only when listed explicitly — never invented
-• Fill each tag to 18–20 characters, max 20
+• Bucket 1 phrase repeats directly in tags — intentional, not a mistake
+• Buckets 2–3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
+• Misspellings (is_misspelling_variant): tags only — never title or description
 
 DESCRIPTION — 6-SECTION STRUCTURE
-1. SEO Opener: keyword-dense, naturally phrased. First 40 words matter most.
-2. Product Details: size, color, material, format, what's included.
-3. Ordering Steps: how to order, customize, or download.
-4. Cross-Sell: "Shop our [collection] for more designs like this…"
-5. Shipping: standard policy language.
-6. Brand Voice Closer: 1–2 sentences. TCC voice. No Hallmark energy.`;
+1. SEO Opener  2. Product Details  3. Ordering Steps  4. Cross-Sell  5. Shipping  6. Brand Voice Closer`;
 
 const BRAND_VOICE_FALLBACK = `THE THREE GEARS
 Aspirational: "You already know who you are. This is just the shirt that proves it."
@@ -225,44 +219,50 @@ function SectionHeader({ title }) {
   );
 }
 
-function oppScore(k) {
-  return (k.score || 0) / Math.log2((k.competition || 0) + 2);
-}
+function computeBucketWarnings(keywords, sessions) {
+  const usable = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
+  if (usable.length === 0) {
+    return [{ severity: 'high', msg: 'No validated keywords — run research before generating.' }];
+  }
 
-function computeTierWarnings(keywords) {
-  const useKws = keywords.filter(k => k.tag_type === 'use' && !k.tags_only);
-  const sorted = [...useKws].sort((a, b) => oppScore(b) - oppScore(a));
+  const b1 = usable.filter(k => k.bucket === 1);
+  const b2 = usable.filter(k => k.bucket === 2);
+  const b3 = usable.filter(k => k.bucket === 3);
+  const unclassified = usable.filter(k => !k.bucket);
   const warnings = [];
-  if (useKws.length === 0) {
-    warnings.push({ severity: 'high', msg: 'No validated keywords — run Everbee research before generating.' });
-  } else if (useKws.length < 3) {
-    warnings.push({ severity: 'high', msg: `Only ${useKws.length} validated keyword(s) — need at least 5 for solid tier coverage.` });
+
+  if (b1.length === 0) {
+    warnings.push({ severity: 'high', msg: 'No Bucket 1 keyword (high volume, low competition). Keep researching — this is your unicorn and it\'s scarce by design.' });
   }
-  const best = sorted[0];
-  if (best) {
-    const comp = best.competition || 0;
-    const vol  = best.volume || 0;
-    if (comp > 5000) {
-      warnings.push({ severity: 'high', msg: `Best keyword "${best.keyword}" has very high competition (${comp.toLocaleString()}) — no clear Tier 1 Unicorn. More research needed.` });
-    } else if (comp > 2000) {
-      warnings.push({ severity: 'medium', msg: `Best keyword "${best.keyword}" has moderate-high competition (${comp.toLocaleString()}) — verify it's your strongest unicorn candidate.` });
-    }
-    if (vol < 300 && comp > 0) {
-      warnings.push({ severity: 'medium', msg: `Best keyword "${best.keyword}" has low search volume (${vol}) — may not drive meaningful traffic as Tier 1.` });
-    }
+  if (b2.length === 0) {
+    warnings.push({ severity: 'high', msg: 'No Bucket 2 keywords (reach/supporting). These are the bulk of a listing — more research needed.' });
   }
-  const watchOnly = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
-  if (useKws.length < 5 && watchOnly.length > 0) {
-    warnings.push({ severity: 'medium', msg: `${watchOnly.length} watch keyword(s) not yet promoted to use — review and upgrade any that now qualify.` });
+  if (b3.length === 0 && usable.length >= 3) {
+    warnings.push({ severity: 'medium', msg: 'No Bucket 3 keywords (scalability). Add broad category terms and buyer-intent phrases (gift for her, birthday gift, etc.).' });
   }
+  if (unclassified.length > 0) {
+    warnings.push({ severity: 'medium', msg: `${unclassified.length} keyword(s) not yet bucket-classified. Run the SQL migration or edit keywords manually to assign buckets.` });
+  }
+
+  const seasonalSessions = (sessions || []).filter(s => s.seasonal);
+  if (seasonalSessions.length > 0 && b1.length > 0) {
+    warnings.push({ severity: 'low', msg: `${seasonalSessions.length} seasonal research session(s) in use — verify keyword spikes fall within the next 2–3 months before publishing.` });
+  }
+
   return warnings;
 }
 
 function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis }) {
-  const useKws   = keywords.filter(k => k.tag_type === 'use'   && !k.tags_only);
-  const watchKws = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
-  const tagsKws  = keywords.filter(k => k.tags_only);
-  const byOpp    = arr => [...arr].sort((a, b) => oppScore(b) - oppScore(a));
+  const usable    = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
+  const watchKws  = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
+  const tagsKws   = keywords.filter(k => k.tags_only || k.is_misspelling_variant);
+
+  const b1 = usable.filter(k => k.bucket === 1 && k.tag_type !== 'watch');
+  const b2 = usable.filter(k => k.bucket === 2 && k.tag_type !== 'watch');
+  const b3 = usable.filter(k => k.bucket === 3 && k.tag_type !== 'watch');
+  const unclassified = usable.filter(k => !k.bucket && k.tag_type !== 'watch');
+
+  const byScore = arr => [...arr].sort((a, b) => (b.score || 0) - (a.score || 0));
 
   const fmtKw = k =>
     `  "${k.keyword}"` +
@@ -271,35 +271,30 @@ function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, ph
     (k.score       != null ? `, score: ${Number(k.score).toLocaleString()}` : '') +
     (k.volume      != null ? ')' : '');
 
-  const sorted = byOpp(useKws);
-  const unicorn    = sorted[0];
-  const supporting = sorted.slice(1, 6);
-  const broad      = sorted.slice(6);
-
   return `Generate a complete Etsy listing for TCC (The Current Chapter).
 
-━━━ TCC SEO STANDARDS v2 — FOLLOW EXACTLY ━━━
-KEYWORD TIERS (apply to the keywords provided below):
-  Tier 1 — Unicorn: ONE keyword. Highest opportunity (high vol, LOW comp). This is the primary search intent. Goes first in title + first tag.
-  Tier 2 — Supporting: High vol, medium comp. Same buyer intent. Reinforce the unicorn.
-  Tier 3 — Broad: High vol, HIGH comp. Category terms ("book lover shirt", "comfort colors shirt"). Discoverability only — later in title + tags.
-  Tier 4 — Seasonal: Only if directly relevant to THIS product.
-  Tier 5 — Buyer Intent: WHY someone shops ("gift for her", "birthday gift", "booktok gift"). End of title + tags.
+━━━ TCC SEO STANDARDS v2 — 3-BUCKET SYSTEM — FOLLOW EXACTLY ━━━
+BUCKET DEFINITIONS:
+  Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE per listing — scarce by design. Goes FIRST in title and tags.
+  Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. The bulk of a listing's depth. Most keywords live here.
+  Bucket 3 — Scalability (Broad): High volume, medium-to-HIGH competition. Category terms, seasonal language ("Fall", "Halloween"), and buyer-intent phrases ("gift for her", "birthday gift") all belong in Bucket 3 — they are CONTENT within it, not separate tiers.
 
 TITLE FORMAT — ORDER IS FIXED:
-  [Tier 1 Unicorn] , [Tier 2 Supporting] , [Tier 3 Broad] , [Tier 5 Buyer Intent]
-  - Comma ( , ) marks every tier boundary — NOT pipes, NOT dashes
-  - First 30–50 characters = Tier 1 phrase (primary search intent comes first)
+  [Bucket 1] , [Bucket 2] , [Bucket 3]
+  - Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
+  - First 30–50 characters must contain the Bucket 1 phrase
   - Title Case Throughout, max 140 characters
-  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Comfort Colors Tee"
-  - WRONG:   "Morally Gray Enthusiast Shirt | Fantasy Reader | Book Lover | Gift" (pipes not allowed)
-  - WRONG:   "Book Lover Shirt Morally Gray Fantasy Reader Gift Comfort Colors" (no separators, no order)
+  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
+  - WRONG: "Morally Gray Enthusiast Shirt | Fantasy Reader | Book Lover" (no pipes)
+  - OVERLAP CHECK: if two keywords significantly overlap (e.g. "SLP grad" and "SLP grad student"), use the longer phrase only — Etsy direct-matches the shorter within it, so listing both is redundant
 
 TAG RULES:
-  - Tier 1: repeat the exact unicorn phrase in tags — INTENTIONAL, not an error
-  - Tiers 2–5: reinforce with adjacent phrasings that extend reach, do NOT restate title terms verbatim
-  - Misspellings listed below: include in tags exactly as listed — never invent misspellings
+  - Bucket 1 phrase: repeat exactly in tags — INTENTIONAL, not an error
+  - Buckets 2–3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
+  - Misspellings listed below: include in tags exactly as shown — never invent new ones
   - Fill each tag to 18–20 characters, max 20
+
+BALANCE REQUIREMENT: all three buckets must have real representation in both title and tags.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 PRODUCT:
@@ -311,19 +306,21 @@ Emotional Trigger: ${form.emotionalTrigger || '— NOT SET; infer from design an
 ${form.notes ? `Notes: ${form.notes}` : ''}
 
 ${imageAnalysis ? `DESIGN IMAGE ANALYSIS:\n${imageAnalysis}\n` : ''}
-VALIDATED KEYWORDS (classify into tiers based on volume + competition):
+KEYWORDS — USE THESE IN THE LISTING:
 
-Tier 1 Unicorn candidate (best opportunity score — lowest comp relative to volume):
-${unicorn ? fmtKw(unicorn) : '  [none with data — identify from niche context]'}
+Bucket 1 — Visibility (high vol, low comp — your unicorn):
+${byScore(b1).map(fmtKw).join('\n') || '  [none classified yet — infer from niche context and listed keywords]'}
 
-Tier 2/3 candidates (classify by competition level — lower comp = Tier 2, higher = Tier 3):
-${supporting.map(fmtKw).join('\n') || '  [none]'}
-${broad.length ? '\nAdditional broad/supporting candidates:\n' + broad.map(fmtKw).join('\n') : ''}
+Bucket 2 — Reach (high-med vol, med-low comp — supporting keywords):
+${byScore(b2).map(fmtKw).join('\n') || '  [none]'}
 
-Watch keywords (Tier 3/4 consideration — lower priority):
-${byOpp(watchKws).slice(0, 8).map(fmtKw).join('\n') || '  [none]'}
+Bucket 3 — Scalability (high vol, high comp — broad + seasonal + buyer-intent):
+${byScore(b3).map(fmtKw).join('\n') || '  [none — add broad category terms and buyer-intent phrases as Bucket 3 content]'}
 
-Misspelling variants (Tier tag-only — NEVER in title or description):
+${unclassified.length ? `Unclassified (use best judgment — incorporate where they fit):\n${byScore(unclassified).map(fmtKw).join('\n')}` : ''}
+${watchKws.length ? `\nWatch keywords (lower confidence — use only if needed for coverage):\n${byScore(watchKws).slice(0, 6).map(fmtKw).join('\n')}` : ''}
+
+Misspelling variants (tags only — NEVER in title or description):
 ${tagsKws.map(k => `  "${k.keyword}"`).join('\n') || '  [none]'}
 
 STYLE GUIDE:
@@ -338,7 +335,7 @@ ${brandVoice}
 ${photoStandards ? `LISTING PHOTO STANDARDS:\n${photoStandards}\n` : ''}
 Generate now. Return ONLY this JSON — no markdown, no text outside the object:
 {
-  "title": "string — comma-separated tier format, max 140 chars, Title Case",
+  "title": "string — [B1] , [B2] , [B3] comma format, max 140 chars, Title Case",
   "tags": ["string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string"],
   "description": {
     "seo_opener": "string",
@@ -360,17 +357,18 @@ Generate now. Return ONLY this JSON — no markdown, no text outside the object:
     {"slot": 9, "type": "Social / UGC style", "prompt": "string"},
     {"slot": 10, "type": "Brand aesthetic / mood", "prompt": "string"}
   ],
-  "tier_assignment": {"t1": "string — the unicorn keyword chosen", "t2": ["strings"], "t3": ["strings"], "t5": ["strings"]},
-  "research_flags": ["string — keyword gaps, tier coverage issues, or validation concerns"]
+  "bucket_assignment": {"b1": "string — the bucket 1 keyword used", "b2": ["strings"], "b3": ["strings"]},
+  "research_flags": ["string — missing bucket coverage, balance issues, overlap candidates, or anything that needs more research"]
 }
 
 REQUIREMENTS:
-- Title: comma-separated tier order (T1 , T2 , T3 , T5), max 140 chars, Title Case
-- Tags: exactly 13, each max 20 chars, Tier 1 repeats intentionally, Tiers 2–5 reinforce not duplicate
-- Tags-only/misspelling keywords in tags only — never title or description
-- Each description section is distinct content, not one paragraph split arbitrarily
-- Image prompts: specific enough for ChatGPT to generate professional Etsy-quality mockups
-- research_flags: flag any tier coverage gaps, missing unicorn, or keywords needing further validation`;
+- Title: [B1] , [B2] , [B3] comma order, max 140 chars, Title Case, B1 in first 30–50 chars
+- Tags: exactly 13, each max 20 chars, B1 repeats intentionally, B2–3 reinforce not duplicate
+- Balance: all three buckets represented in both title and tags
+- Misspellings/tags-only keywords: tags only, never title or description
+- Each description section distinct — not one paragraph split arbitrarily
+- Image prompts: specific enough for ChatGPT — include product type, colors, setting, lighting, demographic, angle
+- research_flags: flag any missing bucket, balance gap, overlap to combine, or keywords needing validation`;
 }
 
 const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
@@ -511,7 +509,7 @@ export default function ListingBuilder() {
     { label: imageAnalysis ? 'Design image analyzed' : (imagePreview ? 'Analyzing image…' : 'No design image'), ok: !!imageAnalysis, warn: !imageAnalysis },
   ];
   const hasWarnings = readiness.some(r => r.warn);
-  const tierWarnings = form.collection ? computeTierWarnings(allKeywords) : [];
+  const bucketWarnings = form.collection ? computeBucketWarnings(allKeywords, sessions) : [];
 
   // Generation
   const [generating, setGenerating] = useState(false);
@@ -708,20 +706,20 @@ export default function ListingBuilder() {
             Warnings won't block generation — Claude will infer what it can.
           </div>
         )}
-        {tierWarnings.length > 0 && (
+        {bucketWarnings.length > 0 && (
           <div style={{ marginTop: 12, borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 10 }}>
             <div style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a4a1e', marginBottom: 6 }}>
-              Keyword Tier Validation
+              Bucket Coverage Check
             </div>
-            {tierWarnings.map((w, i) => (
+            {bucketWarnings.map((w, i) => (
               <div key={i} style={{
                 fontSize: '0.75rem',
                 color: w.severity === 'high' ? '#8b3a3a' : '#7a4a1e',
                 padding: '5px 10px',
                 marginBottom: 4,
                 borderRadius: 4,
-                background: w.severity === 'high' ? 'rgba(201,123,123,0.1)' : 'rgba(232,168,124,0.1)',
-                border: `1px solid ${w.severity === 'high' ? 'rgba(201,123,123,0.25)' : 'rgba(232,168,124,0.25)'}`,
+                background: w.severity === 'high' ? 'rgba(201,123,123,0.1)' : w.severity === 'low' ? 'rgba(43,41,38,0.04)' : 'rgba(232,168,124,0.1)',
+                border: `1px solid ${w.severity === 'high' ? 'rgba(201,123,123,0.25)' : w.severity === 'low' ? 'rgba(43,41,38,0.12)' : 'rgba(232,168,124,0.25)'}`,
               }}>
                 {w.severity === 'high' ? '✗' : '⚠'} {w.msg}
               </div>

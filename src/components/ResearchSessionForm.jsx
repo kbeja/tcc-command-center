@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createResearchSession, useCollections, createCollection } from '../lib/hooks';
+import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
 const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
@@ -86,10 +87,34 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
           ×
         </button>
       </div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px 6px 32px', cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
-        <input type="checkbox" checked={!!kw.tags_only} onChange={e => onChange(index, { ...kw, tags_only: e.target.checked })} style={{ width: 'auto', margin: 0 }} />
-        Tags-only (misspelling variant)
-      </label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px 6px 32px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
+          <input type="checkbox" checked={!!kw.tags_only} onChange={e => onChange(index, { ...kw, tags_only: e.target.checked })} style={{ width: 'auto', margin: 0 }} />
+          Tags-only (misspelling)
+        </label>
+        {!kw.tags_only && (
+          <select
+            value={kw.bucket || ''}
+            onChange={e => onChange(index, { ...kw, bucket: e.target.value || null, bucket_source: e.target.value ? 'manual' : null })}
+            style={{ fontSize: '0.68rem', padding: '2px 4px', width: 'auto' }}
+          >
+            <option value="">— Bucket —</option>
+            <option value="1">B1 Visibility</option>
+            <option value="2">B2 Reach</option>
+            <option value="3">B3 Scalability</option>
+          </select>
+        )}
+        {kw.bucket && !kw.tags_only && (
+          <span style={{
+            fontSize: '0.6rem', fontWeight: 700, padding: '1px 6px', borderRadius: 10,
+            background: BUCKET_STYLE[kw.bucket]?.bg, color: BUCKET_STYLE[kw.bucket]?.color,
+            border: `1px solid ${BUCKET_STYLE[kw.bucket]?.border}`,
+          }}>
+            {BUCKET_STYLE[kw.bucket]?.label}
+            {kw.bucket_source === 'everbee_score' ? ' auto' : kw.bucket_source === 'manual' ? ' manual' : ''}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -140,13 +165,14 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
           const idx = merged.findIndex(
             k => k.keyword.toLowerCase() === incoming.keyword.toLowerCase()
           );
-          if (idx >= 0) {
-            merged[idx] = incoming;
-          } else {
-            merged.push(incoming);
-          }
+          if (idx >= 0) { merged[idx] = incoming; } else { merged.push(incoming); }
         }
-        return merged;
+        // Auto-assign buckets to the merged list
+        return assignBucketsToList(merged.map(k => ({
+          ...k,
+          volume:      k.volume      !== '' ? parseInt(k.volume)      : null,
+          competition: k.competition !== '' ? parseInt(k.competition) : null,
+        }))).map((k, i) => ({ ...merged[i], bucket: k.bucket, bucket_source: k.bucket_source, last_verified: k.last_verified }));
       });
       setBulkText('');
       setShowBulk(false);
@@ -184,6 +210,10 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         score: k.score ? parseInt(k.score) : null,
         tag_type: k.status,
         tags_only: !!k.tags_only,
+        is_misspelling_variant: !!k.tags_only,
+        bucket: k.bucket ? parseInt(k.bucket) : null,
+        bucket_source: k.bucket_source || null,
+        last_verified: k.last_verified || null,
       }));
     await createResearchSession(
       { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },

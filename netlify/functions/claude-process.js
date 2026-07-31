@@ -160,7 +160,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 3000,
-          system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC\'s exact standards. CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
+          system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC SEO Standards v2: 3-bucket keyword framework (Bucket 1 = Visibility/unicorn, Bucket 2 = Reach/supporting, Bucket 3 = Scalability/broad+seasonal+buyer-intent), comma-separated title format ([B1] , [B2] , [B3]), balance requirement (all three buckets represented in both title and tags). CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
           messages: [{ role: 'user', content: userContent }],
         }),
       });
@@ -184,11 +184,13 @@ exports.handler = async (event) => {
     ).join('\n') || '  [none provided]';
     const prompt = `Update an Etsy listing's title and tags with newly discovered keywords, following TCC SEO Standards v2.
 
-TITLE FORMAT — TCC v2 COMMA-TIER STRUCTURE:
-[Tier 1 Unicorn] , [Tier 2 Supporting] , [Tier 3 Broad] , [Tier 5 Buyer Intent]
-- Comma ( , ) marks every tier boundary — NOT pipes, NOT dashes
-- Tier 1 is the highest-opportunity keyword (low competition relative to volume)
+TITLE FORMAT — 3-BUCKET COMMA STRUCTURE:
+[Bucket 1 Visibility] , [Bucket 2 Reach] , [Bucket 3 Scalability]
+- Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
+- Bucket 1 = high volume, low competition (unicorn — the rarest, most valuable)
+- Bucket 3 includes seasonal and buyer-intent language ("gift for her", "birthday gift")
 - Title Case Throughout Every Word, max 140 characters
+- BALANCE: all three buckets should have representation in both title and tags
 
 CURRENT TITLE:
 ${currentTitle}

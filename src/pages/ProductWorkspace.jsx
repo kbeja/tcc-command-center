@@ -206,36 +206,30 @@ function LiveStats({ product, onSave }) {
 
 // ─── Context Bundle ───────────────────────────────────────────────────────────
 
-const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — Keyword Hierarchy & Listing Builder Logic
+const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — 3-Bucket Keyword Framework (Taylor Posada method)
 
-KEYWORD TIERS
-Tier 1 — Unicorn (Primary Search Intent): ONE per listing. High volume, low competition. Exact buyer search behavior.
-Tier 2 — Supporting: High volume, medium competition. Reinforce Tier 1, same buyer intent.
-Tier 3 — Broad: High volume, high competition. Category terms (e.g. "book lover shirt", "comfort colors shirt"). Discoverability only.
-Tier 4 — Seasonal: Only when directly relevant (Halloween, Fall, Beach Vacation, etc.).
-Tier 5 — Buyer Intent: Why someone shops, not what the product is ("gift for her", "birthday gift", "booktok gift").
+KEYWORD BUCKETS
+Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. Usually one per listing — scarce by design.
+Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. Most keywords live here — the real depth of a listing.
+Bucket 3 — Scalability (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift") all fold into Bucket 3.
+
+BALANCE RULE: all three buckets must have real representation in both title and tags.
 
 TITLE STRUCTURE — ORDER IS FIXED
-[Tier 1 Unicorn] , [Tier 2 Supporting] , [Tier 3 Broad] , [Tier 5 Buyer Intent]
-• Comma ( , ) marks every tier boundary — NOT pipes, NOT dashes
-• First 30–50 characters must immediately communicate primary search intent
+[Bucket 1] , [Bucket 2] , [Bucket 3]
+• Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
+• First 30–50 characters must contain the Bucket 1 phrase
 • Title Case Throughout, max 140 characters
-• CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Comfort Colors Tee"
-• Never stack near-duplicate phrasings unless each reflects genuinely distinct buyer behavior
+• CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
+• Overlap check: if two keywords significantly overlap, use the longer phrase — Etsy direct-matches the shorter within it
 
 TAG RULES
-• Tier 1 keyword repeats directly in tags — intentional, not redundant
-• Tiers 2–5: reinforce-not-duplicate — extend reach into adjacent phrasings rather than restating title terms verbatim
-• Misspellings: tags only, and only when listed explicitly — never invented
-• Fill each tag to 18–20 characters, max 20
+• Bucket 1 phrase repeats directly in tags — intentional, not redundant
+• Buckets 2–3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
+• Misspellings: tags only — never title or description
 
 DESCRIPTION — 6-SECTION STRUCTURE
-1. SEO Opener: keyword-dense, naturally phrased. First 40 words matter most.
-2. Product Details: size, color, material, format, what's included.
-3. Ordering Steps: how to order, customize, or download.
-4. Cross-Sell: "Shop our [collection] for more designs like this…"
-5. Shipping: standard policy language.
-6. Brand Voice Closer: 1–2 sentences. TCC voice. No Hallmark energy.`;
+1. SEO Opener  2. Product Details  3. Ordering Steps  4. Cross-Sell  5. Shipping  6. Brand Voice Closer`;
 
 const BRAND_VOICE_FALLBACK = `THE THREE GEARS
 Aspirational: "You already know who you are. This is just the shirt that proves it."

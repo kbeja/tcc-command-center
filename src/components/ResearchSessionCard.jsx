@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { deleteResearchSession, deleteKeyword } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
+import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
 const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 
@@ -21,6 +22,7 @@ function EditableKeyword({ k, onSave, onDelete }) {
   const [score, setScore] = useState(k.score ?? '');
   const [tagType, setTagType] = useState(k.tag_type || 'watch');
   const [tagsOnly, setTagsOnly] = useState(!!k.tags_only);
+  const [bucket, setBucket] = useState(k.bucket || '');
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -32,6 +34,8 @@ function EditableKeyword({ k, onSave, onDelete }) {
       score: score !== '' ? parseInt(score) : null,
       tag_type: tagType,
       tags_only: tagsOnly,
+      bucket: bucket !== '' ? parseInt(bucket) : null,
+      bucket_source: bucket !== '' && bucket !== k.bucket ? 'manual' : (k.bucket_source || null),
       updated_at: new Date().toISOString(),
     };
     await supabase.from('keywords').update(updates).eq('id', k.id);
@@ -67,14 +71,25 @@ function EditableKeyword({ k, onSave, onDelete }) {
           <input value={score} onChange={e => setScore(e.target.value)} type="number"
             style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Score" />
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>
+          <select
+            value={bucket}
+            onChange={e => setBucket(e.target.value)}
+            style={{ fontSize: '0.72rem', padding: '3px 6px', width: 'auto' }}
+            title="Bucket assignment"
+          >
+            <option value="">— Bucket —</option>
+            <option value="1">B1 Visibility</option>
+            <option value="2">B2 Reach</option>
+            <option value="3">B3 Scalability</option>
+          </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
             <input type="checkbox" checked={tagsOnly} onChange={e => setTagsOnly(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
-            Tags-only (misspelling variant)
+            Tags-only (misspelling)
           </label>
           <button onClick={() => onDelete(k.id)}
             style={{ marginLeft: 'auto', color: 'var(--alert)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>
@@ -98,12 +113,13 @@ function EditableKeyword({ k, onSave, onDelete }) {
       title="Click to edit"
     >
       <span style={{ flex: 1, minWidth: 120, fontStyle: k.tags_only ? 'italic' : 'normal' }}>{keyword}</span>
-      <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+      <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
         {k.tags_only && (
           <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(43,41,38,0.12)', color: 'var(--charcoal-soft)', whiteSpace: 'nowrap' }}>
             tags only
           </span>
         )}
+        <BucketBadge bucket={k.bucket} />
         {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {volume}</span>}
         {score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {score}</span>}
         <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', opacity: 0.4 }}>✎</span>
