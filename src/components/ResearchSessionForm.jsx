@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createResearchSession, useCollections, createCollection } from '../lib/hooks';
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
+import { supabase } from '../lib/supabase';
 
 const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
@@ -172,7 +173,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
           ...k,
           volume:      k.volume      !== '' ? parseInt(k.volume)      : null,
           competition: k.competition !== '' ? parseInt(k.competition) : null,
-        }))).map((k, i) => ({ ...merged[i], bucket: k.bucket, bucket_source: k.bucket_source, last_verified: k.last_verified }));
+        }))).map((k, i) => ({ ...merged[i], bucket: k.bucket, bucket_source: k.bucket_source }));
       });
       setBulkText('');
       setShowBulk(false);
@@ -213,12 +214,15 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         is_misspelling_variant: !!k.tags_only,
         bucket: k.bucket ? parseInt(k.bucket) : null,
         bucket_source: k.bucket_source || null,
-        last_verified: k.last_verified || null,
       }));
     await createResearchSession(
       { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
       kwList
     );
+    // Update the collection's last_verified date — bucket assignments are current as of today
+    await supabase.from('collections')
+      .update({ last_verified: new Date().toISOString().slice(0, 10) })
+      .eq('name', effectiveCollection);
     setSaving(false);
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);

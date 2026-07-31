@@ -46,7 +46,6 @@ export function assignBucketsToList(keywords) {
       ...k,
       bucket,
       bucket_source: k.bucket_source || 'everbee_score',
-      last_verified: k.last_verified || new Date().toISOString().slice(0, 10),
     };
   });
 }

@@ -412,12 +412,20 @@ export default function ListingBuilder() {
 
   // Research sessions for the selected collection
   const [sessions, setSessions] = useState([]);
+  const [collectionLastVerified, setCollectionLastVerified] = useState(null);
   useEffect(() => {
-    if (!form.collection) { setSessions([]); return; }
+    if (!form.collection) { setSessions([]); setCollectionLastVerified(null); return; }
     supabase.from('research_sessions').select('*, keywords(*)')
       .eq('collection', form.collection)
       .then(({ data }) => setSessions(data || []));
+    supabase.from('collections').select('last_verified').eq('name', form.collection).single()
+      .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
   }, [form.collection]);
+
+  const keywordAgedays = collectionLastVerified
+    ? Math.floor((Date.now() - new Date(collectionLastVerified).getTime()) / 86400000)
+    : null;
+  const keywordsStale = keywordAgedays !== null && keywordAgedays >= 20;
 
   // Flatten + deduplicate keywords
   const allKeywords = (() => {
@@ -504,6 +512,15 @@ export default function ListingBuilder() {
   // Readiness checks
   const readiness = [
     { label: `${totalUsable} usable keyword${totalUsable !== 1 ? 's' : ''}`, ok: totalUsable >= 5, warn: totalUsable < 5 },
+    {
+      label: keywordsStale
+        ? `Keywords last verified ${keywordAgedays}d ago — recheck recommended`
+        : collectionLastVerified
+          ? `Keywords verified ${keywordAgedays === 0 ? 'today' : `${keywordAgedays}d ago`}`
+          : 'Keywords never verified',
+      ok: collectionLastVerified !== null && !keywordsStale,
+      warn: keywordsStale || collectionLastVerified === null,
+    },
     { label: styleGuide ? 'Style guide' : 'Style guide missing', ok: !!styleGuide, warn: !styleGuide },
     { label: form.emotionalTrigger ? 'Emotional trigger' : 'Emotional trigger not set', ok: !!form.emotionalTrigger, warn: !form.emotionalTrigger },
     { label: imageAnalysis ? 'Design image analyzed' : (imagePreview ? 'Analyzing image…' : 'No design image'), ok: !!imageAnalysis, warn: !imageAnalysis },
