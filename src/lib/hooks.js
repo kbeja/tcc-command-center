@@ -233,7 +233,7 @@ export function useCollections() {
 
   useEffect(() => {
     fetch();
-    const sub = supabase.channel('collections-names')
+    const sub = supabase.channel(`collections-names-${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, fetch)
       .subscribe();
     return () => supabase.removeChannel(sub);
