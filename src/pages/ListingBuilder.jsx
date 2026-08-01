@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createProduct, updateProduct } from '../lib/hooks';
+import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createProduct, updateProduct, createCollection } from '../lib/hooks';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
 
@@ -377,6 +377,76 @@ REQUIREMENTS:
 
 const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 
+// ─── Collection picker with inline add ───────────────────────────────────────
+
+function CollectionPicker({ collections, value, onChange, onCreated }) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleCreate() {
+    const name = newName.trim();
+    if (!name) return;
+    setSaving(true);
+    setError('');
+    const { error } = await createCollection(name);
+    if (error) {
+      setError(error.message?.includes('unique') ? 'Already exists.' : 'Could not save.');
+    } else {
+      setNewName('');
+      setAdding(false);
+      onCreated?.(name);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="form-group" style={{ marginBottom: 12 }}>
+      <label className="form-label">Collection</label>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
+        {collections.map(c => (
+          <button key={c} type="button"
+            onClick={() => onChange(value === c ? '' : c)}
+            style={{
+              fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+              background: value === c ? 'var(--dusty-rose)' : 'transparent',
+              color: value === c ? '#fff' : 'var(--charcoal-soft)',
+              border: value === c ? 'none' : '1px solid rgba(43,41,38,0.2)',
+              fontWeight: value === c ? 600 : 400,
+            }}
+          >{c}</button>
+        ))}
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)}
+            style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: 20, cursor: 'pointer', background: 'none', border: '1px dashed rgba(43,41,38,0.25)', color: 'var(--charcoal-soft)' }}>
+            + New
+          </button>
+        )}
+      </div>
+      {adding && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setAdding(false); setNewName(''); } }}
+            placeholder="Collection name…"
+            autoFocus
+            style={{ fontSize: '0.78rem', flex: 1 }}
+          />
+          <button type="button" className="btn btn-primary btn-sm" onClick={handleCreate} disabled={!newName.trim() || saving}>
+            {saving ? '…' : 'Add'}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); setError(''); }}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && <div style={{ fontSize: '0.72rem', color: 'var(--alert)', marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
 // ─── Inline keyword add panel ─────────────────────────────────────────────────
 
 function InlineKeywordAdd({ collection, sessions, onSaved }) {
@@ -508,7 +578,7 @@ export default function ListingBuilder() {
   const productId = searchParams.get('product');
 
   const { product, loading: productLoading } = useProduct(productId);
-  const { collections } = useCollections();
+  const { collections, refetch: refetchCollections } = useCollections();
   const { collections: collectionObjs } = useCollectionObjects();
   const { playbooks } = usePlaybooks();
 
@@ -813,26 +883,13 @@ export default function ListingBuilder() {
           </div>
         </div>
 
-        {/* Row 2: Collection chips */}
-        <div className="form-group" style={{ marginBottom: 12 }}>
-          <label className="form-label">Collection</label>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-            {['Mom Chapter', 'Reader Chapter', 'Kids Chapter'].map(c => (
-              <button key={c} type="button"
-                onClick={() => setField('collection', form.collection === c ? '' : c)}
-                style={{
-                  fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                  background: form.collection === c ? 'var(--dusty-rose)' : 'transparent',
-                  color: form.collection === c ? '#fff' : 'var(--charcoal-soft)',
-                  border: form.collection === c ? 'none' : '1px solid rgba(43,41,38,0.2)',
-                  fontWeight: form.collection === c ? 600 : 400,
-                }}
-              >{c}</button>
-            ))}
-          </div>
-          <input value={form.collection} onChange={e => setField('collection', e.target.value)}
-            placeholder="Or type a custom collection…" style={{ fontSize: '0.78rem' }} />
-        </div>
+        {/* Row 2: Collection chips from DB */}
+        <CollectionPicker
+          collections={collections}
+          value={form.collection}
+          onChange={v => setField('collection', v)}
+          onCreated={c => { setField('collection', c); refetchCollections?.(); }}
+        />
 
         {/* Research session picker */}
         {sessions.length > 0 && (
