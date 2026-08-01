@@ -7,6 +7,7 @@ import EtsyCSVImport from '../components/EtsyCSVImport';
 import PinterestCSVImport from '../components/PinterestCSVImport';
 import EverbeeCSVImport from '../components/EverbeeCSVImport';
 import WeeklyReview from '../components/WeeklyReview';
+import EtsyStatsEntry from '../components/EtsyStatsEntry';
 
 const PRINTIFY_COST_DEFAULT = 14; // fallback if no cost set
 
@@ -524,13 +525,13 @@ export default function Analytics() {
       <div className="page-header">
         <div className="page-title">Analytics</div>
         <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-          {['overview', 'goals', 'competitors', 'import', 'weekly'].map(t => (
+          {['overview', 'etsy', 'goals', 'competitors', 'import', 'weekly'].map(t => (
             <button
               key={t}
               className={`btn btn-sm ${tab === t ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setTab(t)}
             >
-              {{ overview: 'Overview', goals: 'Goals', competitors: 'Competitors', import: 'Import Data', weekly: 'Weekly Review' }[t]}
+              {{ overview: 'Overview', etsy: 'Etsy Stats', goals: 'Goals', competitors: 'Competitors', import: 'Import Data', weekly: 'Weekly Review' }[t]}
             </button>
           ))}
         </div>
@@ -728,6 +729,11 @@ export default function Analytics() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── ETSY STATS TAB ── */}
+      {tab === 'etsy' && (
+        <EtsyStatsEntry />
       )}
 
       {/* ── GOALS TAB ── */}
