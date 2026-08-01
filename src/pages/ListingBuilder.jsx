@@ -670,6 +670,13 @@ export default function ListingBuilder() {
     }
   }, [product]);
 
+  // Design image (declared early — used in draft save/restore effects below)
+  const [imagePreview, setImagePreview] = useState(null);
+  const [imageBase64, setImageBase64]   = useState(null);
+  const [imageMediaType, setImageMediaType] = useState('image/png');
+  const [analyzing, setAnalyzing]       = useState(false);
+  const [imageAnalysis, setImageAnalysis] = useState('');
+
   // ── Auto-draft (new listings only) ──────────────────────────────────────────
   const DRAFT_KEY = 'tcc_listing_draft';
   const [draftRestored, setDraftRestored] = useState(false);
@@ -804,12 +811,6 @@ export default function ListingBuilder() {
   const styleGuide = nicheStyleGuides[nicheKey] || collectionObj?.style_guide || '';
 
   // Design image
-  const [imagePreview, setImagePreview] = useState(null);
-  const [imageBase64, setImageBase64]   = useState(null);
-  const [imageMediaType, setImageMediaType] = useState('image/png');
-  const [analyzing, setAnalyzing]       = useState(false);
-  const [imageAnalysis, setImageAnalysis] = useState('');
-
   const handleImage = useCallback(async (file) => {
     if (!file) return;
     const reader = new FileReader();
