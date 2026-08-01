@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { createResearchSession, useChapters } from '../lib/hooks';
+import { assignBucketsToList } from '../lib/keywords.jsx';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -222,7 +223,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
       if (shape === 'keyword') {
         // Route directly to Research → research_sessions + keywords (never through Claude/Inbox)
         const collection = nicheTag.trim() || 'General';
-        const kwRows = [
+        const rawRows = [
           ...preview.keep.map(k => ({
             keyword: k.keyword,
             volume: k.volume ?? null,
@@ -238,8 +239,10 @@ export default function EverbeeCSVImport({ products, onImported }) {
               competition: k.competition ?? null,
               score: k.score ?? null,
               tag_type: 'watch',
+              tags_only: true,
             })),
         ];
+        const kwRows = assignBucketsToList(rawRows);
 
         const { error: sessionErr } = await createResearchSession(
           {
