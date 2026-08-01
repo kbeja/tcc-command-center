@@ -238,8 +238,8 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div className="form-group">
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Collection</label>
           {collection === '__new__' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -292,24 +292,20 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
             </select>
           )}
         </div>
-        <div className="form-group">
+        <div className="form-group" style={{ margin: 0 }}>
+          <label className="form-label">Source</label>
+          <select value={source} onChange={e => setSource(e.target.value)}>
+            {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div className="form-group">
-          <label className="form-label">Source</label>
-          <div className="toggle-group source-toggle">
-            {SOURCES.map(s => (
-              <button key={s} className={`toggle-btn${source === s ? ' active' : ''}`} onClick={() => setSource(s)}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="form-group">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'start', marginBottom: 12 }}>
+        <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Status</label>
           <div className="toggle-group">
             {STATUSES.map(s => (
@@ -318,27 +314,18 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
               </button>
             ))}
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 6 }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>
             {STATUS_HINTS[status]}
           </div>
         </div>
-      </div>
-
-      <div className="form-group">
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
-          <input
-            type="checkbox"
-            checked={seasonal}
-            onChange={e => setSeasonal(e.target.checked)}
-            style={{ width: 'auto', margin: 0 }}
-          />
-          <span className="form-label" style={{ margin: 0 }}>Seasonal keywords</span>
-          <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>— exclude from evergreen product bundles</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', paddingTop: 22, whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={seasonal} onChange={e => setSeasonal(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
+          <span style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>Seasonal</span>
         </label>
       </div>
 
       <div className="form-group">
-        <label className="form-label">Notes</label>
+        <label className="form-label">Notes <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="What did you find?" rows={2} />
       </div>
 
