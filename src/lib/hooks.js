@@ -231,7 +231,13 @@ export function useCollections() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+    const sub = supabase.channel('collections-names')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
   return { collections, loading, refetch: fetch };
 }
 
