@@ -308,18 +308,18 @@ ${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first
 ${form.notes ? `Notes: ${form.notes}` : ''}
 
 ${imageAnalysis ? `DESIGN IMAGE ANALYSIS:\n${imageAnalysis}\n` : ''}
-KEYWORDS — USE THESE IN THE LISTING:
+KEYWORDS — ONLY USE KEYWORDS FROM THIS LIST. DO NOT invent, substitute, or add any keyword not shown here:
 
 Bucket 1 — Visibility (high vol, low comp — your unicorn):
-${byScore(b1).map(fmtKw).join('\n') || '  [none classified yet — infer from niche context and listed keywords]'}
+${byScore(b1).map(fmtKw).join('\n') || '  [none — do not invent B1 keywords; leave B1 slot empty or flag it]'}
 
 Bucket 2 — Reach (high-med vol, med-low comp — supporting keywords):
 ${byScore(b2).map(fmtKw).join('\n') || '  [none]'}
 
 Bucket 3 — Scalability (high vol, high comp — broad + seasonal + buyer-intent):
-${byScore(b3).map(fmtKw).join('\n') || '  [none — add broad category terms and buyer-intent phrases as Bucket 3 content]'}
+${byScore(b3).map(fmtKw).join('\n') || '  [none — do not invent B3 keywords]'}
 
-${unclassified.length ? `Unclassified (use best judgment — incorporate where they fit):\n${byScore(unclassified).map(fmtKw).join('\n')}` : ''}
+${unclassified.length ? `Unclassified (assign to the bucket that best fits their metrics, then use them):\n${byScore(unclassified).map(fmtKw).join('\n')}` : ''}
 ${watchKws.length ? `\nWatch keywords (lower confidence — use only if needed for coverage):\n${byScore(watchKws).slice(0, 6).map(fmtKw).join('\n')}` : ''}
 
 Misspelling variants (tags only — NEVER in title or description):
@@ -335,6 +335,8 @@ BRAND VOICE:
 ${brandVoice}
 
 ${photoStandards ? `LISTING PHOTO STANDARDS:\n${photoStandards}\n` : ''}
+STRICT RULE: Every keyword used in the title or tags must appear verbatim in the keyword list above. No exceptions. Do not generate, paraphrase, or substitute any keyword not explicitly listed.
+
 Generate now. Return ONLY this JSON — no markdown, no text outside the object:
 {
   "title": "string — [B1] , [B2] , [B3] comma format, max 140 chars, Title Case",
