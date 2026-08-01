@@ -532,13 +532,14 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
       const { error } = await createCollection(collName);
       if (error && !error.message?.includes('unique')) return;
     }
+    const isErank = (sourceLabel || '').toLowerCase().includes('erank');
     const { data: session } = await supabase
       .from('research_sessions')
       .insert({
         date: new Date().toISOString().slice(0, 10),
         collection: collName,
         source: sourceLabel || 'Keyword Explore',
-        status: 'Needs More Data',
+        status: 'Complete',
         notes: [
           context ? `Research context: ${context}` : '',
           `Imported from Explore — ${group.name}`,
@@ -553,9 +554,9 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
         keyword:     k.keyword,
         volume:      k.volume,
         competition: k.competition,
-        score:       k.score ?? null,
+        score:       isErank ? (k.difficulty ?? null) : (k.score ?? null),
         bucket:      k.bucket,
-        bucket_source: 'everbee_score',
+        bucket_source: isErank ? 'erank_color' : 'everbee_score',
         tag_type:    'watch',
         tags_only:   false,
       }));
