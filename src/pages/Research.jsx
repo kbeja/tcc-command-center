@@ -251,32 +251,39 @@ function SourceCompare() {
 
 export default function Research() {
   const [tab, setTab] = useState('sessions');
-  const [filterParent, setFilterParent] = useState('');
+  const [filterChapter, setFilterChapter] = useState('');
   const [filterCollection, setFilterCollection] = useState('');
   const { sessions, loading, refetch } = useResearchSessions(filterCollection || undefined);
   const { collections, refetch: refetchCollections } = useCollections();
+  const { collections: collectionObjects } = useCollectionObjects();
   const { chapters } = useChapters();
   const [adding, setAdding] = useState(false);
 
-  // Filter by parent niche first if set
-  const visibleSessions = filterParent === '__none'
-    ? sessions.filter(s => !s.parent_niche)
-    : filterParent
-    ? sessions.filter(s => s.parent_niche === filterParent)
+  // Build a map of collection name → chapter
+  const colChapterMap = {};
+  for (const c of collectionObjects) {
+    if (c.name && c.chapter) colChapterMap[c.name] = c.chapter;
+  }
+
+  // Filter by chapter (derived from collection's chapter, not session's parent_niche)
+  const visibleSessions = filterChapter === '__other'
+    ? sessions.filter(s => !colChapterMap[s.collection])
+    : filterChapter
+    ? sessions.filter(s => colChapterMap[s.collection] === filterChapter)
     : sessions;
 
-  // Group by parent_niche → collection (two-level hierarchy)
+  // Group by chapter → collection (using the collections table, not parent_niche)
   const hierarchy = visibleSessions.reduce((acc, s) => {
-    const parent = s.parent_niche || 'Uncategorized';
-    const col = s.collection || 'Uncategorized';
-    if (!acc[parent]) acc[parent] = {};
-    if (!acc[parent][col]) acc[parent][col] = [];
-    acc[parent][col].push(s);
+    const chapter = colChapterMap[s.collection] || 'Other';
+    const col = s.collection || 'Other';
+    if (!acc[chapter]) acc[chapter] = {};
+    if (!acc[chapter][col]) acc[chapter][col] = [];
+    acc[chapter][col].push(s);
     return acc;
   }, {});
 
-  // Sort: known chapters first, then Uncategorized
-  const parentOrder = [...chapters, 'Uncategorized'];
+  // Sort: known chapters first, then Other
+  const parentOrder = [...chapters, 'Other'];
   const sortedParents = Object.keys(hierarchy).sort((a, b) => {
     const ai = parentOrder.indexOf(a), bi = parentOrder.indexOf(b);
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
@@ -328,33 +335,33 @@ export default function Research() {
             </div>
           )}
 
-          {/* Parent niche filter bar */}
+          {/* Chapter filter bar */}
           <div style={{ marginBottom: 20, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
-              className={`btn btn-sm ${!filterParent ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setFilterParent('')}
+              className={`btn btn-sm ${!filterChapter ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setFilterChapter('')}
             >
               All ({sessions.length})
             </button>
-            {chapters.map(p => {
-              const count = sessions.filter(s => s.parent_niche === p).length;
+            {chapters.map(ch => {
+              const count = sessions.filter(s => colChapterMap[s.collection] === ch).length;
               if (!count) return null;
               return (
                 <button
-                  key={p}
-                  className={`btn btn-sm ${filterParent === p ? 'btn-primary' : 'btn-ghost'}`}
-                  onClick={() => setFilterParent(filterParent === p ? '' : p)}
+                  key={ch}
+                  className={`btn btn-sm ${filterChapter === ch ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setFilterChapter(filterChapter === ch ? '' : ch)}
                 >
-                  {p} ({count})
+                  {ch} ({count})
                 </button>
               );
             })}
-            {sessions.some(s => !s.parent_niche) && (
+            {sessions.some(s => !colChapterMap[s.collection]) && (
               <button
-                className={`btn btn-sm ${filterParent === '__none' ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setFilterParent(filterParent === '__none' ? '' : '__none')}
+                className={`btn btn-sm ${filterChapter === '__other' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setFilterChapter(filterChapter === '__other' ? '' : '__other')}
               >
-                Uncategorized ({sessions.filter(s => !s.parent_niche).length})
+                Other ({sessions.filter(s => !colChapterMap[s.collection]).length})
               </button>
             )}
           </div>
@@ -375,8 +382,8 @@ export default function Research() {
             const kwTotal = parentSessions.reduce((s, r) => s + (r.keywords?.length || 0), 0);
             return (
               <div key={parent} style={{ marginBottom: 32 }}>
-                {/* Parent niche header — only show when "All" is active */}
-                {!filterParent && (
+                {/* Chapter header — only show when "All" is active */}
+                {!filterChapter && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
                     paddingBottom: 8, borderBottom: '2px solid rgba(43,41,38,0.15)',
@@ -388,11 +395,11 @@ export default function Research() {
                   </div>
                 )}
 
-                {/* Sub-niches */}
+                {/* Collections within chapter */}
                 {Object.keys(cols).sort().map(col => (
-                  <div key={col} style={{ marginBottom: 20, paddingLeft: filterParent ? 0 : 14 }}>
+                  <div key={col} style={{ marginBottom: 20, paddingLeft: filterChapter ? 0 : 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      {!filterParent && (
+                      {!filterChapter && (
                         <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--dusty-rose)', flexShrink: 0 }} />
                       )}
                       <div className="section-label" style={{ margin: 0 }}>{col}</div>
