@@ -12,7 +12,7 @@ const STATUS_STYLES = {
 const KW_COLORS = { use: '#7CAF8A', watch: '#E8A87C', discard: '#C97B7B' };
 const TAG_CYCLE = { use: 'watch', watch: 'discard', discard: 'use' };
 
-function EditableKeyword({ k, onSave, onDelete }) {
+function EditableKeyword({ k, onSave, onDelete, collections = [] }) {
   const [editing, setEditing] = useState(false);
   const [keyword, setKeyword] = useState(k.keyword);
   const [volume, setVolume] = useState(k.volume ?? '');
@@ -21,6 +21,7 @@ function EditableKeyword({ k, onSave, onDelete }) {
   const [tagType, setTagType] = useState(k.tag_type || 'watch');
   const [tagsOnly, setTagsOnly] = useState(!!k.tags_only);
   const [bucket, setBucket] = useState(k.bucket || '');
+  const [collectionTag, setCollectionTag] = useState(k.collection_tag || '');
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -34,6 +35,7 @@ function EditableKeyword({ k, onSave, onDelete }) {
       tags_only: tagsOnly,
       bucket: bucket !== '' ? parseInt(bucket) : null,
       bucket_source: bucket !== '' && bucket !== k.bucket ? 'manual' : (k.bucket_source || null),
+      collection_tag: collectionTag || null,
       updated_at: new Date().toISOString(),
     };
     await supabase.from('keywords').update(updates).eq('id', k.id);
@@ -84,6 +86,15 @@ function EditableKeyword({ k, onSave, onDelete }) {
             <option value="1">B1 Visibility</option>
             <option value="2">B2 Reach</option>
             <option value="3">B3 Scalability</option>
+          </select>
+          <select
+            value={collectionTag}
+            onChange={e => setCollectionTag(e.target.value)}
+            style={{ fontSize: '0.72rem', padding: '3px 6px', width: 'auto' }}
+            title="Collection"
+          >
+            <option value="">— Collection —</option>
+            {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
             <input type="checkbox" checked={tagsOnly} onChange={e => setTagsOnly(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
@@ -337,6 +348,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
                         k={k}
                         onSave={handleKeywordSave}
                         onDelete={handleDeleteKeyword}
+                        collections={collections}
                       />
                       {k.collection_tag && (
                         <span style={{
