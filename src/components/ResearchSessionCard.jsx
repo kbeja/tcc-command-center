@@ -146,6 +146,11 @@ function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
           </span>
         )}
         <BucketBadge bucket={k.bucket} />
+        {collectionTag && (
+          <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'var(--rose-faint)', color: 'var(--dusty-rose)', whiteSpace: 'nowrap' }}>
+            {collectionTag}
+          </span>
+        )}
         {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {Number(volume).toLocaleString()}</span>}
         {score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {score}</span>}
         <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', opacity: 0.4 }}>✎</span>
@@ -360,7 +365,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
                         {kwSelected.has(k.id) && <span style={{ color: 'white', fontSize: '0.5rem', fontWeight: 800 }}>✓</span>}
                       </div>
                     )}
-                    <div style={{ flex: 1, position: 'relative' }}>
+                    <div style={{ flex: 1 }}>
                       <EditableKeyword
                         k={k}
                         onSave={handleKeywordSave}
@@ -368,16 +373,6 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
                         collections={collections}
                         source={session.source}
                       />
-                      {k.collection_tag && (
-                        <span style={{
-                          position: 'absolute', top: 4, right: 8,
-                          fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10,
-                          background: 'var(--rose-faint)', color: 'var(--dusty-rose)',
-                          pointerEvents: 'none',
-                        }}>
-                          {k.collection_tag}
-                        </span>
-                      )}
                     </div>
                   </div>
                 ))}
