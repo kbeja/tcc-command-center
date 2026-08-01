@@ -95,9 +95,9 @@ function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
             title="Bucket assignment"
           >
             <option value="">— Bucket —</option>
-            <option value="1">B1 Visibility</option>
+            <option value="1">B1 Visibility (niche-specific)</option>
             <option value="2">B2 Reach</option>
-            <option value="3">B3 Bestseller</option>
+            <option value="3">B3 Bestseller (broad/any niche)</option>
           </select>
           <select
             value={collectionTag}
@@ -282,14 +282,14 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
         <div style={{ marginTop: 12, fontSize: '0.8rem' }}>
           {/* Parent niche editor */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', flexShrink: 0 }}>Main niche:</span>
+            <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', flexShrink: 0 }}>Chapter:</span>
             <select
               value={parentNiche}
               onChange={e => handleParentNicheChange(e.target.value)}
               disabled={savingParent}
-              style={{ fontSize: '0.72rem', padding: '2px 6px' }}
+              style={{ fontSize: '0.72rem', padding: '2px 6px', color: parentNiche ? 'inherit' : 'var(--charcoal-soft)', opacity: parentNiche ? 1 : 0.6 }}
             >
-              <option value="">— Uncategorized —</option>
+              <option value="">— Cross-niche / unassigned —</option>
               {chapters.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             {savingParent && <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>Saving…</span>}
