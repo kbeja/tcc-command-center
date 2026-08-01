@@ -462,6 +462,18 @@ export default function ListingBuilder() {
   const watchKws = allKeywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
   const totalUsable = useKws.length + watchKws.length;
 
+  // Bucket coverage — used both for readiness and as a generation gate
+  const usableForBuckets = allKeywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
+  const b1Keywords = usableForBuckets.filter(k => k.bucket === 1);
+  const b2Keywords = usableForBuckets.filter(k => k.bucket === 2);
+  const b3Keywords = usableForBuckets.filter(k => k.bucket === 3);
+
+  const missingBuckets = [
+    ...(!b1Keywords.length ? ['Bucket 1 (Visibility — high vol, low comp)'] : []),
+    ...(!b2Keywords.length ? ['Bucket 2 (Reach — supporting keywords)'] : []),
+    ...(!b3Keywords.length ? ['Bucket 3 (Scalability — broad + buyer-intent)'] : []),
+  ];
+
   // Playbooks
   const photoPlaybook      = playbooks.find(p => p.slug === 'listing-photos');
   const seoPlaybook        = playbooks.find(p => p.slug === 'seo-standards');
@@ -553,6 +565,10 @@ export default function ListingBuilder() {
 
   async function handleGenerate() {
     if (!form.collection) { setGenError('Please select a collection first.'); return; }
+    if (missingBuckets.length > 0) {
+      setGenError(`Cannot generate — missing keywords for:\n• ${missingBuckets.join('\n• ')}\n\nDo more research in the Explore tab and add keywords to your collection before generating.`);
+      return;
+    }
     setGenerating(true);
     setGenError('');
     setOutput(null);
@@ -826,27 +842,30 @@ export default function ListingBuilder() {
         </div>
         {hasWarnings && (
           <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginTop: 8 }}>
-            Warnings won't block generation — Claude will infer what it can.
+            Missing bucket keywords will block generation — do more research first.
           </div>
         )}
-        {bucketWarnings.length > 0 && (
+        {form.collection && (
           <div style={{ marginTop: 12, borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 10 }}>
-            <div style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a4a1e', marginBottom: 6 }}>
-              Bucket Coverage Check
+            <div style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: missingBuckets.length ? '#8b3a3a' : '#2d6b3c', marginBottom: 6 }}>
+              Bucket Coverage
             </div>
-            {bucketWarnings.map((w, i) => (
-              <div key={i} style={{
-                fontSize: '0.75rem',
-                color: w.severity === 'high' ? '#8b3a3a' : '#7a4a1e',
-                padding: '5px 10px',
-                marginBottom: 4,
-                borderRadius: 4,
-                background: w.severity === 'high' ? 'rgba(201,123,123,0.1)' : w.severity === 'low' ? 'rgba(43,41,38,0.04)' : 'rgba(232,168,124,0.1)',
-                border: `1px solid ${w.severity === 'high' ? 'rgba(201,123,123,0.25)' : w.severity === 'low' ? 'rgba(43,41,38,0.12)' : 'rgba(232,168,124,0.25)'}`,
-              }}>
-                {w.severity === 'high' ? '✗' : '⚠'} {w.msg}
+            {missingBuckets.length > 0 ? (
+              <div>
+                {missingBuckets.map((b, i) => (
+                  <div key={i} style={{
+                    fontSize: '0.75rem', color: '#8b3a3a', padding: '5px 10px', marginBottom: 4,
+                    borderRadius: 4, background: 'rgba(201,123,123,0.1)', border: '1px solid rgba(201,123,123,0.25)',
+                  }}>
+                    ✗ No keywords for {b} — do more research before generating
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <div style={{ fontSize: '0.75rem', color: '#2d6b3c', padding: '5px 10px', borderRadius: 4, background: 'rgba(124,175,138,0.1)', border: '1px solid rgba(124,175,138,0.25)' }}>
+                ✓ All three buckets have keywords — ready to generate
+              </div>
+            )}
           </div>
         )}
       </div>
