@@ -377,6 +377,131 @@ REQUIREMENTS:
 
 const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 
+// ─── Inline keyword add panel ─────────────────────────────────────────────────
+
+function InlineKeywordAdd({ collection, sessions, onSaved }) {
+  const [open, setOpen]       = useState(false);
+  const [rows, setRows]       = useState([{ keyword: '', volume: '', competition: '', bucket: '' }]);
+  const [targetSession, setTargetSession] = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  function updateRow(i, field, val) {
+    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
+  }
+  function addRow() {
+    setRows(prev => [...prev, { keyword: '', volume: '', competition: '', bucket: '' }]);
+  }
+  function removeRow(i) {
+    setRows(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  async function handleSave() {
+    const valid = rows.filter(r => r.keyword.trim());
+    if (!valid.length) return;
+    setSaving(true);
+
+    let sessionId = targetSession;
+
+    if (!sessionId) {
+      const { data } = await supabase.from('research_sessions').insert({
+        date: new Date().toISOString().slice(0, 10),
+        collection,
+        source: 'Inline add',
+        status: 'Needs More Data',
+      }).select('id').single();
+      sessionId = data?.id;
+    }
+
+    if (!sessionId) { setSaving(false); return; }
+
+    const kwRows = valid.map(r => ({
+      research_session_id: sessionId,
+      keyword:     r.keyword.trim(),
+      volume:      r.volume ? parseInt(r.volume) : null,
+      competition: r.competition ? parseInt(r.competition) : null,
+      bucket:      r.bucket ? parseInt(r.bucket) : null,
+      bucket_source: r.bucket ? 'manual' : null,
+      tag_type:    'watch',
+      tags_only:   false,
+    }));
+
+    await supabase.from('keywords').insert(kwRows);
+    await supabase.from('collections').update({ last_verified: new Date().toISOString().slice(0, 10) }).eq('name', collection);
+
+    setSaving(false);
+    setSaved(true);
+    setRows([{ keyword: '', volume: '', competition: '', bucket: '' }]);
+    setTargetSession('');
+    onSaved?.();
+    setTimeout(() => { setSaved(false); setOpen(false); }, 1500);
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', padding: 0 }}
+      >
+        <span style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)' }}>
+          + Add Keywords Without Leaving
+        </span>
+        <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', opacity: 0.5 }}>{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          {/* Session target */}
+          <div style={{ marginBottom: 10 }}>
+            <label className="form-label">Add to session</label>
+            <select value={targetSession} onChange={e => setTargetSession(e.target.value)}
+              style={{ fontSize: '0.78rem', padding: '5px 8px' }}>
+              <option value="">+ Create new session</option>
+              {sessions.map(s => (
+                <option key={s.id} value={s.id}>{s.niche || s.collection} — {s.date} ({(s.keywords || []).length} kw)</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Keyword rows */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 80px 80px 24px', gap: 6, fontSize: '0.65rem', color: 'var(--charcoal-soft)', padding: '0 2px' }}>
+              <span>Keyword</span><span>Volume</span><span>Competition</span><span>Bucket</span><span />
+            </div>
+            {rows.map((r, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 80px 80px 80px 24px', gap: 6, alignItems: 'center' }}>
+                <input value={r.keyword} onChange={e => updateRow(i, 'keyword', e.target.value)}
+                  placeholder="keyword phrase" style={{ fontSize: '0.78rem', padding: '4px 8px' }} />
+                <input value={r.volume} onChange={e => updateRow(i, 'volume', e.target.value)}
+                  type="number" placeholder="vol" style={{ fontSize: '0.78rem', padding: '4px 6px' }} />
+                <input value={r.competition} onChange={e => updateRow(i, 'competition', e.target.value)}
+                  type="number" placeholder="comp" style={{ fontSize: '0.78rem', padding: '4px 6px' }} />
+                <select value={r.bucket} onChange={e => updateRow(i, 'bucket', e.target.value)}
+                  style={{ fontSize: '0.72rem', padding: '4px 4px' }}>
+                  <option value="">—</option>
+                  <option value="1">B1</option>
+                  <option value="2">B2</option>
+                  <option value="3">B3</option>
+                </select>
+                <button onClick={() => removeRow(i)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', opacity: 0.4, fontSize: '0.8rem', padding: 0 }}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>+ Row</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || !rows.some(r => r.keyword.trim())}>
+              {saving ? 'Saving…' : saved ? '✓ Saved — keywords updated' : 'Save & Refresh'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ListingBuilder() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -430,6 +555,21 @@ export default function ListingBuilder() {
     supabase.from('collections').select('last_verified').eq('name', form.collection).single()
       .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
   }, [form.collection]);
+
+  function refetchSessions() {
+    if (!form.collection) return;
+    supabase.from('research_sessions').select('*, keywords(*)')
+      .eq('collection', form.collection)
+      .then(({ data }) => {
+        const rows = data || [];
+        setSessions(rows);
+        setSelectedSessionIds(prev => {
+          const next = new Set(prev);
+          rows.forEach(s => next.add(s.id));
+          return next;
+        });
+      });
+  }
 
   function toggleSession(id) {
     setSelectedSessionIds(prev => {
@@ -807,8 +947,16 @@ export default function ListingBuilder() {
               <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)' }}>Analyzing design…</div>
             )}
             {imageAnalysis && !analyzing && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)', lineHeight: 1.6, background: 'var(--warm-white)', padding: '10px 12px', borderRadius: 4, borderLeft: '3px solid var(--dusty-rose)' }}>
-                {imageAnalysis}
+              <div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginBottom: 4, opacity: 0.6 }}>
+                  AI analysis — edit if anything is wrong
+                </div>
+                <textarea
+                  value={imageAnalysis}
+                  onChange={e => setImageAnalysis(e.target.value)}
+                  rows={4}
+                  style={{ width: '100%', fontSize: '0.78rem', lineHeight: 1.6, borderLeft: '3px solid var(--dusty-rose)', borderRadius: '0 4px 4px 0', padding: '8px 12px', resize: 'vertical', boxSizing: 'border-box', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.12)' }}
+                />
               </div>
             )}
             {!imagePreview && !analyzing && (
@@ -869,6 +1017,9 @@ export default function ListingBuilder() {
           </div>
         )}
       </div>
+
+      {/* ── INLINE KEYWORD ADD ──────────────────────────────────── */}
+      {form.collection && <InlineKeywordAdd collection={form.collection} sessions={sessions} onSaved={refetchSessions} />}
 
       {/* ── GENERATE BUTTON ─────────────────────────────────────── */}
       {!output && !existingListing && (
