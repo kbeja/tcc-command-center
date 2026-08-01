@@ -3,7 +3,7 @@ import { createResearchSession, useCollections, useCollectionObjects, useChapter
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { supabase } from '../lib/supabase';
 
-const SOURCES = ['Everbee', 'Etsy Search', 'Pinterest', 'Other'];
+const SOURCES = ['Everbee', 'eRank', 'Etsy Search', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
 
 const KW_STATUS = {
