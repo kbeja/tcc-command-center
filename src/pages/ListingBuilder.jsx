@@ -301,8 +301,8 @@ PRODUCT:
 Name: ${form.productName || 'Untitled product'}
 Product Type: ${form.productType || 'print-on-demand item'}
 Collection: ${form.collection || '—'}
-Niche / Sub-niche: ${form.niche || '—'}
-Emotional Trigger: ${form.emotionalTrigger || '— NOT SET; infer from design and niche'}
+Sub-niche: ${form.niche || '—'}
+${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first tag): "${form.anchorKeyword}"` : 'ANCHOR KEYWORD: not set — choose the strongest B1 from the list below'}
 ${form.notes ? `Notes: ${form.notes}` : ''}
 
 ${imageAnalysis ? `DESIGN IMAGE ANALYSIS:\n${imageAnalysis}\n` : ''}
@@ -385,7 +385,7 @@ export default function ListingBuilder() {
 
   // Form
   const [form, setForm] = useState({
-    productName: '', collection: '', niche: '', productType: '', emotionalTrigger: '', notes: '',
+    productName: '', collection: '', niche: '', productType: '', emotionalTrigger: '', notes: '', anchorKeyword: '',
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -412,25 +412,39 @@ export default function ListingBuilder() {
 
   // Research sessions for the selected collection
   const [sessions, setSessions] = useState([]);
+  const [selectedSessionIds, setSelectedSessionIds] = useState(new Set());
   const [collectionLastVerified, setCollectionLastVerified] = useState(null);
   useEffect(() => {
-    if (!form.collection) { setSessions([]); setCollectionLastVerified(null); return; }
+    if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }
     supabase.from('research_sessions').select('*, keywords(*)')
       .eq('collection', form.collection)
-      .then(({ data }) => setSessions(data || []));
+      .then(({ data }) => {
+        const rows = data || [];
+        setSessions(rows);
+        setSelectedSessionIds(new Set(rows.map(s => s.id)));
+      });
     supabase.from('collections').select('last_verified').eq('name', form.collection).single()
       .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
   }, [form.collection]);
+
+  function toggleSession(id) {
+    setSelectedSessionIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   const keywordAgedays = collectionLastVerified
     ? Math.floor((Date.now() - new Date(collectionLastVerified).getTime()) / 86400000)
     : null;
   const keywordsStale = keywordAgedays !== null && keywordAgedays >= 20;
 
-  // Flatten + deduplicate keywords
+  // Flatten + deduplicate keywords from SELECTED sessions only
+  const activeSessions = sessions.filter(s => selectedSessionIds.has(s.id));
   const allKeywords = (() => {
     const map = new Map();
-    for (const s of sessions) {
+    for (const s of activeSessions) {
       for (const k of (s.keywords || [])) {
         const key = `${k.keyword?.toLowerCase()}|${k.tags_only ? 'tags' : k.tag_type}`;
         const ex = map.get(key);
@@ -522,7 +536,7 @@ export default function ListingBuilder() {
       warn: keywordsStale || collectionLastVerified === null,
     },
     { label: styleGuide ? 'Style guide' : 'Style guide missing', ok: !!styleGuide, warn: !styleGuide },
-    { label: form.emotionalTrigger ? 'Emotional trigger' : 'Emotional trigger not set', ok: !!form.emotionalTrigger, warn: !form.emotionalTrigger },
+    { label: form.anchorKeyword ? `Anchor: "${form.anchorKeyword}"` : 'No anchor keyword set', ok: !!form.anchorKeyword, warn: !form.anchorKeyword },
     { label: imageAnalysis ? 'Design image analyzed' : (imagePreview ? 'Analyzing image…' : 'No design image'), ok: !!imageAnalysis, warn: !imageAnalysis },
   ];
   const hasWarnings = readiness.some(r => r.warn);
@@ -539,7 +553,7 @@ export default function ListingBuilder() {
     setGenError('');
     setOutput(null);
     try {
-      const context = buildContext({ form, keywords: allKeywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis });
+      const context = buildContext({ form, keywords: allKeywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions });
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -626,49 +640,123 @@ export default function ListingBuilder() {
       {/* ── PRODUCT CONTEXT ─────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="eyebrow" style={{ marginBottom: 12 }}>Product Context</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+
+        {/* Row 1: Product Type */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Product Name</label>
-            <input value={form.productName} onChange={e => setField('productName', e.target.value)} placeholder="e.g. Elder Millennial Crewneck" />
+            <label className="form-label">Product Name <span style={{ fontWeight: 400, opacity: 0.5 }}>(auto-fills from title)</span></label>
+            <input value={form.productName} onChange={e => setField('productName', e.target.value)} placeholder="e.g. Animal Meme Crewneck" />
           </div>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Product Type</label>
             <input value={form.productType} onChange={e => setField('productType', e.target.value)} placeholder="e.g. crewneck sweatshirt, tote bag, mug" />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Collection</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-              {['Mom Chapter', 'Reader Chapter', 'Kids Chapter'].map(c => (
-                <button key={c} type="button"
-                  onClick={() => setField('collection', form.collection === c ? '' : c)}
-                  style={{
-                    fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                    background: form.collection === c ? 'var(--dusty-rose)' : 'transparent',
-                    color: form.collection === c ? '#fff' : 'var(--charcoal-soft)',
-                    border: form.collection === c ? 'none' : '1px solid rgba(43,41,38,0.2)',
-                    fontWeight: form.collection === c ? 600 : 400,
-                  }}
-                >{c}</button>
-              ))}
-            </div>
-            <input value={form.collection} onChange={e => setField('collection', e.target.value)}
-              placeholder="Or type a custom collection…"
-              style={{ fontSize: '0.78rem' }} />
+
+        {/* Row 2: Collection chips */}
+        <div className="form-group" style={{ marginBottom: 12 }}>
+          <label className="form-label">Collection</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+            {['Mom Chapter', 'Reader Chapter', 'Kids Chapter'].map(c => (
+              <button key={c} type="button"
+                onClick={() => setField('collection', form.collection === c ? '' : c)}
+                style={{
+                  fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                  background: form.collection === c ? 'var(--dusty-rose)' : 'transparent',
+                  color: form.collection === c ? '#fff' : 'var(--charcoal-soft)',
+                  border: form.collection === c ? 'none' : '1px solid rgba(43,41,38,0.2)',
+                  fontWeight: form.collection === c ? 600 : 400,
+                }}
+              >{c}</button>
+            ))}
           </div>
+          <input value={form.collection} onChange={e => setField('collection', e.target.value)}
+            placeholder="Or type a custom collection…" style={{ fontSize: '0.78rem' }} />
+        </div>
+
+        {/* Research session picker */}
+        {sessions.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <label className="form-label" style={{ margin: 0 }}>Research Sessions</label>
+              <button type="button" onClick={() => setSelectedSessionIds(new Set(sessions.map(s => s.id)))}
+                style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                all
+              </button>
+              <button type="button" onClick={() => setSelectedSessionIds(new Set())}
+                style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                none
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {sessions.map(s => {
+                const kwCount = (s.keywords || []).filter(k => !k.tags_only && k.tag_type !== 'discard').length;
+                const b1count = (s.keywords || []).filter(k => k.bucket === 1).length;
+                const isSelected = selectedSessionIds.has(s.id);
+                return (
+                  <div key={s.id}
+                    onClick={() => toggleSession(s.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+                      borderRadius: 4, cursor: 'pointer',
+                      background: isSelected ? 'rgba(124,175,138,0.1)' : 'var(--charcoal-faint)',
+                      border: `1px solid ${isSelected ? 'rgba(124,175,138,0.3)' : 'transparent'}`,
+                    }}>
+                    <input type="checkbox" checked={isSelected} readOnly
+                      style={{ width: 'auto', margin: 0, flexShrink: 0, pointerEvents: 'none' }} />
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>{s.niche || s.collection}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>{s.date} · {s.source}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 'auto' }}>
+                      {kwCount} kw{b1count > 0 && <span style={{ color: '#2d6b3c', fontWeight: 600 }}> · {b1count} B1</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* B1 anchor picker */}
+        {(() => {
+          const b1s = allKeywords.filter(k => k.bucket === 1 && !k.tags_only && k.tag_type !== 'discard');
+          if (!b1s.length) return null;
+          return (
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Anchor Keyword (B1) <span style={{ fontWeight: 400, opacity: 0.5 }}>— leads the title</span></label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                {b1s.sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
+                  <button key={k.id} type="button"
+                    onClick={() => setField('anchorKeyword', form.anchorKeyword === k.keyword ? '' : k.keyword)}
+                    style={{
+                      fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                      background: form.anchorKeyword === k.keyword ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.12)',
+                      color: form.anchorKeyword === k.keyword ? '#fff' : '#2d6b3c',
+                      border: `1px solid rgba(124,175,138,${form.anchorKeyword === k.keyword ? '0.9' : '0.3'})`,
+                      fontWeight: form.anchorKeyword === k.keyword ? 600 : 400,
+                    }}>
+                    {k.keyword}
+                    {k.volume && <span style={{ opacity: 0.7, marginLeft: 4 }}>· {Number(k.volume).toLocaleString()}</span>}
+                  </button>
+                ))}
+              </div>
+              {form.anchorKeyword && (
+                <input value={form.anchorKeyword} onChange={e => setField('anchorKeyword', e.target.value)}
+                  style={{ marginTop: 6, fontSize: '0.78rem' }} placeholder="Or type a custom anchor…" />
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Sub-niche + Notes */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Sub-niche <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
-            <input value={form.niche} onChange={e => setField('niche', e.target.value)} placeholder="e.g. Elder Millennial, 90s Nostalgia, Animal Memes" />
+            <input value={form.niche} onChange={e => setField('niche', e.target.value)} placeholder="e.g. 90s Nostalgia, Animal Memes" />
           </div>
-        </div>
-        <div className="form-group" style={{ marginTop: 12, marginBottom: 12 }}>
-          <label className="form-label">Emotional Trigger</label>
-          <input value={form.emotionalTrigger} onChange={e => setField('emotionalTrigger', e.target.value)} placeholder="e.g. 'I finally feel seen'" />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label">Notes <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
-          <textarea value={form.notes} onChange={e => setField('notes', e.target.value)} rows={2} placeholder="Any specific direction, design notes, or context for this listing" />
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Notes <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
+            <input value={form.notes} onChange={e => setField('notes', e.target.value)} placeholder="Design direction, specific angle, etc." />
+          </div>
         </div>
       </div>
 
