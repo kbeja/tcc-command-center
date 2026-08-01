@@ -211,7 +211,7 @@ const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — 3-Bucket Keyword Framew
 KEYWORD BUCKETS
 Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. Usually one per listing — scarce by design.
 Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. Most keywords live here — the real depth of a listing.
-Bucket 3 — Scalability (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift") all fold into Bucket 3.
+Bucket 3 — Bestseller (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift") all fold into Bucket 3.
 
 BALANCE RULE: all three buckets must have real representation in both title and tags.
 

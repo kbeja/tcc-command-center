@@ -97,7 +97,7 @@ function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
             <option value="">— Bucket —</option>
             <option value="1">B1 Visibility</option>
             <option value="2">B2 Reach</option>
-            <option value="3">B3 Scalability</option>
+            <option value="3">B3 Bestseller</option>
           </select>
           <select
             value={collectionTag}

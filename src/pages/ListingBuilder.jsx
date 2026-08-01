@@ -10,7 +10,7 @@ const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — 3-Bucket Keyword Framew
 KEYWORD BUCKETS
 Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. Usually just ONE per listing — scarce by design. Represents what the buyer actually types first.
 Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. Where most keywords live. This is the real depth of a listing — expect the most usable keywords here.
-Bucket 3 — Scalability (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift", "booktok gift") all fold into Bucket 3 — they are content within it, not a separate tier.
+Bucket 3 — Bestseller (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift", "booktok gift") all fold into Bucket 3 — they are content within it, not a separate tier.
 
 BALANCE RULE: all three buckets must have real representation in both title and tags — not just ordered correctly, but genuinely covered. A listing missing any bucket is incomplete.
 
@@ -278,7 +278,7 @@ function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, ph
 BUCKET DEFINITIONS:
   Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE per listing — scarce by design. Goes FIRST in title and tags.
   Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. The bulk of a listing's depth. Most keywords live here.
-  Bucket 3 — Scalability (Broad): High volume, medium-to-HIGH competition. Category terms, seasonal language ("Fall", "Halloween"), and buyer-intent phrases ("gift for her", "birthday gift") all belong in Bucket 3 — they are CONTENT within it, not separate tiers.
+  Bucket 3 — Bestseller (Broad): High volume, medium-to-HIGH competition. Category terms, seasonal language ("Fall", "Halloween"), and buyer-intent phrases ("gift for her", "birthday gift") all belong in Bucket 3 — they are CONTENT within it, not separate tiers.
 
 TITLE FORMAT — ORDER IS FIXED:
   [Bucket 1] , [Bucket 2] , [Bucket 3]
@@ -316,7 +316,7 @@ ${byScore(b1).map(fmtKw).join('\n') || '  [none — do not invent B1 keywords; l
 Bucket 2 — Reach (high-med vol, med-low comp — supporting keywords):
 ${byScore(b2).map(fmtKw).join('\n') || '  [none]'}
 
-Bucket 3 — Scalability (high vol, high comp — broad + seasonal + buyer-intent):
+Bucket 3 — Bestseller (high vol, high comp — broad + seasonal + buyer-intent):
 ${byScore(b3).map(fmtKw).join('\n') || '  [none — do not invent B3 keywords]'}
 
 ${unclassified.length ? `Unclassified (assign to the bucket that best fits their metrics, then use them):\n${byScore(unclassified).map(fmtKw).join('\n')}` : ''}
@@ -785,7 +785,7 @@ export default function ListingBuilder() {
   const missingBuckets = [
     ...(!b1Keywords.length ? ['Bucket 1 (Visibility — high vol, low comp)'] : []),
     ...(!b2Keywords.length ? ['Bucket 2 (Reach — supporting keywords)'] : []),
-    ...(!b3Keywords.length ? ['Bucket 3 (Scalability — broad + buyer-intent)'] : []),
+    ...(!b3Keywords.length ? ['Bucket 3 (Bestseller — broad + buyer-intent)'] : []),
   ];
 
   // Playbooks
