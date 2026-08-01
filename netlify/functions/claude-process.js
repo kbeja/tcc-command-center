@@ -154,20 +154,52 @@ exports.handler = async (event) => {
         ...(imageBase64 ? [{ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/png', data: imageBase64 } }] : []),
         { type: 'text', text: context },
       ];
+      // Use streaming to avoid inactivity timeout on long generations
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.CLAUDE_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'messages-2023-12-15',
+        },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 3000,
+          stream: true,
           system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC SEO Standards v2: 3-bucket keyword framework (Bucket 1 = Visibility/unicorn, Bucket 2 = Reach/supporting, Bucket 3 = Scalability/broad+seasonal+buyer-intent), comma-separated title format ([B1] , [B2] , [B3]), balance requirement (all three buckets represented in both title and tags). CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
           messages: [{ role: 'user', content: userContent }],
         }),
       });
-      const data = await response.json();
-      const text = data.content?.[0]?.text || '';
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: text, parsed: null }) };
+
+      if (!response.ok) {
+        const err = await response.text();
+        return { statusCode: response.status, body: JSON.stringify({ error: err }) };
+      }
+
+      // Collect the full streamed text
+      let fullText = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const evt = JSON.parse(data);
+            if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+              fullText += evt.delta.text;
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+
+      const match = fullText.match(/\{[\s\S]*\}/);
+      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: fullText, parsed: null }) };
       const parsed = JSON.parse(match[0]);
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
     } catch (err) {
