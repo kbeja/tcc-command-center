@@ -128,6 +128,127 @@ function CollectionsManager({ refetch: refetchNames }) {
   );
 }
 
+function SourceCompare() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterCollection, setFilter] = useState('');
+  const { collections } = useCollections();
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const { data } = await supabase
+        .from('keywords')
+        .select('keyword, volume, competition, score, bucket, research_session_id, research_sessions(source, collection)')
+        .not('research_sessions', 'is', null);
+      if (!data) { setLoading(false); return; }
+
+      // Group by lowercase keyword
+      const map = {};
+      for (const k of data) {
+        const key = k.keyword?.toLowerCase().trim();
+        if (!key) continue;
+        if (!map[key]) map[key] = { keyword: k.keyword, entries: [] };
+        map[key].entries.push({
+          source: k.research_sessions?.source || '—',
+          collection: k.research_sessions?.collection || '—',
+          volume: k.volume,
+          competition: k.competition,
+          score: k.score,
+        });
+      }
+
+      // Keep only keywords that appear in both eRank and Everbee
+      const conflicts = Object.values(map).filter(r => {
+        const sources = new Set(r.entries.map(e => e.source?.toLowerCase()));
+        return sources.has('erank') && r.entries.some(e => e.source?.toLowerCase() !== 'erank');
+      }).map(r => {
+        const erank   = r.entries.find(e => e.source?.toLowerCase() === 'erank');
+        const everbee = r.entries.find(e => e.source?.toLowerCase() !== 'erank');
+        const volDiff = (erank?.volume != null && everbee?.volume != null)
+          ? Math.abs(erank.volume - everbee.volume) : null;
+        const compDiff = (erank?.competition != null && everbee?.competition != null)
+          ? Math.abs(erank.competition - everbee.competition) : null;
+        return { keyword: r.keyword, erank, everbee, volDiff, compDiff,
+          collection: erank?.collection || everbee?.collection };
+      }).sort((a, b) => (b.volDiff || 0) - (a.volDiff || 0));
+
+      setRows(conflicts);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const visible = filterCollection ? rows.filter(r => r.collection === filterCollection) : rows;
+
+  const cell = (val, alt, diff, pct) => (
+    <td style={{ fontSize: '0.72rem', padding: '4px 8px', verticalAlign: 'middle' }}>
+      <div>{val != null ? val.toLocaleString() : '—'}</div>
+      {alt != null && diff != null && (
+        <div style={{ fontSize: '0.62rem', color: pct > 30 ? '#7a2b2b' : 'var(--charcoal-soft)', opacity: 0.7 }}>
+          vs {alt.toLocaleString()} {pct != null ? `(${pct}% diff)` : ''}
+        </div>
+      )}
+    </td>
+  );
+
+  return (
+    <div style={{ paddingTop: 8 }}>
+      <p style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
+        Keywords appearing in both eRank and Everbee sessions — sorted by volume discrepancy.
+      </p>
+      <div style={{ marginBottom: 12 }}>
+        <select value={filterCollection} onChange={e => setFilter(e.target.value)} style={{ fontSize: '0.78rem' }}>
+          <option value="">All collections</option>
+          {collections.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
+      {!loading && visible.length === 0 && (
+        <div className="empty-state"><p>No cross-source keyword matches found.</p></div>
+      )}
+      {!loading && visible.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)', textAlign: 'left' }}>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>Keyword</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>Collection</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#2d6b3c' }}>eRank Vol</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6b4a10' }}>Everbee Vol</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#2d6b3c' }}>eRank Comp</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6b4a10' }}>Everbee Comp</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>eRank KD</th>
+                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>Everbee Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r, i) => {
+                const volPct = (r.erank?.volume && r.everbee?.volume)
+                  ? Math.round(Math.abs(r.erank.volume - r.everbee.volume) / Math.max(r.erank.volume, r.everbee.volume) * 100) : null;
+                const compPct = (r.erank?.competition && r.everbee?.competition)
+                  ? Math.round(Math.abs(r.erank.competition - r.everbee.competition) / Math.max(r.erank.competition, r.everbee.competition) * 100) : null;
+                return (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(43,41,38,0.06)' }}>
+                    <td style={{ padding: '4px 8px', fontWeight: 500, fontSize: '0.78rem' }}>{r.keyword}</td>
+                    <td style={{ padding: '4px 8px', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>{r.collection}</td>
+                    {cell(r.erank?.volume, r.everbee?.volume, r.volDiff, volPct)}
+                    {cell(r.everbee?.volume, r.erank?.volume, r.volDiff, volPct)}
+                    {cell(r.erank?.competition, r.everbee?.competition, r.compDiff, compPct)}
+                    {cell(r.everbee?.competition, r.erank?.competition, r.compDiff, compPct)}
+                    <td style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{r.erank?.score ?? '—'}</td>
+                    <td style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{r.everbee?.score ?? '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Research() {
   const [tab, setTab] = useState('sessions');
   const [filterParent, setFilterParent] = useState('');
@@ -175,15 +296,10 @@ export default function Research() {
           )}
         </div>
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-          <button className={`btn btn-sm ${tab === 'sessions' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('sessions')}>
-            Sessions
-          </button>
-          <button className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('collections')}>
-            Collections
-          </button>
-          <button className={`btn btn-sm ${tab === 'explore' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('explore')}>
-            Explore
-          </button>
+          <button className={`btn btn-sm ${tab === 'sessions' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('sessions')}>Sessions</button>
+          <button className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('collections')}>Collections</button>
+          <button className={`btn btn-sm ${tab === 'explore' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('explore')}>Explore</button>
+          <button className={`btn btn-sm ${tab === 'compare' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('compare')}>Compare Sources</button>
         </div>
       </div>
 
@@ -197,6 +313,8 @@ export default function Research() {
           onCollectionCreated={refetchCollections}
         />
       )}
+
+      {tab === 'compare' && <SourceCompare />}
 
       {tab === 'sessions' && (
         <>

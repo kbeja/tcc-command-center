@@ -200,16 +200,26 @@ export default function Sparks() {
             onChange={e => setSearch(e.target.value)}
             style={{ flex: 1, minWidth: 160 }}
           />
-          {/* Collection dropdown — scoped to chapter when one is selected */}
+          {/* Collection dropdown — scoped to chapter when one is selected, grouped by chapter otherwise */}
           <select
             value={collectionFilter}
             onChange={e => { setCollectionFilter(e.target.value); setSpecificCollection(''); }}
             style={{ width: 'auto' }}
           >
             <option value="">{chapterFilter ? `All in ${chapterFilter}` : 'All collections'}</option>
-            {(chapterFilter ? collectionsInChapter.map(c => c.name) : collections).map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            {chapterFilter ? (
+              collectionsInChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)
+            ) : (
+              chapters.map(ch => {
+                const inCh = collectionObjects.filter(c => c.chapter === ch);
+                if (!inCh.length) return null;
+                return (
+                  <optgroup key={ch} label={ch}>
+                    {inCh.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </optgroup>
+                );
+              })
+            )}
           </select>
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All types</option>
