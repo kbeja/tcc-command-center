@@ -20,7 +20,7 @@ export function assignBucketsToList(keywords) {
     const comp = k.competition != null ? parseInt(k.competition) : null;
     const bucket = assignBucket(vol, comp);
     if (bucket == null) return k;
-    return { ...k, bucket, bucket_source: k.bucket_source || 'auto' };
+    return { ...k, bucket, bucket_source: k.bucket_source || 'everbee_score' };
   });
 }
 

@@ -287,14 +287,16 @@ TITLE FORMAT — ORDER IS FIXED:
   - Title Case Throughout, max 140 characters
   - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
   - WRONG: "Morally Gray Enthusiast Shirt | Fantasy Reader | Book Lover" (no pipes)
-  - OVERLAP CHECK: if two keywords significantly overlap (e.g. "SLP grad" and "SLP grad student"), use the longer phrase only — Etsy direct-matches the shorter within it, so listing both is redundant
+  - WORD DEDUPLICATION — critical: once a word appears in a phrase in the title, do NOT add that word again as a standalone term or in a separate phrase. Example: if "Mahjong Shirt" is in the title, the word "Mahjong" is already indexed by Etsy — adding "Mahjong Gift" separately would only be worthwhile if the FULL phrase "Mahjong Gift" is not already covered. Pick the phrases that together cover the most unique word surface area. No redundant single-word repeats.
+  - OVERLAP CHECK: if two keywords significantly overlap (e.g. "SLP grad" and "SLP grad student"), use the longer phrase only — Etsy direct-matches the shorter within it
 
 TAG RULES:
   - Bucket 1 phrase: repeat exactly in tags — INTENTIONAL, not an error
-  - Bucket 2 phrase: also repeat exactly in tags — same rule as B1
-  - Bucket 3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
+  - Bucket 2 phrases: also repeat exactly in tags — same rule as B1
+  - Bucket 3: reinforce with adjacent/variant phrasing (e.g. "birthday gift" → "birthday gifts for her"), do NOT restate title terms verbatim
   - Misspellings listed below: include in tags exactly as shown — never invent new ones
-  - Fill each tag to 18–20 characters, max 20
+  - Fill ALL 13 tag slots: after B1, B2, B3, and misspellings are placed, fill remaining slots with the highest-scoring unused keyword fragments from the list — prioritize phrases not already covered word-for-word in the title
+  - Each tag: 18–20 characters, max 20
 
 BALANCE REQUIREMENT: all three buckets must have real representation in both title and tags.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
