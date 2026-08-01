@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useResearchSessions, useCollections, createCollection, deleteCollection } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
+import KeywordExplore from '../components/KeywordExplore';
 
 function CollectionsManager({ collections, refetch }) {
   const [newName, setNewName] = useState('');
@@ -131,11 +132,21 @@ export default function Research() {
           <button className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('collections')}>
             Collections
           </button>
+          <button className={`btn btn-sm ${tab === 'explore' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('explore')}>
+            Explore
+          </button>
         </div>
       </div>
 
       {tab === 'collections' && (
         <CollectionsManager collections={collections} refetch={refetchCollections} />
+      )}
+
+      {tab === 'explore' && (
+        <KeywordExplore
+          collections={collections}
+          onCollectionCreated={refetchCollections}
+        />
       )}
 
       {tab === 'sessions' && (

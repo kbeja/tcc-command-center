@@ -233,6 +233,32 @@ Return ONLY this JSON:
     }
   }
 
+  // ── Cluster keywords into themed groups ──
+  if (type === 'cluster_keywords') {
+    const { keywords } = payload || {};
+    if (!keywords) return { statusCode: 400, body: JSON.stringify({ error: 'No keywords provided' }) };
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2000,
+          system: `You are a keyword research analyst for an Etsy print-on-demand shop. Group the provided keywords into themed clusters that represent distinct product or niche opportunities. Each group should have 2-8 keywords that share a clear theme. Return ONLY valid JSON — no markdown, no explanation.\n\nFormat:\n{"groups":[{"name":"Group Name","theme":"1-sentence rationale","keywords":["keyword1","keyword2"]}]}`,
+          messages: [{ role: 'user', content: `Group these keywords into themed clusters:\n\n${keywords}` }],
+        }),
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '';
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: text, parsed: null }) };
+      const parsed = JSON.parse(match[0]);
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
+    } catch (err) {
+      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+    }
+  }
+
   // ── Text-based processing ──
   const systemPrompt = SYSTEM_PROMPTS[type];
   if (!systemPrompt) {
