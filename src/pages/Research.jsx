@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useResearchSessions, useCollections, createCollection, deleteCollection } from '../lib/hooks';
+import { useResearchSessions, useCollections, useChapters, createCollection, deleteCollection } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
@@ -78,14 +78,13 @@ function CollectionsManager({ collections, refetch }) {
   );
 }
 
-const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
-
 export default function Research() {
   const [tab, setTab] = useState('sessions');
   const [filterParent, setFilterParent] = useState('');
   const [filterCollection, setFilterCollection] = useState('');
   const { sessions, loading, refetch } = useResearchSessions(filterCollection || undefined);
   const { collections, refetch: refetchCollections } = useCollections();
+  const { chapters } = useChapters();
   const [adding, setAdding] = useState(false);
 
   // Filter by parent niche first if set
@@ -105,8 +104,8 @@ export default function Research() {
     return acc;
   }, {});
 
-  // Sort: known niches first, then Uncategorized
-  const parentOrder = [...PARENT_NICHES, 'Uncategorized'];
+  // Sort: known chapters first, then Uncategorized
+  const parentOrder = [...chapters, 'Uncategorized'];
   const sortedParents = Object.keys(hierarchy).sort((a, b) => {
     const ai = parentOrder.indexOf(a), bi = parentOrder.indexOf(b);
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
@@ -169,7 +168,7 @@ export default function Research() {
             >
               All ({sessions.length})
             </button>
-            {PARENT_NICHES.map(p => {
+            {chapters.map(p => {
               const count = sessions.filter(s => s.parent_niche === p).length;
               if (!count) return null;
               return (

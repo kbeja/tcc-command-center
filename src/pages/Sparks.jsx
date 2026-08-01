@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObjects } from '../lib/hooks';
+import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObjects, useChapters } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
 
@@ -10,6 +10,7 @@ export default function Sparks() {
   const { sparks, loading, refetch } = useSparks();
   const { collections } = useCollections();
   const { collections: collectionObjects } = useCollectionObjects();
+  const { chapters } = useChapters();
   const [search, setSearch] = useState('');
   const [chapterFilter, setChapterFilter] = useState('');
   const [collectionFilter, setCollectionFilter] = useState(searchParams.get('collection') || '');
@@ -19,19 +20,15 @@ export default function Sparks() {
   const [selected, setSelected] = useState(new Set());
   const [bulkDone, setBulkDone] = useState('');
 
-  const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
-
   // Collections belonging to the selected chapter
   const collectionsInChapter = chapterFilter
-    ? collectionObjects.filter(c => c.parent_chapter === chapterFilter)
+    ? collectionObjects.filter(c => c.chapter === chapterFilter)
     : [];
 
-  // A spark belongs to a chapter if its collection_tag IS the chapter name,
-  // or if its collection_tag is one of the chapter's sub-collections
   function sparkMatchesChapter(spark, chapter) {
     if (!chapter) return true;
     if (spark.collection_tag === chapter) return true;
-    const subNames = new Set(collectionObjects.filter(c => c.parent_chapter === chapter).map(c => c.name));
+    const subNames = new Set(collectionObjects.filter(c => c.chapter === chapter).map(c => c.name));
     return subNames.has(spark.collection_tag);
   }
 
@@ -155,8 +152,8 @@ export default function Sparks() {
           >
             All ({sparks.filter(s => s.temperature === 'cold').length})
           </button>
-          {PARENT_NICHES.map(p => {
-            const subNames = new Set(collectionObjects.filter(c => c.parent_chapter === p).map(c => c.name));
+          {chapters.map(p => {
+            const subNames = new Set(collectionObjects.filter(c => c.chapter === p).map(c => c.name));
             const count = sparks.filter(s => s.temperature === 'cold' && (s.collection_tag === p || subNames.has(s.collection_tag))).length;
             if (!count) return null;
             return (

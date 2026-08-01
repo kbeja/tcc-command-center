@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createResearchSession, useCollections, createCollection } from '../lib/hooks';
+import { createResearchSession, useCollections, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { supabase } from '../lib/supabase';
 
@@ -120,10 +120,10 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
   );
 }
 
-const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
-
 export default function ResearchSessionForm({ defaultCollection, defaultNiche, defaultParentNiche, onSaved, onCancel }) {
   const { collections } = useCollections();
+  const { collections: collectionObjects } = useCollectionObjects();
+  const { chapters } = useChapters();
   const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionStyleGuide, setNewCollectionStyleGuide] = useState('');
@@ -198,7 +198,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
     setSaving(true);
     if (collection === '__new__' && effectiveCollection) {
       await createCollection(effectiveCollection, {
-        ...(parentNiche ? { parent_chapter: parentNiche } : {}),
+        ...(parentNiche ? { chapter: parentNiche } : {}),
         ...(newCollectionStyleGuide.trim() ? { style_guide: newCollectionStyleGuide.trim() } : {}),
       });
     }
@@ -236,10 +236,10 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div className="form-group">
-          <label className="form-label">Main Niche</label>
-          <select value={parentNiche} onChange={e => setParentNiche(e.target.value)}>
-            <option value="">— Select main niche —</option>
-            {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+          <label className="form-label">Chapter</label>
+          <select value={parentNiche} onChange={e => { setParentNiche(e.target.value); setCollection(''); }}>
+            <option value="">— Select chapter —</option>
+            {chapters.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div className="form-group">
@@ -276,7 +276,21 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
               else setCollection(e.target.value);
             }}>
               <option value="">— Select —</option>
-              {collections.map(c => <option key={c} value={c}>{c}</option>)}
+              {parentNiche ? (
+                collectionObjects.filter(c => c.chapter === parentNiche).map(c => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))
+              ) : (
+                chapters.map(ch => {
+                  const inChapter = collectionObjects.filter(c => c.chapter === ch);
+                  if (!inChapter.length) return null;
+                  return (
+                    <optgroup key={ch} label={ch}>
+                      {inChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </optgroup>
+                  );
+                })
+              )}
               <option value="__new__">+ New collection…</option>
             </select>
           )}

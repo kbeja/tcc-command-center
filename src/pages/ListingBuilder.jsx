@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, usePlaybooks, createProduct, updateProduct, createCollection } from '../lib/hooks';
+import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, createProduct, updateProduct, createCollection } from '../lib/hooks';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
 
@@ -379,7 +379,7 @@ const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 
 // ─── Collection picker with inline add ───────────────────────────────────────
 
-function CollectionPicker({ collections, value, onChange, onCreated }) {
+function CollectionPicker({ collections, collectionObjects, chapters, value, onChange, onCreated }) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -404,23 +404,58 @@ function CollectionPicker({ collections, value, onChange, onCreated }) {
   return (
     <div className="form-group" style={{ marginBottom: 12 }}>
       <label className="form-label">Collection</label>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6, alignItems: 'center' }}>
-        {collections.map(c => (
-          <button key={c} type="button"
-            onClick={() => onChange(value === c ? '' : c)}
-            style={{
-              fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-              background: value === c ? 'var(--dusty-rose)' : 'transparent',
-              color: value === c ? '#fff' : 'var(--charcoal-soft)',
-              border: value === c ? 'none' : '1px solid rgba(43,41,38,0.2)',
-              fontWeight: value === c ? 600 : 400,
-            }}
-          >{c}</button>
-        ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 6 }}>
+        {chapters.map(ch => {
+          const inChapter = (collectionObjects || []).filter(c => c.chapter === ch);
+          if (!inChapter.length) return null;
+          return (
+            <div key={ch}>
+              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 4 }}>{ch}</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {inChapter.map(c => (
+                  <button key={c.name} type="button"
+                    onClick={() => onChange(value === c.name ? '' : c.name)}
+                    style={{
+                      fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                      background: value === c.name ? 'var(--dusty-rose)' : 'transparent',
+                      color: value === c.name ? '#fff' : 'var(--charcoal-soft)',
+                      border: value === c.name ? 'none' : '1px solid rgba(43,41,38,0.2)',
+                      fontWeight: value === c.name ? 600 : 400,
+                    }}
+                  >{c.name}</button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {/* Uncategorized */}
+        {(() => {
+          const uncat = (collectionObjects || []).filter(c => !c.chapter);
+          if (!uncat.length) return null;
+          return (
+            <div>
+              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 4 }}>Other</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {uncat.map(c => (
+                  <button key={c.name} type="button"
+                    onClick={() => onChange(value === c.name ? '' : c.name)}
+                    style={{
+                      fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                      background: value === c.name ? 'var(--dusty-rose)' : 'transparent',
+                      color: value === c.name ? '#fff' : 'var(--charcoal-soft)',
+                      border: value === c.name ? 'none' : '1px solid rgba(43,41,38,0.2)',
+                      fontWeight: value === c.name ? 600 : 400,
+                    }}
+                  >{c.name}</button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {!adding && (
           <button type="button" onClick={() => setAdding(true)}
-            style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: 20, cursor: 'pointer', background: 'none', border: '1px dashed rgba(43,41,38,0.25)', color: 'var(--charcoal-soft)' }}>
-            + New
+            style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: 20, cursor: 'pointer', alignSelf: 'flex-start', background: 'none', border: '1px dashed rgba(43,41,38,0.25)', color: 'var(--charcoal-soft)' }}>
+            + New collection
           </button>
         )}
       </div>
@@ -579,7 +614,8 @@ export default function ListingBuilder() {
 
   const { product, loading: productLoading } = useProduct(productId);
   const { collections, refetch: refetchCollections } = useCollections();
-  const { collections: collectionObjs } = useCollectionObjects();
+  const { collections: collectionObjs, refetch: refetchCollectionObjs } = useCollectionObjects();
+  const { chapters } = useChapters();
   const { playbooks } = usePlaybooks();
 
   // Form
@@ -949,9 +985,11 @@ export default function ListingBuilder() {
         {/* Row 2: Collection chips from DB */}
         <CollectionPicker
           collections={collections}
+          collectionObjects={collectionObjs}
+          chapters={chapters}
           value={form.collection}
           onChange={v => setField('collection', v)}
-          onCreated={c => { setField('collection', c); refetchCollections?.(); }}
+          onCreated={c => { setField('collection', c); refetchCollections?.(); refetchCollectionObjs?.(); }}
         />
 
         {/* Research session picker */}

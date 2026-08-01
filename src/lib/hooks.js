@@ -235,6 +235,22 @@ export function useCollections() {
   return { collections, loading, refetch: fetch };
 }
 
+// Returns distinct chapter names from collections
+export function useChapters() {
+  const [chapters, setChapters] = useState([]);
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('collections')
+      .select('chapter')
+      .neq('status', 'archived')
+      .not('chapter', 'is', null)
+      .order('chapter', { ascending: true });
+    if (data) setChapters([...new Set(data.map(c => c.chapter).filter(Boolean))].sort());
+  }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+  return { chapters, refetch: fetch };
+}
+
 // Returns full collection objects — used by Collections page
 export function useCollectionObjects() {
   const [collections, setCollections] = useState([]);
