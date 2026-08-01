@@ -670,12 +670,20 @@ export default function ListingBuilder() {
     }
   }, [product]);
 
-  // Design image (declared early — used in draft save/restore effects below)
+  // State declared early — all referenced in the draft save/restore effects below
   const [imagePreview, setImagePreview] = useState(null);
   const [imageBase64, setImageBase64]   = useState(null);
   const [imageMediaType, setImageMediaType] = useState('image/png');
   const [analyzing, setAnalyzing]       = useState(false);
   const [imageAnalysis, setImageAnalysis] = useState('');
+  const [selectedSessionIds, setSelectedSessionIds] = useState(new Set());
+  const [output, setOutput]         = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError]     = useState('');
+  const [editTitle, setEditTitle]   = useState('');
+  const [editTags, setEditTags]     = useState([]);
+  const [editDesc, setEditDesc]     = useState({});
+  const [editPrompts, setEditPrompts] = useState([]);
 
   // ── Auto-draft (new listings only) ──────────────────────────────────────────
   const DRAFT_KEY = 'tcc_listing_draft';
@@ -724,7 +732,6 @@ export default function ListingBuilder() {
 
   // Research sessions for the selected collection
   const [sessions, setSessions] = useState([]);
-  const [selectedSessionIds, setSelectedSessionIds] = useState(new Set());
   const [collectionLastVerified, setCollectionLastVerified] = useState(null);
   useEffect(() => {
     if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }
@@ -875,11 +882,6 @@ export default function ListingBuilder() {
   const hasWarnings = readiness.some(r => r.warn);
   const bucketWarnings = form.collection ? computeBucketWarnings(allKeywords, sessions) : [];
 
-  // Generation
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError]     = useState('');
-  const [output, setOutput]         = useState(null);
-
   async function handleGenerate() {
     if (!form.collection) { setGenError('Please select a collection first.'); return; }
     if (missingBuckets.length > 0) {
@@ -939,11 +941,6 @@ export default function ListingBuilder() {
   }
 
   // Editable output state (initialized from generated output)
-  const [editTitle, setEditTitle]   = useState('');
-  const [editTags, setEditTags]     = useState([]);
-  const [editDesc, setEditDesc]     = useState({});
-  const [editPrompts, setEditPrompts] = useState([]);
-
   useEffect(() => {
     if (!output) return;
     setEditTitle(output.title || '');
