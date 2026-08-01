@@ -379,23 +379,33 @@ const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 
 // ─── Collection picker with inline add ───────────────────────────────────────
 
+const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', 'Summer', 'Spring', 'Fall'];
+
 function CollectionPicker({ collections, collectionObjects, chapters, value, onChange, onCreated }) {
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [adding, setAdding]     = useState(false);
+  const [newName, setNewName]   = useState('');
+  const [newChapter, setNewChapter] = useState('');
+  const [newSeason, setNewSeason]   = useState('');
+  const [newLaunch, setNewLaunch]   = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
+
+  function resetNew() { setAdding(false); setNewName(''); setNewChapter(''); setNewSeason(''); setNewLaunch(''); setError(''); }
 
   async function handleCreate() {
     const name = newName.trim();
     if (!name) return;
     setSaving(true);
     setError('');
-    const { error } = await createCollection(name);
+    const { error } = await createCollection(name, {
+      ...(newChapter ? { chapter: newChapter } : {}),
+      ...(newSeason  ? { season: newSeason }   : {}),
+      ...(newLaunch  ? { launch_date: newLaunch } : {}),
+    });
     if (error) {
       setError(error.message?.includes('unique') ? 'Already exists.' : 'Could not save.');
     } else {
-      setNewName('');
-      setAdding(false);
+      resetNew();
       onCreated?.(name);
     }
     setSaving(false);
@@ -421,8 +431,12 @@ function CollectionPicker({ collections, collectionObjects, chapters, value, onC
                       color: value === c.name ? '#fff' : 'var(--charcoal-soft)',
                       border: value === c.name ? 'none' : '1px solid rgba(43,41,38,0.2)',
                       fontWeight: value === c.name ? 600 : 400,
+                      display: 'flex', alignItems: 'center', gap: 5,
                     }}
-                  >{c.name}</button>
+                  >
+                    {c.name}
+                    {c.season && <span style={{ fontSize: '0.58rem', opacity: 0.7, fontWeight: 400 }}>· {c.season}</span>}
+                  </button>
                 ))}
               </div>
             </div>
@@ -460,21 +474,32 @@ function CollectionPicker({ collections, collectionObjects, chapters, value, onC
         )}
       </div>
       {adding && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-          <input
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setAdding(false); setNewName(''); } }}
-            placeholder="Collection name…"
-            autoFocus
-            style={{ fontSize: '0.78rem', flex: 1 }}
-          />
-          <button type="button" className="btn btn-primary btn-sm" onClick={handleCreate} disabled={!newName.trim() || saving}>
-            {saving ? '…' : 'Add'}
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); setError(''); }}>
-            Cancel
-          </button>
+        <div style={{ background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 6, padding: '12px', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Escape' && resetNew()}
+            placeholder="Collection name…" autoFocus style={{ fontSize: '0.78rem' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <select value={newChapter} onChange={e => setNewChapter(e.target.value)} style={{ fontSize: '0.75rem' }}>
+              <option value="">— Chapter —</option>
+              {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+            </select>
+            <select value={newSeason} onChange={e => setNewSeason(e.target.value)} style={{ fontSize: '0.75rem' }}>
+              <option value="">— Evergreen —</option>
+              {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {newSeason && (
+            <div>
+              <label className="form-label" style={{ marginBottom: 3 }}>Target launch date</label>
+              <input type="date" value={newLaunch} onChange={e => setNewLaunch(e.target.value)} style={{ fontSize: '0.75rem' }} />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={handleCreate} disabled={!newName.trim() || saving}>
+              {saving ? '…' : 'Add'}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={resetNew}>Cancel</button>
+          </div>
         </div>
       )}
       {error && <div style={{ fontSize: '0.72rem', color: 'var(--alert)', marginTop: 4 }}>{error}</div>}

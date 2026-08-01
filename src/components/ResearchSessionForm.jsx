@@ -127,6 +127,8 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionStyleGuide, setNewCollectionStyleGuide] = useState('');
+  const [newCollectionSeason, setNewCollectionSeason] = useState('');
+  const [newCollectionLaunch, setNewCollectionLaunch] = useState('');
   const [parentNiche, setParentNiche] = useState(defaultParentNiche || '');
   const [niche, setNiche] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -200,6 +202,8 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
       await createCollection(effectiveCollection, {
         ...(parentNiche ? { chapter: parentNiche } : {}),
         ...(newCollectionStyleGuide.trim() ? { style_guide: newCollectionStyleGuide.trim() } : {}),
+        ...(newCollectionSeason ? { season: newCollectionSeason } : {}),
+        ...(newCollectionLaunch ? { launch_date: newCollectionLaunch } : {}),
       });
     }
     const kwList = keywords
@@ -261,6 +265,18 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
                   style={{ flex: 1 }}
                 />
                 <button className="btn btn-ghost btn-sm" onClick={() => { setCollection(''); setNewCollectionName(''); setNewCollectionStyleGuide(''); }}>✕</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+                <select value={newCollectionSeason} onChange={e => setNewCollectionSeason(e.target.value)} style={{ fontSize: '0.75rem' }}>
+                  <option value="">— Evergreen —</option>
+                  {['Halloween','Christmas',"Valentine's Day","Mother's Day",'Back to School','Summer','Spring','Fall'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                {newCollectionSeason && (
+                  <input type="date" value={newCollectionLaunch} onChange={e => setNewCollectionLaunch(e.target.value)}
+                    placeholder="Target launch" style={{ fontSize: '0.75rem' }} />
+                )}
               </div>
               <textarea
                 value={newCollectionStyleGuide}

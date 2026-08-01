@@ -1,27 +1,38 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useResearchSessions, useCollections, useChapters, createCollection, deleteCollection } from '../lib/hooks';
+import { useResearchSessions, useCollections, useCollectionObjects, useChapters, createCollection, deleteCollection } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
 
-function CollectionsManager({ collections, refetch }) {
-  const [newName, setNewName] = useState('');
-  const [saving, setSaving] = useState(false);
+const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', 'Summer', 'Spring', 'Fall'];
+
+function CollectionsManager({ refetch: refetchNames }) {
+  const { collections: collObjs, refetch } = useCollectionObjects();
+  const { chapters } = useChapters();
+  const [newName, setNewName]           = useState('');
+  const [newChapter, setNewChapter]     = useState('');
+  const [newSeason, setNewSeason]       = useState('');
+  const [newLaunch, setNewLaunch]       = useState('');
+  const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError]               = useState('');
 
   async function handleAdd() {
     const name = newName.trim();
     if (!name) return;
     setSaving(true);
     setError('');
-    const { error } = await createCollection(name);
+    const { error } = await createCollection(name, {
+      ...(newChapter ? { chapter: newChapter } : {}),
+      ...(newSeason  ? { season: newSeason }   : {}),
+      ...(newLaunch  ? { launch_date: newLaunch } : {}),
+    });
     if (error) {
       setError(error.message?.includes('unique') ? 'A collection with that name already exists.' : 'Could not save.');
     } else {
-      setNewName('');
-      refetch();
+      setNewName(''); setNewChapter(''); setNewSeason(''); setNewLaunch('');
+      refetch(); refetchNames?.();
     }
     setSaving(false);
   }
@@ -29,51 +40,90 @@ function CollectionsManager({ collections, refetch }) {
   async function handleDelete(name) {
     await deleteCollection(name);
     setConfirmDelete(null);
-    refetch();
+    refetch(); refetchNames?.();
   }
+
+  // Group by chapter
+  const byChapter = {};
+  for (const c of collObjs) {
+    const ch = c.chapter || 'Other';
+    if (!byChapter[ch]) byChapter[ch] = [];
+    byChapter[ch].push(c);
+  }
+  const sortedChapters = [...new Set([...chapters, ...Object.keys(byChapter)])];
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <div className="section-label" style={{ marginBottom: 10 }}>Add Collection</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            placeholder="Collection name…"
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            style={{ flex: 1 }}
-          />
-          <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={!newName.trim() || saving}>
-            {saving ? 'Saving…' : 'Add'}
-          </button>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="section-label" style={{ marginBottom: 12 }}>Add Collection</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Name</label>
+            <input value={newName} onChange={e => setNewName(e.target.value)}
+              placeholder="e.g. Dark Academia" onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Chapter</label>
+            <select value={newChapter} onChange={e => setNewChapter(e.target.value)}>
+              <option value="">— None —</option>
+              {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Season <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
+            <select value={newSeason} onChange={e => setNewSeason(e.target.value)}>
+              <option value="">— Evergreen —</option>
+              {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Target launch <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
+            <input type="date" value={newLaunch} onChange={e => setNewLaunch(e.target.value)} />
+          </div>
         </div>
+        <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={!newName.trim() || saving}>
+          {saving ? 'Saving…' : 'Add Collection'}
+        </button>
         {error && <div style={{ fontSize: '0.75rem', color: 'var(--alert)', marginTop: 6 }}>{error}</div>}
       </div>
 
       <div className="section-label" style={{ marginBottom: 10 }}>Your Collections</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {collections.map(name => (
-          <div key={name} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '10px 14px', background: 'var(--warm-white)',
-            border: '1px solid rgba(43,41,38,0.08)', borderRadius: 2,
-          }}>
-            <span style={{ fontSize: '0.85rem' }}>{name}</span>
-            {confirmDelete === name ? (
-              <span style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.75rem' }}>
-                <span style={{ color: 'var(--charcoal-soft)' }}>Delete?</span>
-                <button onClick={() => handleDelete(name)} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
-                <button onClick={() => setConfirmDelete(null)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-              </span>
-            ) : (
-              <button onClick={() => setConfirmDelete(name)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}>
-                🗑
-              </button>
-            )}
+      {sortedChapters.map(ch => {
+        const items = byChapter[ch];
+        if (!items?.length) return null;
+        return (
+          <div key={ch} style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: '0.7rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid rgba(43,41,38,0.08)' }}>{ch}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {items.map(c => (
+                <div key={c.name} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '9px 14px', background: 'var(--warm-white)',
+                  border: '1px solid rgba(43,41,38,0.08)', borderRadius: 2,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: '0.85rem' }}>{c.name}</span>
+                    {c.season && (
+                      <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 10, background: 'rgba(188,100,90,0.12)', color: 'var(--dusty-rose)', fontWeight: 500 }}>
+                        {c.season}{c.launch_date ? ` · ${new Date(c.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  {confirmDelete === c.name ? (
+                    <span style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.75rem' }}>
+                      <span style={{ color: 'var(--charcoal-soft)' }}>Delete?</span>
+                      <button onClick={() => handleDelete(c.name)} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
+                      <button onClick={() => setConfirmDelete(null)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(c.name)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}>🗑</button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -138,7 +188,7 @@ export default function Research() {
       </div>
 
       {tab === 'collections' && (
-        <CollectionsManager collections={collections} refetch={refetchCollections} />
+        <CollectionsManager refetch={refetchCollections} />
       )}
 
       {tab === 'explore' && (
