@@ -100,9 +100,9 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
             style={{ fontSize: '0.68rem', padding: '2px 4px', width: 'auto' }}
           >
             <option value="">— Bucket —</option>
-            <option value="1">B1 Visibility</option>
+            <option value="1">B1 Visibility (niche-specific)</option>
             <option value="2">B2 Reach</option>
-            <option value="3">B3 Bestseller</option>
+            <option value="3">B3 Bestseller (broad/any niche)</option>
           </select>
         )}
         {kw.bucket && !kw.tags_only && (
@@ -240,20 +240,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div className="form-group">
-          <label className="form-label">Chapter</label>
-          <select value={parentNiche} onChange={e => { setParentNiche(e.target.value); setCollection(''); }}>
-            <option value="">— Select chapter —</option>
-            {chapters.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Date</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div className="form-group">
-          <label className="form-label">Collection (sub-niche)</label>
+          <label className="form-label">Collection</label>
           {collection === '__new__' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -292,36 +279,23 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
               else setCollection(e.target.value);
             }}>
               <option value="">— Select —</option>
-              {parentNiche ? (
-                collectionObjects.filter(c => c.chapter === parentNiche).map(c => (
-                  <option key={c.name} value={c.name}>{c.name}</option>
-                ))
-              ) : (
-                chapters.map(ch => {
-                  const inChapter = collectionObjects.filter(c => c.chapter === ch);
-                  if (!inChapter.length) return null;
-                  return (
-                    <optgroup key={ch} label={ch}>
-                      {inChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                    </optgroup>
-                  );
-                })
-              )}
+              {chapters.map(ch => {
+                const inChapter = collectionObjects.filter(c => c.chapter === ch);
+                if (!inChapter.length) return null;
+                return (
+                  <optgroup key={ch} label={ch}>
+                    {inChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </optgroup>
+                );
+              })}
               <option value="__new__">+ New collection…</option>
             </select>
           )}
         </div>
-        <div className="form-group" style={{ visibility: 'hidden' }} />
-      </div>
-
-      <div className="form-group">
-        <label className="form-label">Niche <span style={{ fontWeight: 400, opacity: 0.6 }}>(optional)</span></label>
-        <input
-          type="text"
-          value={niche}
-          onChange={e => setNiche(e.target.value)}
-          placeholder="e.g. Mom Humor, 90s Nostalgia, Camp Mom"
-        />
+        <div className="form-group">
+          <label className="form-label">Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
