@@ -167,7 +167,7 @@ exports.handler = async (event) => {
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 3000,
           stream: true,
-          system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC SEO Standards v2: 3-bucket keyword framework (Bucket 1 = Visibility/unicorn, Bucket 2 = Reach/supporting, Bucket 3 = Scalability/broad+seasonal+buyer-intent), comma-separated title format ([B1] , [B2] , [B3]), balance requirement (all three buckets represented in both title and tags). CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
+          system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC SEO Standards v2: 3-bucket keyword framework (Bucket 1 = Visibility/unicorn, Bucket 2 = Reach/supporting, Bucket 3 = Scalability/broad+seasonal+buyer-intent), comma-separated title format ([B1] , [B2] , [B3]), tag rule: B1 AND B2 phrases repeat exactly in tags, B3 uses adjacent phrasing only. CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
           messages: [{ role: 'user', content: userContent }],
         }),
       });
@@ -222,7 +222,8 @@ TITLE FORMAT — 3-BUCKET COMMA STRUCTURE:
 - Bucket 1 = high volume, low competition (unicorn — the rarest, most valuable)
 - Bucket 3 includes seasonal and buyer-intent language ("gift for her", "birthday gift")
 - Title Case Throughout Every Word, max 140 characters
-- BALANCE: all three buckets should have representation in both title and tags
+- TAG RULE: B1 and B2 phrases repeat exactly in tags; B3 uses adjacent phrasing only
+- BALANCE: all three buckets must have representation in both title and tags
 
 CURRENT TITLE:
 ${currentTitle}

@@ -23,8 +23,9 @@ TITLE STRUCTURE — ORDER IS FIXED
 • Overlap check: if two keywords significantly overlap (e.g. "SLP grad" + "SLP grad student"), use the longer phrase — Etsy direct-matches the shorter within it, so both is redundant
 
 TAG RULES
-• Bucket 1 phrase repeats directly in tags — intentional, not a mistake
-• Buckets 2–3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
+• Bucket 1 phrase repeats exactly in tags — intentional, not a mistake
+• Bucket 2 phrase also repeats exactly in tags — same rule as B1
+• Bucket 3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
 • Misspellings (is_misspelling_variant): tags only — never title or description
 
 DESCRIPTION — 6-SECTION STRUCTURE
@@ -290,7 +291,8 @@ TITLE FORMAT — ORDER IS FIXED:
 
 TAG RULES:
   - Bucket 1 phrase: repeat exactly in tags — INTENTIONAL, not an error
-  - Buckets 2–3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
+  - Bucket 2 phrase: also repeat exactly in tags — same rule as B1
+  - Bucket 3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
   - Misspellings listed below: include in tags exactly as shown — never invent new ones
   - Fill each tag to 18–20 characters, max 20
 
