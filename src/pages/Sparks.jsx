@@ -19,6 +19,7 @@ export default function Sparks() {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [bulkDone, setBulkDone] = useState('');
+  const [bulkTag, setBulkTag] = useState('');
 
   // Collections belonging to the selected chapter
   const collectionsInChapter = chapterFilter
@@ -58,6 +59,7 @@ export default function Sparks() {
     setSelecting(false);
     setSelected(new Set());
     setBulkDone('');
+    setBulkTag('');
   }
 
   async function bulkAction(action) {
@@ -76,6 +78,11 @@ export default function Sparks() {
     } else if (action === 'cold') {
       for (const id of ids) await updateSpark(id, { temperature: 'cold' });
       setBulkDone(`Moved ${ids.length} to cold`);
+    } else if (action === 'tag') {
+      if (!bulkTag) return;
+      await supabase.from('sparks').update({ collection_tag: bulkTag }).in('id', ids);
+      setBulkDone(`Tagged ${ids.length} → ${bulkTag}`);
+      setBulkTag('');
     }
 
     await refetch();
@@ -130,6 +137,24 @@ export default function Sparks() {
               >
                 Delete
               </button>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <select
+                  value={bulkTag}
+                  onChange={e => setBulkTag(e.target.value)}
+                  disabled={!selected.size}
+                  style={{ fontSize: '0.72rem', padding: '3px 6px' }}
+                >
+                  <option value="">— Tag collection —</option>
+                  {collections.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => bulkAction('tag')}
+                  disabled={!selected.size || !bulkTag}
+                >
+                  Apply
+                </button>
+              </div>
             </>
           )}
         </div>
