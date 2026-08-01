@@ -609,6 +609,51 @@ export default function ListingBuilder() {
     }
   }, [product]);
 
+  // ── Auto-draft (new listings only) ──────────────────────────────────────────
+  const DRAFT_KEY = 'tcc_listing_draft';
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  // Restore draft on first load (only for new listings)
+  useEffect(() => {
+    if (productId) return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d.form)          setForm(f => ({ ...f, ...d.form }));
+      if (d.imageAnalysis) setImageAnalysis(d.imageAnalysis);
+      if (d.imagePreview)  setImagePreview(d.imagePreview);
+      if (d.output)        setOutput(d.output);
+      if (d.editTitle)     setEditTitle(d.editTitle);
+      if (d.editTags)      setEditTags(d.editTags);
+      if (d.selectedSessionIds) setSelectedSessionIds(new Set(d.selectedSessionIds));
+      setDraftRestored(true);
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-save draft whenever key state changes (new listings only)
+  useEffect(() => {
+    if (productId) return;
+    const draft = {
+      form,
+      imageAnalysis,
+      imagePreview,
+      output,
+      editTitle,
+      editTags,
+      selectedSessionIds: [...selectedSessionIds],
+      savedAt: new Date().toISOString(),
+    };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
+  }, [productId, form, imageAnalysis, imagePreview, output, editTitle, editTags, selectedSessionIds]);
+
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    setDraftRestored(false);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Research sessions for the selected collection
   const [sessions, setSessions] = useState([]);
   const [selectedSessionIds, setSelectedSessionIds] = useState(new Set());
@@ -827,6 +872,7 @@ export default function ListingBuilder() {
     setSaving(false);
     if (!error && data?.id) {
       setSavedProductId(data.id);
+      clearDraft();
     }
   }
 
@@ -866,6 +912,23 @@ export default function ListingBuilder() {
           </div>
         )}
       </div>
+
+      {/* Draft restored banner */}
+      {draftRestored && !productId && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'rgba(var(--dusty-rose-rgb, 188,100,90), 0.08)',
+          border: '1px solid rgba(188,100,90,0.25)',
+          borderRadius: 4, padding: '8px 14px', marginBottom: 12,
+          fontSize: '0.78rem', color: 'var(--charcoal-soft)',
+        }}>
+          <span>Draft restored — your previous work is back.</span>
+          <button type="button" onClick={clearDraft}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.72rem', color: 'var(--charcoal-soft)', opacity: 0.5 }}>
+            Discard draft
+          </button>
+        </div>
+      )}
 
       {/* ── PRODUCT CONTEXT ─────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 16 }}>
