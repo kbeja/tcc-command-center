@@ -639,14 +639,27 @@ export default function ListingBuilder() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Collection</label>
-            <select value={form.collection} onChange={e => setField('collection', e.target.value)}>
-              <option value="">— Select collection —</option>
-              {collections.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+              {['Mom Chapter', 'Reader Chapter', 'Kids Chapter'].map(c => (
+                <button key={c} type="button"
+                  onClick={() => setField('collection', form.collection === c ? '' : c)}
+                  style={{
+                    fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                    background: form.collection === c ? 'var(--dusty-rose)' : 'transparent',
+                    color: form.collection === c ? '#fff' : 'var(--charcoal-soft)',
+                    border: form.collection === c ? 'none' : '1px solid rgba(43,41,38,0.2)',
+                    fontWeight: form.collection === c ? 600 : 400,
+                  }}
+                >{c}</button>
+              ))}
+            </div>
+            <input value={form.collection} onChange={e => setField('collection', e.target.value)}
+              placeholder="Or type a custom collection…"
+              style={{ fontSize: '0.78rem' }} />
           </div>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Niche / Sub-niche</label>
-            <input value={form.niche} onChange={e => setField('niche', e.target.value)} placeholder="e.g. Elder Millennial, Mom Humor" />
+            <label className="form-label">Sub-niche <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
+            <input value={form.niche} onChange={e => setField('niche', e.target.value)} placeholder="e.g. Elder Millennial, 90s Nostalgia, Animal Memes" />
           </div>
         </div>
         <div className="form-group" style={{ marginTop: 12, marginBottom: 12 }}>
