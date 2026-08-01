@@ -253,7 +253,7 @@ function computeBucketWarnings(keywords, sessions) {
   return warnings;
 }
 
-function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis }) {
+function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames }) {
   const usable    = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
   const watchKws  = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
   const tagsKws   = keywords.filter(k => k.tags_only || k.is_misspelling_variant);
@@ -304,7 +304,7 @@ BALANCE REQUIREMENT: all three buckets must have real representation in both tit
 PRODUCT:
 Name: ${form.productName || 'Untitled product'}
 Product Type: ${form.productType || 'print-on-demand item'}
-Collection: ${form.collection || '—'}
+Collection: ${(allCollectionNames && allCollectionNames.length > 1) ? allCollectionNames.join(' + ') : (form.collection || '—')}${(allCollectionNames && allCollectionNames.length > 1) ? '\nNote: Keywords are pooled from multiple collections — pick only the ones relevant to this specific product.' : ''}
 Sub-niche: ${form.niche || '—'}
 ${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first tag): "${form.anchorKeyword}"` : 'ANCHOR KEYWORD: not set — choose the strongest B1 from the list below'}
 ${form.notes ? `Notes: ${form.notes}` : ''}
@@ -381,7 +381,7 @@ REQUIREMENTS:
 
 const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', 'Summer', 'Spring', 'Fall'];
 
-function CollectionPicker({ collections, collectionObjects, chapters, value, onChange, onCreated }) {
+function CollectionPicker({ collections, collectionObjects, chapters, value, onChange, extraValues, onExtraChange, onCreated }) {
   const [adding, setAdding]     = useState(false);
   const [newName, setNewName]   = useState('');
   const [newChapter, setNewChapter] = useState('');
@@ -466,6 +466,38 @@ function CollectionPicker({ collections, collectionObjects, chapters, value, onC
             </div>
           );
         })()}
+        {/* Also pull from (multi-collection keyword merging) */}
+        {value && onExtraChange && (() => {
+          const others = (collectionObjects || []).filter(c => c.name !== value);
+          if (!others.length) return null;
+          return (
+            <div style={{ borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 8, marginTop: 4 }}>
+              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 6 }}>Also pull keywords from</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {others.map(c => {
+                  const on = (extraValues || new Set()).has(c.name);
+                  return (
+                    <button key={c.name} type="button"
+                      onClick={() => {
+                        const next = new Set(extraValues || []);
+                        on ? next.delete(c.name) : next.add(c.name);
+                        onExtraChange(next);
+                      }}
+                      style={{
+                        fontSize: '0.68rem', padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                        background: on ? 'rgba(124,175,138,0.25)' : 'transparent',
+                        color: on ? '#2d6b3c' : 'var(--charcoal-soft)',
+                        border: on ? '1px solid rgba(124,175,138,0.4)' : '1px dashed rgba(43,41,38,0.2)',
+                        fontWeight: on ? 600 : 400,
+                      }}
+                    >{c.name}</button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {!adding && (
           <button type="button" onClick={() => setAdding(true)}
             style={{ fontSize: '0.68rem', padding: '3px 8px', borderRadius: 20, cursor: 'pointer', alignSelf: 'flex-start', background: 'none', border: '1px dashed rgba(43,41,38,0.25)', color: 'var(--charcoal-soft)' }}>
@@ -677,6 +709,7 @@ export default function ListingBuilder() {
   const [analyzing, setAnalyzing]       = useState(false);
   const [imageAnalysis, setImageAnalysis] = useState('');
   const [selectedSessionIds, setSelectedSessionIds] = useState(new Set());
+  const [extraCollections, setExtraCollections] = useState(new Set());
   const [output, setOutput]         = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError]     = useState('');
@@ -730,13 +763,17 @@ export default function ListingBuilder() {
   }
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // Research sessions for the selected collection
+  // Research sessions for the selected collection(s)
   const [sessions, setSessions] = useState([]);
   const [collectionLastVerified, setCollectionLastVerified] = useState(null);
+
+  const allCollectionNames = [form.collection, ...extraCollections].filter(Boolean);
+
   useEffect(() => {
     if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }
+    const cols = [form.collection, ...extraCollections].filter(Boolean);
     supabase.from('research_sessions').select('*, keywords(*)')
-      .eq('collection', form.collection)
+      .in('collection', cols)
       .then(({ data }) => {
         const rows = data || [];
         setSessions(rows);
@@ -744,12 +781,13 @@ export default function ListingBuilder() {
       });
     supabase.from('collections').select('last_verified').eq('name', form.collection).single()
       .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
-  }, [form.collection]);
+  }, [form.collection, extraCollections]);
 
   function refetchSessions() {
     if (!form.collection) return;
+    const cols = [form.collection, ...extraCollections].filter(Boolean);
     supabase.from('research_sessions').select('*, keywords(*)')
-      .eq('collection', form.collection)
+      .in('collection', cols)
       .then(({ data }) => {
         const rows = data || [];
         setSessions(rows);
@@ -892,7 +930,7 @@ export default function ListingBuilder() {
     setGenError('');
     setOutput(null);
     try {
-      const context = buildContext({ form, keywords: allKeywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions });
+      const context = buildContext({ form, keywords: allKeywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions, allCollectionNames });
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1011,7 +1049,9 @@ export default function ListingBuilder() {
           collectionObjects={collectionObjs}
           chapters={chapters}
           value={form.collection}
-          onChange={v => setField('collection', v)}
+          onChange={v => { setField('collection', v); setExtraCollections(new Set()); }}
+          extraValues={extraCollections}
+          onExtraChange={setExtraCollections}
           onCreated={c => { setField('collection', c); refetchCollections?.(); refetchCollectionObjs?.(); }}
         />
 
