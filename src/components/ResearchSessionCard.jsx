@@ -12,7 +12,7 @@ const STATUS_STYLES = {
 const KW_COLORS = { use: '#7CAF8A', watch: '#E8A87C', discard: '#C97B7B' };
 const TAG_CYCLE = { use: 'watch', watch: 'discard', discard: 'use' };
 
-function EditableKeyword({ k, onSave, onDelete, collections = [] }) {
+function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
   const [editing, setEditing] = useState(false);
   const [keyword, setKeyword] = useState(k.keyword);
   const [volume, setVolume] = useState(k.volume ?? '');
@@ -57,19 +57,31 @@ function EditableKeyword({ k, onSave, onDelete, collections = [] }) {
         background: 'var(--warm-white)', borderRadius: '0 2px 2px 0',
         padding: '8px 10px', marginBottom: 3,
       }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', marginBottom: 6, flexWrap: 'wrap' }}>
           <button onClick={cycleTag} title="Cycle tag" style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: '1rem', color: KW_COLORS[tagType], padding: 0, flexShrink: 0,
+            fontSize: '1rem', color: KW_COLORS[tagType], padding: 0, flexShrink: 0, marginBottom: 2,
           }}>●</button>
-          <input value={keyword} onChange={e => setKeyword(e.target.value)}
-            style={{ flex: 2, minWidth: 120, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Keyword" />
-          <input value={volume} onChange={e => setVolume(e.target.value)} type="number"
-            style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Vol" />
-          <input value={competition} onChange={e => setCompetition(e.target.value)} type="number"
-            style={{ width: 60, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Comp" />
-          <input value={score} onChange={e => setScore(e.target.value)} type="number"
-            style={{ width: 72, padding: '4px 8px', fontSize: '0.78rem' }} placeholder="Score" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 2, minWidth: 120 }}>
+            <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Keyword</span>
+            <input value={keyword} onChange={e => setKeyword(e.target.value)}
+              style={{ padding: '4px 8px', fontSize: '0.78rem' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 72 }}>
+            <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Volume</span>
+            <input value={volume} onChange={e => setVolume(e.target.value)} type="number"
+              style={{ padding: '4px 8px', fontSize: '0.78rem' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 72 }}>
+            <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Competition</span>
+            <input value={competition} onChange={e => setCompetition(e.target.value)} type="number"
+              style={{ padding: '4px 8px', fontSize: '0.78rem' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: 72 }}>
+            <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</span>
+            <input value={score} onChange={e => setScore(e.target.value)} type="number"
+              style={{ padding: '4px 8px', fontSize: '0.78rem' }} />
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
@@ -128,8 +140,13 @@ function EditableKeyword({ k, onSave, onDelete, collections = [] }) {
             tags only
           </span>
         )}
+        {source && (
+          <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(43,41,38,0.08)', color: 'var(--charcoal-soft)', whiteSpace: 'nowrap' }}>
+            {source}
+          </span>
+        )}
         <BucketBadge bucket={k.bucket} />
-        {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {volume}</span>}
+        {volume && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>vol {Number(volume).toLocaleString()}</span>}
         {score && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>score {score}</span>}
         <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', opacity: 0.4 }}>✎</span>
       </span>
@@ -349,6 +366,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
                         onSave={handleKeywordSave}
                         onDelete={handleDeleteKeyword}
                         collections={collections}
+                        source={session.source}
                       />
                       {k.collection_tag && (
                         <span style={{
