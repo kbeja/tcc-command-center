@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { deleteResearchSession, deleteKeyword, useChapters } from '../lib/hooks';
+import { deleteResearchSession, deleteKeyword, useChapters, useCollections } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
@@ -133,7 +133,12 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   const [seasonal, setSeasonal] = useState(!!session.seasonal);
   const [parentNiche, setParentNiche] = useState(session.parent_niche || '');
   const [savingParent, setSavingParent] = useState(false);
+  const [kwSelecting, setKwSelecting] = useState(false);
+  const [kwSelected, setKwSelected] = useState(new Set());
+  const [kwBulkTag, setKwBulkTag] = useState('');
+  const [kwBulkDone, setKwBulkDone] = useState('');
   const { chapters } = useChapters();
+  const { collections } = useCollections();
   const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
 
@@ -165,6 +170,25 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
 
   function handleKeywordSave(updated) {
     setKeywords(prev => prev.map(k => k.id === updated.id ? updated : k));
+  }
+
+  function toggleKwSelect(id) {
+    setKwSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function applyKwBulkTag() {
+    if (!kwBulkTag || !kwSelected.size) return;
+    const ids = [...kwSelected];
+    await supabase.from('keywords').update({ collection_tag: kwBulkTag }).in('id', ids);
+    setKeywords(prev => prev.map(k => ids.includes(k.id) ? { ...k, collection_tag: kwBulkTag } : k));
+    setKwBulkDone(`Tagged ${ids.length} → ${kwBulkTag}`);
+    setKwSelected(new Set());
+    setKwBulkTag('');
+    setTimeout(() => setKwBulkDone(''), 2500);
   }
 
   return (
@@ -248,15 +272,84 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
           )}
           {keywords.length > 0 && (
             <div>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Keywords <span style={{ fontWeight: 400, opacity: 0.5 }}>— tap to edit</span></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <div className="eyebrow" style={{ margin: 0 }}>Keywords <span style={{ fontWeight: 400, opacity: 0.5 }}>— tap to edit</span></div>
+                <button
+                  onClick={() => { setKwSelecting(!kwSelecting); setKwSelected(new Set()); setKwBulkDone(''); }}
+                  style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto', opacity: 0.6 }}
+                >
+                  {kwSelecting ? 'Cancel' : 'Tag'}
+                </button>
+              </div>
+
+              {kwSelecting && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>{kwSelected.size} selected</span>
+                  <button
+                    onClick={() => setKwSelected(new Set(keywords.map(k => k.id)))}
+                    style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    All
+                  </button>
+                  {kwBulkDone ? (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--success)', marginLeft: 4 }}>{kwBulkDone} ✓</span>
+                  ) : (
+                    <>
+                      <select
+                        value={kwBulkTag}
+                        onChange={e => setKwBulkTag(e.target.value)}
+                        style={{ fontSize: '0.68rem', padding: '2px 4px' }}
+                      >
+                        <option value="">— Collection —</option>
+                        {collections.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <button
+                        onClick={applyKwBulkTag}
+                        disabled={!kwSelected.size || !kwBulkTag}
+                        style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 2, border: '1px solid rgba(43,41,38,0.2)', background: 'none', cursor: 'pointer' }}
+                      >
+                        Apply
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {keywords.map(k => (
-                  <EditableKeyword
-                    key={k.id}
-                    k={k}
-                    onSave={handleKeywordSave}
-                    onDelete={handleDeleteKeyword}
-                  />
+                  <div key={k.id} style={{ display: 'flex', alignItems: 'stretch', gap: 4 }}>
+                    {kwSelecting && (
+                      <div
+                        onClick={() => toggleKwSelect(k.id)}
+                        style={{
+                          width: 16, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer',
+                          border: `2px solid ${kwSelected.has(k.id) ? 'var(--dusty-rose)' : 'rgba(43,41,38,0.2)'}`,
+                          borderRadius: 2,
+                          background: kwSelected.has(k.id) ? 'var(--dusty-rose)' : 'transparent',
+                        }}
+                      >
+                        {kwSelected.has(k.id) && <span style={{ color: 'white', fontSize: '0.5rem', fontWeight: 800 }}>✓</span>}
+                      </div>
+                    )}
+                    <div style={{ flex: 1, position: 'relative' }}>
+                      <EditableKeyword
+                        k={k}
+                        onSave={handleKeywordSave}
+                        onDelete={handleDeleteKeyword}
+                      />
+                      {k.collection_tag && (
+                        <span style={{
+                          position: 'absolute', top: 4, right: 8,
+                          fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10,
+                          background: 'var(--rose-faint)', color: 'var(--dusty-rose)',
+                          pointerEvents: 'none',
+                        }}>
+                          {k.collection_tag}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
