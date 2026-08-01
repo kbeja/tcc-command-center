@@ -598,6 +598,7 @@ export default function ListingBuilder() {
     setEditTags(output.tags ? [...output.tags] : []);
     setEditDesc(output.description ? { ...output.description } : {});
     setEditPrompts(output.image_prompts ? output.image_prompts.map(p => ({ ...p })) : []);
+    if (output.title && !form.productName) setField('productName', output.title);
   }, [output]);
 
   const isLoading = productId && productLoading;
