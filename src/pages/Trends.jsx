@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCollections, autoHotSparksForSignal } from '../lib/hooks';
-
-const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
+import { useProducts, useCollections, autoHotSparksForSignal, useChapters } from '../lib/hooks';
 
 const STATUSES = [
   { key: 'pursue',    label: '🟢 Pursue',    color: '#2d6b3c', bg: 'rgba(124,175,138,0.15)' },
@@ -77,6 +75,7 @@ function SignalCard({ signal, products, collections, onAction }) {
   const [form, setForm] = useState({ ...signal });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { chapters } = useChapters();
 
   const st = statusStyle(signal.status);
   const linkedProducts = products.filter(p =>
@@ -121,7 +120,7 @@ function SignalCard({ signal, products, collections, onAction }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <select value={form.parent_niche || ''} onChange={e => setForm(f => ({ ...f, parent_niche: e.target.value || null }))}>
               <option value="">— Main niche —</option>
-              {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+              {chapters.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             <select value={form.collection || ''} onChange={e => setForm(f => ({ ...f, collection: e.target.value }))}>
               <option value="">— Collection —</option>
@@ -265,7 +264,7 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <select value={form.parent_niche} onChange={e => setForm(f => ({ ...f, parent_niche: e.target.value }))}>
             <option value="">— Main niche —</option>
-            {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+            {chapters.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
           <select value={form.collection} onChange={e => setForm(f => ({ ...f, collection: e.target.value }))}>
             <option value="">— Collection —</option>
@@ -312,6 +311,7 @@ export default function Trends() {
   const { signals, loading, refetch } = useTrendSignals();
   const { products } = useProducts();
   const { collections } = useCollections();
+  const { chapters } = useChapters();
   const [adding, setAdding] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [nicheFilter, setNicheFilter] = useState('');
@@ -356,7 +356,7 @@ export default function Trends() {
           <button className={`btn btn-sm ${!nicheFilter ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setNicheFilter('')} style={{ fontSize: '0.68rem' }}>
             All niches
           </button>
-          {PARENT_NICHES.map(p => {
+          {chapters.map(p => {
             const count = signals.filter(s => s.parent_niche === p).length;
             if (!count) return null;
             return (

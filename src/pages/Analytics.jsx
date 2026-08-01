@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCompetitorListings, useTrendSignals } from '../lib/hooks';
+import { useProducts, useCompetitorListings, useTrendSignals, useChapters } from '../lib/hooks';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
@@ -32,10 +32,9 @@ function listingStatus(p) {
   return { label: 'Review', title: '0 sales — worth investigating' };
 }
 
-const MAIN_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
-
 function ClusterCard({ cluster, creating, onCreate }) {
   const [selectedNiche, setSelectedNiche] = useState('');
+  const { chapters } = useChapters();
   const shops = [...new Set(cluster.listings.map(l => l.shop_name).filter(Boolean))].slice(0, 3);
   return (
     <div style={{ padding: '10px 14px', border: 'var(--border)', borderRadius: 2, background: 'var(--warm-white)' }}>
@@ -53,7 +52,7 @@ function ClusterCard({ cluster, creating, onCreate }) {
             style={{ fontSize: '0.72rem', padding: '3px 6px' }}
           >
             <option value="">No niche</option>
-            {MAIN_NICHES.map(n => <option key={n} value={n}>{n}</option>)}
+            {chapters.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
           <button
             className="btn btn-ghost btn-sm"

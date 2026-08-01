@@ -113,7 +113,7 @@ export default function Home() {
               <div key={c.id} style={{ border: '1px solid rgba(43,41,38,0.12)', borderRadius: 2, padding: '12px 14px', marginBottom: 8, background: 'var(--warm-white)' }}>
                 <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Priority 1 — No products yet</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 4 }}>{c.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>{c.parent_chapter} · 0 products in pipeline</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>{c.chapter} · 0 products in pipeline</div>
                 <button className="btn btn-sm btn-ghost" onClick={() => navigate('/sparks')}>Activate a spark →</button>
               </div>
             ))}

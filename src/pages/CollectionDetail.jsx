@@ -104,7 +104,7 @@ export default function CollectionDetail() {
           <div>
             <div className="page-title">{collection.name}</div>
             <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>
-              {collection.parent_chapter && <span>{collection.parent_chapter} · </span>}
+              {collection.chapter && <span>{collection.chapter} · </span>}
               <span>{priorityLabel}</span>
               {collection.status === 'planned' && <span> · Planned</span>}
             </div>
@@ -211,13 +211,13 @@ export default function CollectionDetail() {
         </div>
         <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
           <label className="form-label">
-            Parent chapter
-            {fieldSaved === 'parent_chapter' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
+            Chapter
+            {fieldSaved === 'chapter' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
           </label>
           <input
-            defaultValue={collection.parent_chapter || ''}
-            onBlur={e => handleFieldBlur('parent_chapter', e.target.value)}
-            placeholder="e.g. Reader Chapter, Mom Chapter"
+            defaultValue={collection.chapter || ''}
+            onBlur={e => handleFieldBlur('chapter', e.target.value)}
+            placeholder="e.g. Reader, Mom, Kids"
           />
         </div>
       </div>

@@ -375,8 +375,6 @@ REQUIREMENTS:
 - research_flags: flag any missing bucket, balance gap, overlap to combine, or keywords needing validation`;
 }
 
-const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
-
 // ─── Collection picker with inline add ───────────────────────────────────────
 
 const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', 'Summer', 'Spring', 'Fall'];

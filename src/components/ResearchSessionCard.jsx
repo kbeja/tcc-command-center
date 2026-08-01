@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { deleteResearchSession, deleteKeyword } from '../lib/hooks';
+import { deleteResearchSession, deleteKeyword, useChapters } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
-
-const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 
 const STATUS_STYLES = {
   'Complete': { background: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
@@ -135,6 +133,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   const [seasonal, setSeasonal] = useState(!!session.seasonal);
   const [parentNiche, setParentNiche] = useState(session.parent_niche || '');
   const [savingParent, setSavingParent] = useState(false);
+  const { chapters } = useChapters();
   const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
 
@@ -234,7 +233,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
               style={{ fontSize: '0.72rem', padding: '2px 6px' }}
             >
               <option value="">— Uncategorized —</option>
-              {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+              {chapters.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             {savingParent && <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>Saving…</span>}
           </div>

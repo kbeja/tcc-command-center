@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { createResearchSession } from '../lib/hooks';
+import { createResearchSession, useChapters } from '../lib/hooks';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -119,6 +119,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
   const [nicheTag, setNicheTag] = useState('');
   const [parentNiche, setParentNiche] = useState('');
   const [importing, setImporting] = useState(false);
+  const { chapters } = useChapters();
   const [result, setResult] = useState(null);
 
   function reset() {
@@ -428,9 +429,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
               <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Main Niche</div>
               <select value={parentNiche} onChange={e => setParentNiche(e.target.value)} style={{ width: '100%', fontSize: '0.8rem' }}>
                 <option value="">— Select main niche —</option>
-                <option value="Reader Chapter">Reader Chapter</option>
-                <option value="Mom Chapter">Mom Chapter</option>
-                <option value="Kids Chapter">Kids Chapter</option>
+                {chapters.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>

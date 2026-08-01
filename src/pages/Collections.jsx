@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCollectionObjects, useCollectionObjects as useColls, createCollection } from '../lib/hooks';
+import { useCollectionObjects, createCollection, useChapters } from '../lib/hooks';
 import { useSparks, useProducts } from '../lib/hooks';
-
-const PARENT_NICHES = ['Reader Chapter', 'Mom Chapter', 'Kids Chapter'];
 const PRIORITY_ORDER = ['flagship', 'priority_1', 'priority_2', 'supporting', 'archived'];
 
 const PRIORITY_LABELS = {
@@ -48,7 +46,7 @@ function CollectionCard({ collection, productCount, sparkCount, onClick }) {
         )}
       </div>
       <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
-        {collection.parent_chapter && <span>{collection.parent_chapter} · </span>}
+        {collection.chapter && <span>{collection.chapter} · </span>}
         <span>{productCount} product{productCount !== 1 ? 's' : ''}</span>
         <span style={{ margin: '0 4px' }}>·</span>
         <span>{sparkCount} spark{sparkCount !== 1 ? 's' : ''}</span>
@@ -73,6 +71,7 @@ export default function Collections() {
   const { collections, loading, refetch } = useCollectionObjects();
   const { sparks } = useSparks();
   const { products } = useProducts();
+  const { chapters } = useChapters();
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newChapter, setNewChapter] = useState('');
@@ -93,7 +92,7 @@ export default function Collections() {
     if (!newName.trim()) return;
     setSaving(true);
     await createCollection(newName.trim(), {
-      ...(newChapter ? { parent_chapter: newChapter } : {}),
+      ...(newChapter ? { chapter: newChapter } : {}),
       ...(newStyleGuide.trim() ? { style_guide: newStyleGuide.trim() } : {}),
     });
     setNewName('');
@@ -105,7 +104,7 @@ export default function Collections() {
   }
 
   const chapterFiltered = filterChapter
-    ? collections.filter(c => c.parent_chapter === filterChapter)
+    ? collections.filter(c => c.chapter === filterChapter)
     : collections;
 
   const grouped = PRIORITY_ORDER.reduce((acc, p) => {
@@ -132,8 +131,8 @@ export default function Collections() {
           <button className={`btn btn-sm ${!filterChapter ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterChapter('')}>
             All ({collections.filter(c => c.status !== 'archived').length})
           </button>
-          {PARENT_NICHES.map(p => {
-            const count = collections.filter(c => c.parent_chapter === p && c.status !== 'archived').length;
+          {chapters.map(p => {
+            const count = collections.filter(c => c.chapter === p && c.status !== 'archived').length;
             if (!count) return null;
             return (
               <button key={p} className={`btn btn-sm ${filterChapter === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterChapter(filterChapter === p ? '' : p)}>
@@ -157,7 +156,7 @@ export default function Collections() {
             />
             <select value={newChapter} onChange={e => setNewChapter(e.target.value)}>
               <option value="">— Main niche (optional) —</option>
-              {PARENT_NICHES.map(p => <option key={p} value={p}>{p}</option>)}
+              {chapters.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             <textarea
               value={newStyleGuide}
