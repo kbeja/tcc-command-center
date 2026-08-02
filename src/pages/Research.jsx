@@ -137,11 +137,12 @@ function SourceCompare() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('keywords')
         .select('keyword, volume, competition, score, bucket, research_session_id, research_sessions(source, collection)')
         .not('research_session_id', 'is', null);
-      if (!data) { setLoading(false); return; }
+      if (error) { console.error('SourceCompare query error:', error); setLoading(false); return; }
+      if (!data || data.length === 0) { setLoading(false); return; }
 
       // Group by lowercase keyword
       const map = {};
@@ -205,7 +206,13 @@ function SourceCompare() {
       </div>
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
       {!loading && visible.length === 0 && (
-        <div className="empty-state"><p>No cross-source keyword matches found.</p></div>
+        <div className="empty-state">
+          <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📊</div>
+          <p style={{ marginBottom: 6 }}>No cross-source keyword matches yet.</p>
+          <p style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', lineHeight: 1.6 }}>
+            This tab shows keywords that appear in <strong>both</strong> an eRank session and an Everbee session so you can compare their volume and competition numbers side by side. Research the same keyword in both tools to see discrepancies here.
+          </p>
+        </div>
       )}
       {!loading && visible.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
