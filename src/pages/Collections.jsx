@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCollectionObjects, createCollection, useChapters } from '../lib/hooks';
+import { useCollectionObjects, createCollection, updateCollection, useChapters } from '../lib/hooks';
 import { useSparks, useProducts } from '../lib/hooks';
 const PRIORITY_ORDER = ['flagship', 'priority_1', 'priority_2', 'supporting', 'archived'];
 
@@ -22,7 +22,7 @@ function evalScore(c) {
   ].filter(Boolean).length;
 }
 
-function CollectionCard({ collection, productCount, sparkCount, onClick }) {
+function CollectionCard({ collection, productCount, sparkCount, chapters, onUpdateChapter, onClick }) {
   const score = evalScore(collection);
   const allChecked = score === 5;
 
@@ -45,13 +45,21 @@ function CollectionCard({ collection, productCount, sparkCount, onClick }) {
           </span>
         )}
       </div>
-      <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
-        {collection.chapter && <span>{collection.chapter} · </span>}
+      <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <select
+          value={collection.chapter || ''}
+          onClick={e => e.stopPropagation()}
+          onChange={e => { e.stopPropagation(); onUpdateChapter(collection.id, e.target.value || null); }}
+          style={{ fontSize: '0.72rem', color: collection.chapter ? 'var(--charcoal)' : 'var(--charcoal-soft)', border: '1px solid rgba(43,41,38,0.15)', borderRadius: 3, padding: '1px 4px', background: 'transparent', cursor: 'pointer' }}
+        >
+          <option value="">— No chapter —</option>
+          {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+        </select>
         <span>{productCount} product{productCount !== 1 ? 's' : ''}</span>
-        <span style={{ margin: '0 4px' }}>·</span>
+        <span>·</span>
         <span>{sparkCount} spark{sparkCount !== 1 ? 's' : ''}</span>
         {collection.status === 'planned' && (
-          <span style={{ marginLeft: 6, color: 'var(--charcoal-soft)', opacity: 0.6 }}>· Planned</span>
+          <span style={{ color: 'var(--charcoal-soft)', opacity: 0.6 }}>· Planned</span>
         )}
       </div>
       {collection.identity && (
@@ -86,6 +94,11 @@ export default function Collections() {
 
   function productCount(name) {
     return products.filter(p => p.collection === name && !['Killed', 'Paused'].includes(p.stage)).length;
+  }
+
+  async function handleUpdateChapter(id, chapter) {
+    await updateCollection(id, { chapter });
+    refetch();
   }
 
   async function handleAdd() {
@@ -188,6 +201,8 @@ export default function Collections() {
                 collection={c}
                 productCount={productCount(c.name)}
                 sparkCount={sparkCount(c.name)}
+                chapters={chapters}
+                onUpdateChapter={handleUpdateChapter}
                 onClick={() => navigate(`/collections/${encodeURIComponent(c.name)}`)}
               />
             ))}
