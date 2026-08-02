@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { supabase } from '../lib/supabase';
-import { createCollection } from '../lib/hooks';
+import { createCollection, useChapters } from '../lib/hooks';
 
 // ─── Column detection ─────────────────────────────────────────────────────────
 
@@ -321,8 +321,10 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
   const [converting, setConverting] = useState(false);
   const [targetColl, setTargetColl] = useState('__new__');
   const [newCollName, setNewCollName] = useState(group.name);
+  const [newChapter, setNewChapter]  = useState('');
   const [saving, setSaving]     = useState(false);
   const [done, setDone]         = useState(false);
+  const { chapters } = useChapters();
 
   const score = opportunityScore(keywords);
   const b1 = keywords.filter(k => k.bucket === 1).length;
@@ -336,7 +338,7 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
     setSaving(true);
     const collName = targetColl === '__new__' ? newCollName.trim() : targetColl;
     if (!collName) { setSaving(false); return; }
-    await onStartCollection(group, keywords, collName, targetColl === '__new__');
+    await onStartCollection(group, keywords, collName, targetColl === '__new__', newChapter.trim() || null);
     setSaving(false);
     setDone(true);
     setConverting(false);
@@ -394,9 +396,16 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
             {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           {targetColl === '__new__' && (
-            <input value={newCollName} onChange={e => setNewCollName(e.target.value)}
-              placeholder="New collection name…"
-              style={{ fontSize: '0.75rem', padding: '4px 8px' }} />
+            <>
+              <input value={newCollName} onChange={e => setNewCollName(e.target.value)}
+                placeholder="New collection name…"
+                style={{ fontSize: '0.75rem', padding: '4px 8px' }} />
+              <select value={newChapter} onChange={e => setNewChapter(e.target.value)}
+                style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
+                <option value="">— No chapter assigned —</option>
+                {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+              </select>
+            </>
           )}
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
@@ -527,9 +536,10 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
     setClustering(false);
   }
 
-  async function handleStartCollection(group, groupKws, collName, isNew) {
+  async function handleStartCollection(group, groupKws, collName, isNew, chapter) {
     if (isNew) {
-      const { error } = await createCollection(collName);
+      const extra = chapter ? { chapter } : {};
+      const { error } = await createCollection(collName, extra);
       if (error && !error.message?.includes('unique')) return;
     }
     const isErank = (sourceLabel || '').toLowerCase().includes('erank');
