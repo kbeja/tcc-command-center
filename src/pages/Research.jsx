@@ -140,7 +140,7 @@ function SourceCompare() {
       const { data } = await supabase
         .from('keywords')
         .select('keyword, volume, competition, score, bucket, research_session_id, research_sessions(source, collection)')
-        .not('research_sessions', 'is', null);
+        .not('research_session_id', 'is', null);
       if (!data) { setLoading(false); return; }
 
       // Group by lowercase keyword
