@@ -415,87 +415,64 @@ function CollectionPicker({ collections, collectionObjects, chapters, value, onC
     <div className="form-group" style={{ marginBottom: 12 }}>
       <label className="form-label">Collection</label>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 6 }}>
-        {chapters.map(ch => {
-          const inChapter = (collectionObjects || []).filter(c => c.chapter === ch);
-          if (!inChapter.length) return null;
-          return (
-            <div key={ch}>
-              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 4 }}>{ch}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {inChapter.map(c => (
-                  <button key={c.name} type="button"
-                    onClick={() => onChange(value === c.name ? '' : c.name)}
-                    style={{
-                      fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                      background: value === c.name ? 'var(--dusty-rose)' : 'transparent',
-                      color: value === c.name ? '#fff' : 'var(--charcoal-soft)',
-                      border: value === c.name ? 'none' : '1px solid rgba(43,41,38,0.2)',
-                      fontWeight: value === c.name ? 600 : 400,
-                      display: 'flex', alignItems: 'center', gap: 5,
-                    }}
-                  >
-                    {c.name}
-                    {c.season && <span style={{ fontSize: '0.58rem', opacity: 0.7, fontWeight: 400 }}>· {c.season}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-        {/* Uncategorized */}
         {(() => {
+          const allSelected = new Set([value, ...(extraValues || [])].filter(Boolean));
+
+          function toggle(name) {
+            if (!value) { onChange(name); return; }
+            if (name === value) {
+              // deselect primary — promote first extra if any, else clear
+              const extras = new Set(extraValues || []);
+              if (extras.size) {
+                const [first, ...rest] = [...extras];
+                onChange(first);
+                onExtraChange?.(new Set(rest));
+              } else {
+                onChange('');
+              }
+              return;
+            }
+            const extras = new Set(extraValues || []);
+            if (extras.has(name)) { extras.delete(name); } else { extras.add(name); }
+            onExtraChange?.(extras);
+          }
+
+          const groups = chapters.map(ch => {
+            const inCh = (collectionObjects || []).filter(c => c.chapter === ch);
+            return inCh.length ? { label: ch, items: inCh } : null;
+          }).filter(Boolean);
           const uncat = (collectionObjects || []).filter(c => !c.chapter);
-          if (!uncat.length) return null;
-          return (
-            <div>
-              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 4 }}>Other</div>
+          if (uncat.length) groups.push({ label: 'Other', items: uncat });
+
+          return groups.map(({ label, items }) => (
+            <div key={label}>
+              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 4 }}>{label}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {uncat.map(c => (
-                  <button key={c.name} type="button"
-                    onClick={() => onChange(value === c.name ? '' : c.name)}
-                    style={{
-                      fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                      background: value === c.name ? 'var(--dusty-rose)' : 'transparent',
-                      color: value === c.name ? '#fff' : 'var(--charcoal-soft)',
-                      border: value === c.name ? 'none' : '1px solid rgba(43,41,38,0.2)',
-                      fontWeight: value === c.name ? 600 : 400,
-                    }}
-                  >{c.name}</button>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-        {/* Also pull from (multi-collection keyword merging) */}
-        {value && onExtraChange && (() => {
-          const others = (collectionObjects || []).filter(c => c.name !== value);
-          if (!others.length) return null;
-          return (
-            <div style={{ borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 8, marginTop: 4 }}>
-              <div style={{ fontSize: '0.65rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', opacity: 0.5, marginBottom: 6 }}>Also pull keywords from</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {others.map(c => {
-                  const on = (extraValues || new Set()).has(c.name);
+                {items.map(c => {
+                  const isPrimary = value === c.name;
+                  const isExtra = (extraValues || new Set()).has(c.name);
+                  const isOn = isPrimary || isExtra;
                   return (
                     <button key={c.name} type="button"
-                      onClick={() => {
-                        const next = new Set(extraValues || []);
-                        on ? next.delete(c.name) : next.add(c.name);
-                        onExtraChange(next);
-                      }}
+                      onClick={() => toggle(c.name)}
                       style={{
-                        fontSize: '0.68rem', padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                        background: on ? 'rgba(124,175,138,0.25)' : 'transparent',
-                        color: on ? '#2d6b3c' : 'var(--charcoal-soft)',
-                        border: on ? '1px solid rgba(124,175,138,0.4)' : '1px dashed rgba(43,41,38,0.2)',
-                        fontWeight: on ? 600 : 400,
+                        fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                        background: isPrimary ? 'var(--dusty-rose)' : isExtra ? 'rgba(124,175,138,0.25)' : 'transparent',
+                        color: isPrimary ? '#fff' : isExtra ? '#2d6b3c' : 'var(--charcoal-soft)',
+                        border: isOn ? 'none' : '1px solid rgba(43,41,38,0.2)',
+                        fontWeight: isOn ? 600 : 400,
+                        display: 'flex', alignItems: 'center', gap: 5,
                       }}
-                    >{c.name}</button>
+                    >
+                      {c.name}
+                      {isPrimary && <span style={{ fontSize: '0.55rem', opacity: 0.8 }}>primary</span>}
+                      {c.season && !isPrimary && <span style={{ fontSize: '0.58rem', opacity: 0.7, fontWeight: 400 }}>· {c.season}</span>}
+                    </button>
                   );
                 })}
               </div>
             </div>
-          );
+          ));
         })()}
 
         {!adding && (
