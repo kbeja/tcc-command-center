@@ -131,22 +131,24 @@ function CollectionsManager({ refetch: refetchNames }) {
 function SourceCompare() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
   const [filterCollection, setFilter] = useState('');
   const { collections } = useCollections();
 
   useEffect(() => {
     async function load() {
       setLoading(true);
+      setErr('');
       const { data, error } = await supabase
         .from('keywords')
-        .select('keyword, volume, competition, score, bucket, research_session_id, research_sessions(source, collection)')
-        .not('research_session_id', 'is', null);
-      if (error) { console.error('SourceCompare query error:', error); setLoading(false); return; }
+        .select('keyword, volume, competition, score, bucket, research_session_id, research_sessions(source, collection)');
+      if (error) { setErr(error.message); setLoading(false); return; }
       if (!data || data.length === 0) { setLoading(false); return; }
+      const withSession = data.filter(k => k.research_session_id && k.research_sessions);
 
       // Group by lowercase keyword
       const map = {};
-      for (const k of data) {
+      for (const k of withSession) {
         const key = k.keyword?.toLowerCase().trim();
         if (!key) continue;
         if (!map[key]) map[key] = { keyword: k.keyword, entries: [] };
@@ -205,7 +207,8 @@ function SourceCompare() {
         </select>
       </div>
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
-      {!loading && visible.length === 0 && (
+      {err && <div style={{ color: 'var(--alert)', fontSize: '0.82rem', padding: '10px 0' }}>Error: {err}</div>}
+      {!loading && !err && visible.length === 0 && (
         <div className="empty-state">
           <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📊</div>
           <p style={{ marginBottom: 6 }}>No cross-source keyword matches yet.</p>
