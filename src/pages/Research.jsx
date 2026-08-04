@@ -38,8 +38,8 @@ function CollectionsManager({ refetch: refetchNames }) {
     setSaving(false);
   }
 
-  async function handleDelete(name) {
-    await deleteCollection(name);
+  async function handleDelete(id) {
+    await deleteCollection(id);
     setConfirmDelete(null);
     refetch(); refetchNames?.();
   }
@@ -110,14 +110,14 @@ function CollectionsManager({ refetch: refetchNames }) {
                       </span>
                     )}
                   </div>
-                  {confirmDelete === c.name ? (
+                  {confirmDelete === c.id ? (
                     <span style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.75rem' }}>
                       <span style={{ color: 'var(--charcoal-soft)' }}>Delete?</span>
-                      <button onClick={() => handleDelete(c.name)} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
+                      <button onClick={() => handleDelete(c.id)} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
                       <button onClick={() => setConfirmDelete(null)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
                     </span>
                   ) : (
-                    <button onClick={() => setConfirmDelete(c.name)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}>🗑</button>
+                    <button onClick={() => setConfirmDelete(c.id)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}>🗑</button>
                   )}
                 </div>
               ))}
@@ -365,19 +365,16 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
     setRebucketing(true);
     setRebucketResult(null);
     const toUpdate = keywords.filter(k => k.volume != null && k.competition != null);
-    let updated = 0;
-    let skipped = 0;
-    for (const k of toUpdate) {
-      const newBucket = assignBucket(k.volume, k.competition);
-      if (newBucket !== k.bucket) {
-        await updateKeyword(k.id, { bucket: newBucket, bucket_source: newBucket ? 'manual' : null });
-        updated++;
-      } else {
-        skipped++;
-      }
+    const changed = toUpdate.filter(k => assignBucket(k.volume, k.competition) !== k.bucket);
+    if (changed.length > 0) {
+      const rows = changed.map(k => {
+        const newBucket = assignBucket(k.volume, k.competition);
+        return { id: k.id, bucket: newBucket, bucket_source: newBucket ? 'manual' : null };
+      });
+      await supabase.from('keywords').upsert(rows, { onConflict: 'id' });
     }
     await load();
-    setRebucketResult({ updated, skipped, noMetrics: keywords.length - toUpdate.length });
+    setRebucketResult({ updated: changed.length, skipped: toUpdate.length - changed.length, noMetrics: keywords.length - toUpdate.length });
     setRebucketing(false);
   }
 
@@ -441,18 +438,6 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
             <span>Keyword</span><span>Bucket</span><span>Vol</span><span>Comp</span><span>KD</span><span>Collection</span><span>Source</span><span></span>
           </div>
 
-          {/* Build duplicate map: keyword text → list of sources across ALL (unfiltered) keywords */}
-          {(() => {
-            const dupMap = {};
-            keywords.forEach(kw => {
-              const key = kw.keyword?.toLowerCase();
-              const src = kw.research_sessions?.source || 'unknown';
-              if (!key) return;
-              if (!dupMap[key]) dupMap[key] = [];
-              if (!dupMap[key].includes(src)) dupMap[key].push(src);
-            });
-            return null;
-          })()}
           {filtered.map(k => {
             const col = k.research_sessions?.collection || '—';
             const src = k.research_sessions?.source || '—';

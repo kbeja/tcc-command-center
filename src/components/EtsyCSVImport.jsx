@@ -22,13 +22,35 @@ function fuzzyMatch(csvTitle, products) {
   return { product: null, confidence: 'none' };
 }
 
+// RFC 4180-compliant CSV line parser — handles quoted fields containing commas
+function parseCSVLine(line) {
+  const fields = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
 function parseEtsyCSV(text) {
   const lines = text.trim().split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+  if (lines.length > 5001) throw new Error('CSV too large — max 5,000 rows');
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase());
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+    const vals = parseCSVLine(lines[i]);
     if (vals.length < 2) continue;
     const row = {};
     headers.forEach((h, idx) => { row[h] = vals[idx] || ''; });

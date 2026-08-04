@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCollections, autoHotSparksForSignal, useChapters } from '../lib/hooks';
+import { useProducts, useCollections, autoHotSparksForSignal, useChapters, useTrendSignals } from '../lib/hooks';
 
 const STATUSES = [
   { key: 'pursue',    label: '🟢 Pursue',    color: '#2d6b3c', bg: 'rgba(124,175,138,0.15)' },
@@ -20,23 +20,6 @@ const SCORE_DIALS = [
 
 function statusStyle(s) {
   return STATUSES.find(st => st.key === s) || STATUSES[1];
-}
-
-function useTrendSignals() {
-  const [signals, setSignals] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetch = useCallback(async () => {
-    const { data } = await supabase
-      .from('trend_signals')
-      .select('*')
-      .order('score', { ascending: false });
-    if (data) setSignals(data);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetch(); }, [fetch]);
-  return { signals, loading, refetch: fetch };
 }
 
 function ScoreDials({ breakdown, onChange, editable }) {
@@ -233,6 +216,7 @@ function SignalCard({ signal, products, collections, onAction }) {
 }
 
 function AddSignalForm({ collections, onSaved, onCancel }) {
+  const { chapters } = useChapters();
   const [form, setForm] = useState({
     name: '', collection: '', parent_niche: '', status: 'watch',
     score_breakdown: {}, evidence: '', notes: '', revisit_date: '',

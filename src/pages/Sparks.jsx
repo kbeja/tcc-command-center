@@ -65,23 +65,25 @@ export default function Sparks() {
   async function bulkAction(action) {
     const ids = [...selected];
     if (!ids.length) return;
+    const now = new Date().toISOString();
+    const count = ids.length;
 
     if (action === 'archive') {
-      for (const id of ids) await archiveSpark(id);
-      setBulkDone(`Archived ${ids.length} spark${ids.length !== 1 ? 's' : ''}`);
+      await supabase.from('sparks').update({ archived_at: now, updated_at: now }).in('id', ids);
+      setBulkDone(`Archived ${count} spark${count !== 1 ? 's' : ''}`);
     } else if (action === 'delete') {
       await supabase.from('sparks').delete().in('id', ids);
-      setBulkDone(`Deleted ${ids.length} spark${ids.length !== 1 ? 's' : ''}`);
+      setBulkDone(`Deleted ${count} spark${count !== 1 ? 's' : ''}`);
     } else if (action === 'hot') {
-      for (const id of ids) await updateSpark(id, { temperature: 'hot' });
-      setBulkDone(`Moved ${ids.length} to hot`);
+      await supabase.from('sparks').update({ temperature: 'hot', updated_at: now }).in('id', ids);
+      setBulkDone(`Moved ${count} to hot`);
     } else if (action === 'cold') {
-      for (const id of ids) await updateSpark(id, { temperature: 'cold' });
-      setBulkDone(`Moved ${ids.length} to cold`);
+      await supabase.from('sparks').update({ temperature: 'cold', updated_at: now }).in('id', ids);
+      setBulkDone(`Moved ${count} to cold`);
     } else if (action === 'tag') {
       if (!bulkTag) return;
-      await supabase.from('sparks').update({ collection_tag: bulkTag }).in('id', ids);
-      setBulkDone(`Tagged ${ids.length} → ${bulkTag}`);
+      await supabase.from('sparks').update({ collection_tag: bulkTag, updated_at: now }).in('id', ids);
+      setBulkDone(`Tagged ${count} → ${bulkTag}`);
       setBulkTag('');
     }
 

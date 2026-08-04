@@ -726,7 +726,8 @@ export default function ListingBuilder() {
     const draft = {
       form,
       imageAnalysis,
-      imagePreview,
+      // imagePreview intentionally excluded — data URIs can be large and persist
+      // on shared devices; imageAnalysis text is sufficient to reconstruct context
       output,
       editTitle,
       editTags,
@@ -734,7 +735,7 @@ export default function ListingBuilder() {
       savedAt: new Date().toISOString(),
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
-  }, [productId, form, imageAnalysis, imagePreview, output, editTitle, editTags, selectedSessionIds]);
+  }, [productId, form, imageAnalysis, output, editTitle, editTags, selectedSessionIds]);
 
   function clearDraft() {
     try { localStorage.removeItem(DRAFT_KEY); } catch {}

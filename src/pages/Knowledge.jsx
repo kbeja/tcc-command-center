@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import {
   useKnowledgeInbox, createInboxItem, updateInboxItem,
   usePlaybooks, updatePlaybookSection,
@@ -318,11 +319,14 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
   async function handleApprove(update) {
     if (update.playbook_slug) {
       const body = editing[update.id] ?? update.proposed_body;
-      const pb = playbooks.find(p => p.slug === update.playbook_slug);
-      await approvePendingUpdate({ ...update, playbook_id: pb?.id }, body);
+      // approvePendingUpdate now resolves playbook_id from playbook_slug internally
+      await approvePendingUpdate(update, body);
     } else {
-      // Review-only item — just mark approved
-      await rejectPendingUpdate(update.id); // reuses the "close" logic without playbook write
+      // Review-only item — mark approved (not rejected)
+      await supabase.from('pending_updates').update({
+        status: 'approved',
+        resolved_at: new Date().toISOString(),
+      }).eq('id', update.id);
     }
     setConfirming(prev => ({ ...prev, [update.id]: 'approved' }));
     setTimeout(() => { setConfirming(prev => { const n = { ...prev }; delete n[update.id]; return n; }); refetch(); }, 1500);

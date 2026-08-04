@@ -607,13 +607,13 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
 
   async function handleAuditCommit() {
     setAuditSaving(true);
-    const today = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
     await createResearchSession(
       {
         collection: product.collection,
         parent_niche: product.parent_niche || null,
         niche: product.niche || null,
-        date: today,
+        date: todayStr,
         source: 'Listing Audit',
         status: 'Complete',
         notes: `Per-listing keyword audit for ${product.name}`,
@@ -800,7 +800,9 @@ export default function ProductWorkspace() {
   }, [product?.id]);
 
   async function handleFieldBlur(field, value) {
-    await updateProduct(id, { [field]: value || null });
+    // Use explicit null check so numeric 0 is preserved, not coerced to null
+    const dbValue = (value === '' || value === undefined) ? null : value;
+    await updateProduct(id, { [field]: dbValue });
     setFieldSaved(field);
     setTimeout(() => setFieldSaved(''), 2000);
   }
@@ -945,7 +947,7 @@ export default function ProductWorkspace() {
               min="0"
               value={printifyCost}
               onChange={e => setPrintifyCost(e.target.value)}
-              onBlur={() => handleFieldBlur('printify_cost', printifyCost ? parseFloat(printifyCost) : null)}
+              onBlur={() => handleFieldBlur('printify_cost', printifyCost !== '' ? parseFloat(printifyCost) : null)}
               placeholder="e.g. 12.50"
             />
           </div>

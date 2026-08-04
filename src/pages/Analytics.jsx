@@ -112,11 +112,10 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
   if (listings.length === 0) return <div className="empty-state"><p>No competitor data yet. Import an Everbee listing export to get started.</p></div>;
 
   // ── Tag frequency analysis ──
-  const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
   const tagCounts = {};
   for (const l of listings) {
-    for (let i = 1; i <= 13; i++) {
-      const raw = l[`tag_${i}`];
+    for (const key of TAG_KEYS) {
+      const raw = l[key];
       if (!raw) continue;
       const t = String(raw).trim().toLowerCase();
       if (!t || JUNK_TAG.test(t)) continue;
@@ -401,11 +400,10 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
 
         // Count tag frequency across unmatched listings
         // Filter out blank, null, "--", and dash-only values
-        const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
         const tagMap = {};
         for (const l of unmatched) {
-          for (let i = 1; i <= 13; i++) {
-            const raw = l[`tag_${i}`];
+          for (const key of TAG_KEYS) {
+            const raw = l[key];
             if (!raw) continue;
             const tag = String(raw).trim().toLowerCase();
             if (!tag || JUNK_TAG.test(tag)) continue;
@@ -456,8 +454,11 @@ export default function Analytics() {
   const [sortCol, setSortCol] = useState('mo_revenue');
   const [sortDir, setSortDir] = useState('desc');
 
-  const live = products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing');
-  const inProgress = products.filter(p => !['Live', 'Reviewing', 'Paused', 'Killed'].includes(p.stage));
+  const live = useMemo(() => products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing'), [products]);
+  const inProgress = useMemo(() => products.filter(p => !['Live', 'Reviewing', 'Paused', 'Killed'].includes(p.stage)), [products]);
+
+  const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
+  const TAG_KEYS = Array.from({ length: 13 }, (_, i) => `tag_${i + 1}`);
 
   // Shop totals
   const totalOrders = live.reduce((s, p) => s + (p.total_sales || 0), 0);
