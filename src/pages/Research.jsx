@@ -309,13 +309,15 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
   });
 
   function startEdit(k) {
+    const col = k.research_sessions?.collection || '';
     setEditId(k.id);
     setEditVals({
       bucket: k.bucket ?? '',
       volume: k.volume ?? '',
       competition: k.competition ?? '',
       score: k.score ?? '',
-      collection: k.research_sessions?.collection || '',
+      collection: col,
+      editChapter: colChapterMap[col] || '',
     });
   }
 
@@ -374,22 +376,42 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
     setRebucketing(false);
   }
 
-  const bucketCounts = { 1: 0, 2: 0, 3: 0, null: 0 };
-  for (const k of filtered) bucketCounts[k.bucket ?? 'null']++;
+  const totalFiltered = filtered.length;
 
   return (
     <div>
-      {/* Search + add */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+      {/* Filters row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search keywords…"
-          style={{ flex: 1, fontSize: '0.82rem', padding: '6px 10px' }}
+          style={{ flex: 1, minWidth: 160, fontSize: '0.82rem', padding: '6px 10px' }}
         />
+        <select value={filterChapter} onChange={e => { setFilterChapter(e.target.value); setFilterCollection(''); }}
+          style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
+          <option value="">All chapters</option>
+          {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+          {keywords.some(k => !colChapterMap[k.research_sessions?.collection]) && (
+            <option value="__other">— No chapter —</option>
+          )}
+        </select>
+        <select value={filterCollection} onChange={e => setFilterCollection(e.target.value)}
+          style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
+          <option value="">All collections</option>
+          {visibleCollections.map(col => <option key={col} value={col}>{col}</option>)}
+        </select>
+        <select value={filterBucket} onChange={e => setFilterBucket(e.target.value)}
+          style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
+          <option value="">All buckets ({totalFiltered})</option>
+          <option value="1">B1 Visibility</option>
+          <option value="2">B2 Reach</option>
+          <option value="3">B3 Bestseller</option>
+          <option value="0">Unclassified</option>
+        </select>
         <button className="btn btn-ghost btn-sm" onClick={handleRebucket} disabled={rebucketing}
-          title="Re-run bucket assignment on all keywords that have volume + competition data">
-          {rebucketing ? 'Re-bucketing…' : '⟳ Re-bucket all'}
+          title="Re-run bucket assignment on all keywords with volume + competition data">
+          {rebucketing ? 'Re-bucketing…' : '⟳ Re-bucket'}
         </button>
         <button className="btn btn-primary btn-sm" onClick={onAddSession}>+ Add Session</button>
       </div>
@@ -398,66 +420,6 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
           ✓ {rebucketResult.updated} updated · {rebucketResult.skipped} already correct · {rebucketResult.noMetrics} skipped (no metrics)
         </div>
       )}
-
-      {/* Chapter filter */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        <button className={`btn btn-sm ${!filterChapter ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => { setFilterChapter(''); setFilterCollection(''); }}>
-          All chapters
-        </button>
-        {chapters.map(ch => (
-          <button key={ch} className={`btn btn-sm ${filterChapter === ch ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => { setFilterChapter(ch); setFilterCollection(''); }}>
-            {ch}
-          </button>
-        ))}
-        {keywords.some(k => !colChapterMap[k.research_sessions?.collection]) && (
-          <button className={`btn btn-sm ${filterChapter === '__other' ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => { setFilterChapter('__other'); setFilterCollection(''); }}>
-            Other
-          </button>
-        )}
-      </div>
-
-      {/* Collection filter */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-        <button className={`btn btn-sm ${!filterCollection ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setFilterCollection('')}>
-          All collections
-        </button>
-        {visibleCollections.map(col => (
-          <button key={col} className={`btn btn-sm ${filterCollection === col ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setFilterCollection(filterCollection === col ? '' : col)}
-            style={{ fontSize: '0.7rem' }}>
-            {col}
-          </button>
-        ))}
-      </div>
-
-      {/* Bucket filter + counts */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
-        <button className={`btn btn-sm ${!filterBucket ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setFilterBucket('')}>
-          All buckets ({filtered.length})
-        </button>
-        {[1, 2, 3].map(b => {
-          const count = filtered.filter(k => k.bucket === b).length;
-          return (
-            <button key={b} className={`btn btn-sm ${filterBucket === String(b) ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setFilterBucket(filterBucket === String(b) ? '' : String(b))}
-              style={{ fontSize: '0.7rem', color: BUCKET_STYLE[b].color }}>
-              B{b} ({count})
-            </button>
-          );
-        })}
-        {bucketCounts.null > 0 && (
-          <button className={`btn btn-sm ${filterBucket === '0' ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setFilterBucket(filterBucket === '0' ? '' : '0')}
-            style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
-            Unclassified ({bucketCounts.null})
-          </button>
-        )}
-      </div>
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
@@ -479,26 +441,64 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
             const src = k.research_sessions?.source || '—';
             const isEditing = editId === k.id;
 
-            if (isEditing) return (
-              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '8px 10px', background: 'rgba(188,100,90,0.06)', border: '1px solid rgba(188,100,90,0.2)', borderRadius: 4, alignItems: 'center' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{k.keyword}</span>
-                <select value={editVals.bucket} onChange={e => setEditVals(v => ({ ...v, bucket: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px' }}>
-                  <option value="">—</option>
-                  {[1,2,3].map(b => <option key={b} value={b}>B{b}</option>)}
-                </select>
-                <input value={editVals.volume} onChange={e => setEditVals(v => ({ ...v, volume: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="vol" />
-                <input value={editVals.competition} onChange={e => setEditVals(v => ({ ...v, competition: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="comp" />
-                <input value={editVals.score} onChange={e => setEditVals(v => ({ ...v, score: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="KD" />
-                <select value={editVals.collection} onChange={e => setEditVals(v => ({ ...v, collection: e.target.value }))} style={{ fontSize: '0.68rem', padding: '2px 4px' }}>
-                  {collectionObjects.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                </select>
-                <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>{src}</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => saveEdit(k.id)} disabled={saving} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>✓</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditId(null)} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>✕</button>
+            if (isEditing) {
+              const editableCollections = editVals.editChapter
+                ? collectionObjects.filter(c => colChapterMap[c.name] === editVals.editChapter)
+                : collectionObjects;
+              return (
+                <div key={k.id} style={{ background: 'rgba(188,100,90,0.06)', border: '1px solid rgba(188,100,90,0.2)', borderRadius: 4, padding: '10px 12px', marginBottom: 2 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: 8 }}>{k.keyword}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Bucket</div>
+                      <select value={editVals.bucket} onChange={e => setEditVals(v => ({ ...v, bucket: e.target.value }))} style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }}>
+                        <option value="">— Unclassified —</option>
+                        <option value="1">B1 Visibility</option>
+                        <option value="2">B2 Reach</option>
+                        <option value="3">B3 Bestseller</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Volume</div>
+                      <input value={editVals.volume} onChange={e => setEditVals(v => ({ ...v, volume: e.target.value }))} style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }} placeholder="—" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Competition</div>
+                      <input value={editVals.competition} onChange={e => setEditVals(v => ({ ...v, competition: e.target.value }))} style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }} placeholder="—" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>KD Score</div>
+                      <input value={editVals.score} onChange={e => setEditVals(v => ({ ...v, score: e.target.value }))} style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }} placeholder="—" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Chapter</div>
+                      <select value={editVals.editChapter}
+                        onChange={e => setEditVals(v => ({ ...v, editChapter: e.target.value, collection: '' }))}
+                        style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }}>
+                        <option value="">— All chapters —</option>
+                        {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Collection</div>
+                      <select value={editVals.collection} onChange={e => setEditVals(v => ({ ...v, collection: e.target.value }))}
+                        style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }}>
+                        <option value="">— Pick collection —</option>
+                        {editableCollections.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => saveEdit(k.id)} disabled={saving}>
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditId(null)}>Cancel</button>
+                  </div>
                 </div>
-              </div>
-            );
+              );
+            }
 
             return (
               <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
