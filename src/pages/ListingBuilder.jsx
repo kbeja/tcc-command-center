@@ -8,7 +8,7 @@ import { STAGES } from '../data/stages';
 const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — 3-Bucket Keyword Framework (Taylor Posada method)
 
 KEYWORD BUCKETS
-Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. Usually just ONE per listing — scarce by design. Represents what the buyer actually types first.
+Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE goes first in title — if multiple B1s exist, use the highest volume one first. Remaining B1s fill title space after B3 or go in tags.
 Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. Where most keywords live. This is the real depth of a listing — expect the most usable keywords here.
 Bucket 3 — Bestseller (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift", "booktok gift") all fold into Bucket 3 — they are content within it, not a separate tier.
 
@@ -276,7 +276,7 @@ function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, ph
 
 ━━━ TCC SEO STANDARDS v2 — 3-BUCKET SYSTEM — FOLLOW EXACTLY ━━━
 BUCKET DEFINITIONS:
-  Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE per listing — scarce by design. Goes FIRST in title and tags.
+  Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE goes FIRST in title and tags. If multiple B1 keywords exist, pick the one with the highest volume. If volume is equal, pick the one with the lowest competition. The remaining B1 keywords should be used later in the title (after the B2/B3 boundary) to fill character space, or in tags.
   Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. The bulk of a listing's depth. Most keywords live here.
   Bucket 3 — Bestseller (Broad): High volume, medium-to-HIGH competition. Category terms, seasonal language ("Fall", "Halloween"), and buyer-intent phrases ("gift for her", "birthday gift") all belong in Bucket 3 — they are CONTENT within it, not separate tiers.
 
