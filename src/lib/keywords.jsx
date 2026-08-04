@@ -7,7 +7,7 @@ export function assignBucket(vol, comp) {
   if (vol == null || comp == null || vol < 200) return null;
   if (comp >= 100000) return 3;              // Big pond — Bestseller
   if (comp < 10000 && vol >= 500) return 1; // Low comp, rankable fast — Visibility
-  if (vol >= 300) return 2;                 // Mid-range — Reach
+  if (vol >= 200) return 2;                 // Mid-range — Reach
   return null;
 }
 
