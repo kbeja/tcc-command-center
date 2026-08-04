@@ -4,7 +4,7 @@ import { useResearchSessions, useCollections, useCollectionObjects, useChapters,
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
-import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
+import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
 const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', 'Summer', 'Spring', 'Fall'];
 
@@ -272,6 +272,8 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
   const [editId, setEditId]           = useState(null);
   const [editVals, setEditVals]       = useState({});
   const [saving, setSaving]           = useState(false);
+  const [rebucketing, setRebucketing] = useState(false);
+  const [rebucketResult, setRebucketResult] = useState(null);
 
   const colChapterMap = {};
   for (const c of collectionObjects) {
@@ -330,21 +332,50 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
     setKeywords(prev => prev.filter(k => k.id !== id));
   }
 
+  async function handleRebucket() {
+    setRebucketing(true);
+    setRebucketResult(null);
+    const toUpdate = keywords.filter(k => k.volume != null && k.competition != null);
+    let updated = 0;
+    let skipped = 0;
+    for (const k of toUpdate) {
+      const newBucket = assignBucket(k.volume, k.competition);
+      if (newBucket !== k.bucket) {
+        await updateKeyword(k.id, { bucket: newBucket, bucket_source: newBucket ? 'manual' : null });
+        updated++;
+      } else {
+        skipped++;
+      }
+    }
+    await load();
+    setRebucketResult({ updated, skipped, noMetrics: keywords.length - toUpdate.length });
+    setRebucketing(false);
+  }
+
   const bucketCounts = { 1: 0, 2: 0, 3: 0, null: 0 };
   for (const k of filtered) bucketCounts[k.bucket ?? 'null']++;
 
   return (
     <div>
       {/* Search + add */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search keywords…"
           style={{ flex: 1, fontSize: '0.82rem', padding: '6px 10px' }}
         />
+        <button className="btn btn-ghost btn-sm" onClick={handleRebucket} disabled={rebucketing}
+          title="Re-run bucket assignment on all keywords that have volume + competition data">
+          {rebucketing ? 'Re-bucketing…' : '⟳ Re-bucket all'}
+        </button>
         <button className="btn btn-primary btn-sm" onClick={onAddSession}>+ Add Session</button>
       </div>
+      {rebucketResult && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+          ✓ {rebucketResult.updated} updated · {rebucketResult.skipped} already correct · {rebucketResult.noMetrics} skipped (no metrics)
+        </div>
+      )}
 
       {/* Chapter filter */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
