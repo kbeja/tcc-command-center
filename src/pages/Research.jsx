@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { useResearchSessions, useCollections, useCollectionObjects, useChapters, createCollection, deleteCollection } from '../lib/hooks';
+import { useResearchSessions, useCollections, useCollectionObjects, useChapters, createCollection, deleteCollection, updateKeyword, deleteKeyword } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
+import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
 const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', 'Summer', 'Spring', 'Fall'];
 
@@ -259,8 +260,215 @@ function SourceCompare() {
   );
 }
 
+const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
+
+function KeywordList({ collectionObjects, chapters, onAddSession }) {
+  const [keywords, setKeywords]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [filterChapter, setFilterChapter] = useState('');
+  const [filterCollection, setFilterCollection] = useState('');
+  const [filterBucket, setFilterBucket]   = useState('');
+  const [search, setSearch]           = useState('');
+  const [editId, setEditId]           = useState(null);
+  const [editVals, setEditVals]       = useState({});
+  const [saving, setSaving]           = useState(false);
+
+  const colChapterMap = {};
+  for (const c of collectionObjects) {
+    if (c.name && c.chapter) colChapterMap[c.name] = c.chapter;
+  }
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('keywords')
+      .select('*, research_sessions(id, collection, source, date)')
+      .not('research_session_id', 'is', null)
+      .order('keyword', { ascending: true });
+    setKeywords(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Derived filter options
+  const visibleCollections = filterChapter
+    ? collectionObjects.filter(c => colChapterMap[c.name] === filterChapter).map(c => c.name)
+    : collectionObjects.map(c => c.name);
+
+  const filtered = keywords.filter(k => {
+    const col = k.research_sessions?.collection || '';
+    const ch  = colChapterMap[col] || '';
+    if (filterChapter && ch !== filterChapter) return false;
+    if (filterCollection && col !== filterCollection) return false;
+    if (filterBucket && k.bucket !== Number(filterBucket)) return false;
+    if (search && !k.keyword?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  function startEdit(k) {
+    setEditId(k.id);
+    setEditVals({ bucket: k.bucket ?? '', volume: k.volume ?? '', competition: k.competition ?? '', score: k.score ?? '' });
+  }
+
+  async function saveEdit(id) {
+    setSaving(true);
+    const updates = {};
+    if (editVals.bucket !== '')     updates.bucket      = Number(editVals.bucket) || null;
+    if (editVals.volume !== '')     updates.volume      = Number(editVals.volume) || null;
+    if (editVals.competition !== '') updates.competition = Number(editVals.competition) || null;
+    if (editVals.score !== '')      updates.score       = Number(editVals.score) || null;
+    if (updates.bucket) updates.bucket_source = 'manual';
+    await updateKeyword(id, updates);
+    await load();
+    setEditId(null);
+    setSaving(false);
+  }
+
+  async function handleDelete(id) {
+    await deleteKeyword(id);
+    setKeywords(prev => prev.filter(k => k.id !== id));
+  }
+
+  const bucketCounts = { 1: 0, 2: 0, 3: 0, null: 0 };
+  for (const k of filtered) bucketCounts[k.bucket ?? 'null']++;
+
+  return (
+    <div>
+      {/* Search + add */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search keywords…"
+          style={{ flex: 1, fontSize: '0.82rem', padding: '6px 10px' }}
+        />
+        <button className="btn btn-primary btn-sm" onClick={onAddSession}>+ Add Session</button>
+      </div>
+
+      {/* Chapter filter */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        <button className={`btn btn-sm ${!filterChapter ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => { setFilterChapter(''); setFilterCollection(''); }}>
+          All chapters
+        </button>
+        {chapters.map(ch => (
+          <button key={ch} className={`btn btn-sm ${filterChapter === ch ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => { setFilterChapter(ch); setFilterCollection(''); }}>
+            {ch}
+          </button>
+        ))}
+        {keywords.some(k => !colChapterMap[k.research_sessions?.collection]) && (
+          <button className={`btn btn-sm ${filterChapter === '__other' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => { setFilterChapter('__other'); setFilterCollection(''); }}>
+            Other
+          </button>
+        )}
+      </div>
+
+      {/* Collection filter */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        <button className={`btn btn-sm ${!filterCollection ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setFilterCollection('')}>
+          All collections
+        </button>
+        {visibleCollections.map(col => (
+          <button key={col} className={`btn btn-sm ${filterCollection === col ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setFilterCollection(filterCollection === col ? '' : col)}
+            style={{ fontSize: '0.7rem' }}>
+            {col}
+          </button>
+        ))}
+      </div>
+
+      {/* Bucket filter + counts */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
+        <button className={`btn btn-sm ${!filterBucket ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setFilterBucket('')}>
+          All buckets ({filtered.length})
+        </button>
+        {[1, 2, 3].map(b => {
+          const count = filtered.filter(k => k.bucket === b).length;
+          return (
+            <button key={b} className={`btn btn-sm ${filterBucket === String(b) ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setFilterBucket(filterBucket === String(b) ? '' : String(b))}
+              style={{ fontSize: '0.7rem', color: BUCKET_STYLE[b].color }}>
+              B{b} ({count})
+            </button>
+          );
+        })}
+        {bucketCounts.null > 0 && (
+          <button className={`btn btn-sm ${filterBucket === '0' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setFilterBucket(filterBucket === '0' ? '' : '0')}
+            style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
+            Unclassified ({bucketCounts.null})
+          </button>
+        )}
+      </div>
+
+      {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
+
+      {!loading && filtered.length === 0 && (
+        <div className="empty-state">
+          <p>No keywords match these filters.</p>
+        </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Header */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 100px 80px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+            <span>Keyword</span><span>Bucket</span><span>Vol</span><span>Comp</span><span>KD</span><span>Collection</span><span>Source</span><span></span>
+          </div>
+
+          {filtered.map(k => {
+            const col = k.research_sessions?.collection || '—';
+            const src = k.research_sessions?.source || '—';
+            const isEditing = editId === k.id;
+
+            if (isEditing) return (
+              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 100px 80px 36px', gap: 8, padding: '8px 10px', background: 'rgba(188,100,90,0.06)', border: '1px solid rgba(188,100,90,0.2)', borderRadius: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{k.keyword}</span>
+                <select value={editVals.bucket} onChange={e => setEditVals(v => ({ ...v, bucket: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px' }}>
+                  <option value="">—</option>
+                  {[1,2,3].map(b => <option key={b} value={b}>B{b}</option>)}
+                </select>
+                <input value={editVals.volume} onChange={e => setEditVals(v => ({ ...v, volume: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="vol" />
+                <input value={editVals.competition} onChange={e => setEditVals(v => ({ ...v, competition: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="comp" />
+                <input value={editVals.score} onChange={e => setEditVals(v => ({ ...v, score: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="KD" />
+                <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>{col}</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>{src}</span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => saveEdit(k.id)} disabled={saving} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>✓</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditId(null)} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>✕</button>
+                </div>
+              </div>
+            );
+
+            return (
+              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 100px 80px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{k.keyword}{k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}</span>
+                <span><BucketBadge bucket={k.bucket} /></span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.competition?.toLocaleString() ?? '—'}</span>
+                <span style={{ fontSize: '0.72rem', color: k.score >= 70 ? '#7a2b2b' : k.score >= 40 ? '#6b4a10' : k.score ? '#2d6b3c' : 'var(--charcoal-soft)' }}>{k.score ?? '—'}</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>{src}</span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button onClick={() => startEdit(k)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px' }}>✎</button>
+                  <button onClick={() => handleDelete(k.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px', opacity: 0.4 }}>🗑</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Research() {
-  const [tab, setTab] = useState('sessions');
+  const [tab, setTab] = useState('keywords');
   const [filterChapter, setFilterChapter] = useState('');
   const [filterCollection, setFilterCollection] = useState('');
   const { sessions, loading, refetch } = useResearchSessions(filterCollection || undefined);
@@ -306,19 +514,39 @@ export default function Research() {
       <div className="page-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div className="page-title">Research</div>
-          {tab === 'sessions' && (
+          {(tab === 'sessions') && (
             <button className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>
               {adding ? 'Cancel' : '+ Add Session'}
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${tab === 'keywords' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('keywords')}>Keywords</button>
           <button className={`btn btn-sm ${tab === 'sessions' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('sessions')}>Sessions</button>
           <button className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('collections')}>Collections</button>
           <button className={`btn btn-sm ${tab === 'explore' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('explore')}>Explore</button>
           <button className={`btn btn-sm ${tab === 'compare' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('compare')}>Compare Sources</button>
         </div>
       </div>
+
+      {tab === 'keywords' && (
+        <>
+          {adding && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <ResearchSessionForm
+                defaultCollection={collections[0] || ''}
+                onSaved={() => { setAdding(false); refetch(); }}
+                onCancel={() => setAdding(false)}
+              />
+            </div>
+          )}
+          <KeywordList
+            collectionObjects={collectionObjects}
+            chapters={chapters}
+            onAddSession={() => setAdding(a => !a)}
+          />
+        </>
+      )}
 
       {tab === 'collections' && (
         <CollectionsManager refetch={refetchCollections} />

@@ -145,6 +145,10 @@ export async function deleteKeyword(id) {
   return supabase.from('keywords').delete().eq('id', id);
 }
 
+export async function updateKeyword(id, updates) {
+  return supabase.from('keywords').update(updates).eq('id', id);
+}
+
 export async function createResearchSession(session, keywords) {
   const now = new Date().toISOString();
   const { data: s, error } = await supabase
