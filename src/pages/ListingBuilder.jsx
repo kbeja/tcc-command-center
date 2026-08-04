@@ -18,7 +18,7 @@ TITLE STRUCTURE — ORDER IS FIXED
 [Bucket 1] , [Bucket 2] , [Bucket 3]
 • Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
 • First 30–50 characters must contain the Bucket 1 phrase
-• Title Case Throughout, max 140 characters
+• Title Case Throughout, target 130–140 characters — fill unused space with additional keyword phrases
 • CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
 • Overlap check: if two keywords significantly overlap (e.g. "SLP grad" + "SLP grad student"), use the longer phrase — Etsy direct-matches the shorter within it, so both is redundant
 
@@ -284,9 +284,10 @@ TITLE FORMAT — ORDER IS FIXED:
   [Bucket 1] , [Bucket 2] , [Bucket 3]
   - Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
   - First 30–50 characters must contain the Bucket 1 phrase
-  - Title Case Throughout, max 140 characters
-  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
-  - WRONG: "Morally Gray Enthusiast Shirt | Fantasy Reader | Book Lover" (no pipes)
+  - Title Case Throughout, MUST be as close to 140 characters as possible — target 130–140. A short title wastes indexing space. Keep adding keyword phrases until you hit the limit.
+  - After placing B1 , B2 , B3 — if characters remain, append additional keyword phrases from the list separated by commas until you reach 130–140 chars. Prioritize phrases that add new unique words not already in the title.
+  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Dark Romance Book Tee, Romantasy Reader"
+  - WRONG: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift" (too short — unused character budget)
   - WORD DEDUPLICATION — critical: once a word appears in a phrase in the title, do NOT add that word again as a standalone term or in a separate phrase. Example: if "Mahjong Shirt" is in the title, the word "Mahjong" is already indexed by Etsy — adding "Mahjong Gift" separately would only be worthwhile if the FULL phrase "Mahjong Gift" is not already covered. Pick the phrases that together cover the most unique word surface area. No redundant single-word repeats.
   - OVERLAP CHECK: if two keywords significantly overlap (e.g. "SLP grad" and "SLP grad student"), use the longer phrase only — Etsy direct-matches the shorter within it
 
@@ -341,7 +342,7 @@ STRICT RULE: Every keyword used in the title or tags must appear verbatim in the
 
 Generate now. Return ONLY this JSON — no markdown, no text outside the object:
 {
-  "title": "string — [B1] , [B2] , [B3] comma format, max 140 chars, Title Case",
+  "title": "string — [B1] , [B2] , [B3] comma format, Title Case, 130–140 chars (fill unused space with more keyword phrases)",
   "tags": ["string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string"],
   "description": {
     "seo_opener": "string",
