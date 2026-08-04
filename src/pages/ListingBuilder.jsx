@@ -746,9 +746,11 @@ export default function ListingBuilder() {
 
   const allCollectionNames = [form.collection, ...extraCollections].filter(Boolean);
 
+  const GLOBAL_COLLECTION = 'Global Keywords';
+
   useEffect(() => {
     if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }
-    const cols = [form.collection, ...extraCollections].filter(Boolean);
+    const cols = [...new Set([form.collection, ...extraCollections, GLOBAL_COLLECTION].filter(Boolean))];
     supabase.from('research_sessions').select('*, keywords(*)')
       .in('collection', cols)
       .then(({ data }) => {
@@ -762,7 +764,7 @@ export default function ListingBuilder() {
 
   function refetchSessions() {
     if (!form.collection) return;
-    const cols = [form.collection, ...extraCollections].filter(Boolean);
+    const cols = [...new Set([form.collection, ...extraCollections, GLOBAL_COLLECTION].filter(Boolean))];
     supabase.from('research_sessions').select('*, keywords(*)')
       .in('collection', cols)
       .then(({ data }) => {
@@ -777,6 +779,8 @@ export default function ListingBuilder() {
   }
 
   function toggleSession(id) {
+    const session = sessions.find(s => s.id === id);
+    if (session?.collection === GLOBAL_COLLECTION) return;
     setSelectedSessionIds(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -1050,18 +1054,21 @@ export default function ListingBuilder() {
               {sessions.map(s => {
                 const kwCount = (s.keywords || []).filter(k => !k.tags_only && k.tag_type !== 'discard').length;
                 const b1count = (s.keywords || []).filter(k => k.bucket === 1).length;
+                const isGlobal = s.collection === GLOBAL_COLLECTION;
                 const isSelected = selectedSessionIds.has(s.id);
                 return (
                   <div key={s.id}
-                    onClick={() => toggleSession(s.id)}
+                    onClick={() => !isGlobal && toggleSession(s.id)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
-                      borderRadius: 4, cursor: 'pointer',
-                      background: isSelected ? 'rgba(124,175,138,0.1)' : 'var(--charcoal-faint)',
-                      border: `1px solid ${isSelected ? 'rgba(124,175,138,0.3)' : 'transparent'}`,
+                      borderRadius: 4, cursor: isGlobal ? 'default' : 'pointer',
+                      background: isGlobal ? 'rgba(120,140,200,0.08)' : isSelected ? 'rgba(124,175,138,0.1)' : 'var(--charcoal-faint)',
+                      border: `1px solid ${isGlobal ? 'rgba(120,140,200,0.25)' : isSelected ? 'rgba(124,175,138,0.3)' : 'transparent'}`,
                     }}>
-                    <input type="checkbox" checked={isSelected} readOnly
-                      style={{ width: 'auto', margin: 0, flexShrink: 0, pointerEvents: 'none' }} />
+                    {isGlobal
+                      ? <span style={{ fontSize: '0.6rem', color: '#1e306b', background: 'rgba(120,140,200,0.2)', padding: '1px 5px', borderRadius: 8, fontWeight: 600, flexShrink: 0 }}>GLOBAL</span>
+                      : <input type="checkbox" checked={isSelected} readOnly style={{ width: 'auto', margin: 0, flexShrink: 0, pointerEvents: 'none' }} />
+                    }
                     <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>{s.niche || s.collection}</span>
                     <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>{s.date} · {s.source}</span>
                     <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 'auto' }}>
