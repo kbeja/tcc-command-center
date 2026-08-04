@@ -746,11 +746,11 @@ export default function ListingBuilder() {
 
   const allCollectionNames = [form.collection, ...extraCollections].filter(Boolean);
 
-  const GLOBAL_COLLECTION = 'Global Keywords';
+  const GLOBAL_COLLECTIONS = ['Global Keywords', 'General'];
 
   useEffect(() => {
     if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }
-    const cols = [...new Set([form.collection, ...extraCollections, GLOBAL_COLLECTION].filter(Boolean))];
+    const cols = [...new Set([form.collection, ...extraCollections, ...GLOBAL_COLLECTIONS].filter(Boolean))];
     supabase.from('research_sessions').select('*, keywords(*)')
       .in('collection', cols)
       .then(({ data }) => {
@@ -764,7 +764,7 @@ export default function ListingBuilder() {
 
   function refetchSessions() {
     if (!form.collection) return;
-    const cols = [...new Set([form.collection, ...extraCollections, GLOBAL_COLLECTION].filter(Boolean))];
+    const cols = [...new Set([form.collection, ...extraCollections, ...GLOBAL_COLLECTIONS].filter(Boolean))];
     supabase.from('research_sessions').select('*, keywords(*)')
       .in('collection', cols)
       .then(({ data }) => {
@@ -780,7 +780,7 @@ export default function ListingBuilder() {
 
   function toggleSession(id) {
     const session = sessions.find(s => s.id === id);
-    if (session?.collection === GLOBAL_COLLECTION) return;
+    if (GLOBAL_COLLECTIONS.includes(session?.collection)) return;
     setSelectedSessionIds(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -1054,7 +1054,7 @@ export default function ListingBuilder() {
               {sessions.map(s => {
                 const kwCount = (s.keywords || []).filter(k => !k.tags_only && k.tag_type !== 'discard').length;
                 const b1count = (s.keywords || []).filter(k => k.bucket === 1).length;
-                const isGlobal = s.collection === GLOBAL_COLLECTION;
+                const isGlobal = GLOBAL_COLLECTIONS.includes(s.collection);
                 const isSelected = selectedSessionIds.has(s.id);
                 return (
                   <div key={s.id}
