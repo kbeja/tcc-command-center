@@ -310,17 +310,39 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
 
   function startEdit(k) {
     setEditId(k.id);
-    setEditVals({ bucket: k.bucket ?? '', volume: k.volume ?? '', competition: k.competition ?? '', score: k.score ?? '' });
+    setEditVals({
+      bucket: k.bucket ?? '',
+      volume: k.volume ?? '',
+      competition: k.competition ?? '',
+      score: k.score ?? '',
+      collection: k.research_sessions?.collection || '',
+    });
   }
 
   async function saveEdit(id) {
     setSaving(true);
+    const kw = keywords.find(k => k.id === id);
     const updates = {};
-    if (editVals.bucket !== '')     updates.bucket      = Number(editVals.bucket) || null;
-    if (editVals.volume !== '')     updates.volume      = Number(editVals.volume) || null;
+    if (editVals.bucket !== '')      updates.bucket      = Number(editVals.bucket) || null;
+    if (editVals.volume !== '')      updates.volume      = Number(editVals.volume) || null;
     if (editVals.competition !== '') updates.competition = Number(editVals.competition) || null;
-    if (editVals.score !== '')      updates.score       = Number(editVals.score) || null;
-    if (updates.bucket) updates.bucket_source = 'manual';
+    if (editVals.score !== '')       updates.score       = Number(editVals.score) || null;
+    if (updates.bucket)              updates.bucket_source = 'manual';
+
+    // If collection changed, find the most recent session for that collection and reassign
+    const currentCol = kw?.research_sessions?.collection || '';
+    if (editVals.collection && editVals.collection !== currentCol) {
+      const { data: sessions } = await supabase
+        .from('research_sessions')
+        .select('id')
+        .eq('collection', editVals.collection)
+        .order('date', { ascending: false })
+        .limit(1);
+      if (sessions?.length) {
+        updates.research_session_id = sessions[0].id;
+      }
+    }
+
     await updateKeyword(id, updates);
     await load();
     setEditId(null);
@@ -448,7 +470,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
       {!loading && filtered.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 100px 80px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
             <span>Keyword</span><span>Bucket</span><span>Vol</span><span>Comp</span><span>KD</span><span>Collection</span><span>Source</span><span></span>
           </div>
 
@@ -458,7 +480,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
             const isEditing = editId === k.id;
 
             if (isEditing) return (
-              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 100px 80px 36px', gap: 8, padding: '8px 10px', background: 'rgba(188,100,90,0.06)', border: '1px solid rgba(188,100,90,0.2)', borderRadius: 4, alignItems: 'center' }}>
+              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '8px 10px', background: 'rgba(188,100,90,0.06)', border: '1px solid rgba(188,100,90,0.2)', borderRadius: 4, alignItems: 'center' }}>
                 <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{k.keyword}</span>
                 <select value={editVals.bucket} onChange={e => setEditVals(v => ({ ...v, bucket: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px' }}>
                   <option value="">—</option>
@@ -467,7 +489,9 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
                 <input value={editVals.volume} onChange={e => setEditVals(v => ({ ...v, volume: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="vol" />
                 <input value={editVals.competition} onChange={e => setEditVals(v => ({ ...v, competition: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="comp" />
                 <input value={editVals.score} onChange={e => setEditVals(v => ({ ...v, score: e.target.value }))} style={{ fontSize: '0.72rem', padding: '2px 4px', width: '100%' }} placeholder="KD" />
-                <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>{col}</span>
+                <select value={editVals.collection} onChange={e => setEditVals(v => ({ ...v, collection: e.target.value }))} style={{ fontSize: '0.68rem', padding: '2px 4px' }}>
+                  {collectionObjects.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                </select>
                 <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>{src}</span>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button className="btn btn-primary btn-sm" onClick={() => saveEdit(k.id)} disabled={saving} style={{ fontSize: '0.65rem', padding: '2px 6px' }}>✓</button>
@@ -477,7 +501,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
             );
 
             return (
-              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 100px 80px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
+              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
                 <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{k.keyword}{k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}</span>
                 <span><BucketBadge bucket={k.bucket} /></span>
                 <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
