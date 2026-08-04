@@ -350,7 +350,7 @@ Generate now. Return ONLY this JSON — no markdown, no text outside the object:
     "ordering_steps": "string",
     "cross_sell": "string",
     "shipping": "string",
-    "brand_voice_closer": "string"
+    "brand_voice_closer": "string — MUST end with: 'The Current Chapter- for the current chapter and every chapter in between.' Use this exact phrase verbatim as the final sentence."
   },
   "image_prompts": [
     {"slot": 1, "type": "Main product shot", "prompt": "string — detailed ChatGPT image prompt"},
@@ -374,6 +374,7 @@ REQUIREMENTS:
 - Balance: all three buckets represented in both title and tags
 - Misspellings/tags-only keywords: tags only, never title or description
 - Each description section distinct — not one paragraph split arbitrarily
+- brand_voice_closer MUST end with the exact phrase: "The Current Chapter- for the current chapter and every chapter in between."
 - Image prompts: specific enough for ChatGPT — include product type, colors, setting, lighting, demographic, angle
 - research_flags: flag any missing bucket, balance gap, overlap to combine, or keywords needing validation`;
 }
