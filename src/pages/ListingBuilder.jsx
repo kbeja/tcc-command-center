@@ -748,7 +748,7 @@ export default function ListingBuilder() {
 
   const allCollectionNames = [form.collection, ...extraCollections].filter(Boolean);
 
-  const GLOBAL_COLLECTIONS = ['Global Keywords', 'General'];
+  const GLOBAL_COLLECTIONS = ['Global Keywords', 'General', 'Seasonal'];
 
   useEffect(() => {
     if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }

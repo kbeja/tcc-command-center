@@ -293,10 +293,15 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Derived filter options
+  // All unique collections from actual keyword data (includes General, Global Keywords, etc.)
+  const allCollectionsFromData = [...new Set(
+    keywords.map(k => k.research_sessions?.collection).filter(Boolean)
+  )].sort();
+
+  // Derived filter options — chapter filter narrows collections
   const visibleCollections = filterChapter
-    ? collectionObjects.filter(c => colChapterMap[c.name] === filterChapter).map(c => c.name)
-    : collectionObjects.map(c => c.name);
+    ? allCollectionsFromData.filter(col => colChapterMap[col] === filterChapter)
+    : allCollectionsFromData;
 
   const filtered = keywords.filter(k => {
     const col = k.research_sessions?.collection || '';
@@ -432,19 +437,40 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
       {!loading && filtered.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
             <span>Keyword</span><span>Bucket</span><span>Vol</span><span>Comp</span><span>KD</span><span>Collection</span><span>Source</span><span></span>
           </div>
 
+          {/* Build duplicate map: keyword text → list of sources across ALL (unfiltered) keywords */}
+          {(() => {
+            const dupMap = {};
+            keywords.forEach(kw => {
+              const key = kw.keyword?.toLowerCase();
+              const src = kw.research_sessions?.source || 'unknown';
+              if (!key) return;
+              if (!dupMap[key]) dupMap[key] = [];
+              if (!dupMap[key].includes(src)) dupMap[key].push(src);
+            });
+            return null;
+          })()}
           {filtered.map(k => {
             const col = k.research_sessions?.collection || '—';
             const src = k.research_sessions?.source || '—';
             const isEditing = editId === k.id;
+            // Duplicates: same keyword text found in other sources
+            const kwLower = k.keyword?.toLowerCase();
+            const allSrcsForKw = [...new Set(keywords.filter(kw => kw.keyword?.toLowerCase() === kwLower).map(kw => kw.research_sessions?.source).filter(Boolean))];
+            const isDupe = allSrcsForKw.length > 1;
+            const otherSrcs = allSrcsForKw.filter(s => s !== src);
+            // Bucket missing reason
+            const hasVol = k.volume != null;
+            const hasComp = k.competition != null;
+            const bucketMissingReason = !k.bucket ? (!hasVol || !hasComp ? 'no metrics' : k.volume < 200 ? 'vol < 200' : null) : null;
 
             if (isEditing) {
               const editableCollections = editVals.editChapter
-                ? collectionObjects.filter(c => colChapterMap[c.name] === editVals.editChapter)
-                : collectionObjects;
+                ? allCollectionsFromData.filter(col => colChapterMap[col] === editVals.editChapter)
+                : allCollectionsFromData;
               return (
                 <div key={k.id} style={{ background: 'rgba(188,100,90,0.06)', border: '1px solid rgba(188,100,90,0.2)', borderRadius: 4, padding: '10px 12px', marginBottom: 2 }}>
                   <div style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: 8 }}>{k.keyword}</div>
@@ -486,7 +512,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
                       <select value={editVals.collection} onChange={e => setEditVals(v => ({ ...v, collection: e.target.value }))}
                         style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }}>
                         <option value="">— Pick collection —</option>
-                        {editableCollections.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                        {editableCollections.map(col => <option key={col} value={col}>{col}</option>)}
                       </select>
                     </div>
                   </div>
@@ -501,9 +527,17 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
             }
 
             return (
-              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 48px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{k.keyword}{k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}</span>
-                <span><BucketBadge bucket={k.bucket} /></span>
+              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '7px 10px', background: isDupe ? 'rgba(100,120,200,0.04)' : 'var(--warm-white)', border: isDupe ? '1px solid rgba(100,120,200,0.15)' : '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
+                  {k.keyword}
+                  {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
+                  {isDupe && <span title={`Also in: ${otherSrcs.join(', ')}`} style={{ fontSize: '0.58rem', fontWeight: 700, marginLeft: 5, padding: '1px 4px', borderRadius: 8, background: 'rgba(100,120,200,0.15)', color: '#2a3a8a', border: '1px solid rgba(100,120,200,0.25)' }}>+{otherSrcs.join(', ')}</span>}
+                </span>
+                <span>
+                  {k.bucket ? <BucketBadge bucket={k.bucket} /> : bucketMissingReason ? (
+                    <span style={{ fontSize: '0.58rem', color: 'var(--charcoal-soft)', opacity: 0.6 }}>{bucketMissingReason}</span>
+                  ) : null}
+                </span>
                 <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
                 <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.competition?.toLocaleString() ?? '—'}</span>
                 <span style={{ fontSize: '0.72rem', color: k.score >= 70 ? '#7a2b2b' : k.score >= 40 ? '#6b4a10' : k.score ? '#2d6b3c' : 'var(--charcoal-soft)' }}>{k.score ?? '—'}</span>
