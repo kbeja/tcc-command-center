@@ -34,10 +34,15 @@ export function useProduct(id) {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    if (!id) return;
-    const { data } = await supabase.from('products').select('*').eq('id', id).single();
-    if (data) setProduct(data);
-    setLoading(false);
+    if (!id) { setLoading(false); return; }
+    try {
+      const { data } = await supabase.from('products').select('*').eq('id', id).single();
+      setProduct(data || null);
+    } catch (err) {
+      console.error('[useProduct] fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { fetch(); }, [fetch]);
@@ -158,9 +163,14 @@ export async function createResearchSession(session, keywords) {
     .single();
   if (error || !s) return { error };
   if (keywords?.length) {
-    await supabase.from('keywords').insert(
+    const { error: kwError } = await supabase.from('keywords').insert(
       keywords.map(k => ({ ...k, research_session_id: s.id, created_at: now, updated_at: now }))
     );
+    if (kwError) {
+      // Roll back the session so we don't leave an orphaned session with no keywords
+      await supabase.from('research_sessions').delete().eq('id', s.id);
+      return { error: kwError };
+    }
   }
   return { data: s };
 }
@@ -237,7 +247,7 @@ export function useCollections() {
 
   useEffect(() => {
     fetch();
-    const sub = supabase.channel(`collections-names-${Math.random()}`)
+    const sub = supabase.channel('tcc-collections-names')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, fetch)
       .subscribe();
     return () => supabase.removeChannel(sub);
@@ -298,8 +308,8 @@ export async function createCollection(name, extra = {}) {
   return { data, error };
 }
 
-export async function deleteCollection(name) {
-  return supabase.from('collections').delete().eq('name', name);
+export async function deleteCollection(id) {
+  return supabase.from('collections').delete().eq('id', id);
 }
 
 // ─── Workshop Items ───────────────────────────────────────────────────────────
@@ -475,7 +485,8 @@ export async function updatePlaybookSection(id, body) {
 
 export async function incrementPlaybookVersion(playbookId) {
   const { data } = await supabase.from('playbooks').select('current_version').eq('id', playbookId).single();
-  const next = (data?.current_version || 1) + 1;
+  if (!data) return { error: new Error(`Playbook ${playbookId} not found`) };
+  const next = data.current_version + 1;
   return supabase.from('playbooks').update({ current_version: next, updated_at: new Date().toISOString() }).eq('id', playbookId);
 }
 
@@ -512,27 +523,44 @@ export async function createPendingUpdate(fields) {
 }
 
 export async function approvePendingUpdate(update, newBody) {
-  const { data: section } = await supabase
-    .from('playbook_sections')
-    .select('id, body, version, playbook_id')
-    .eq('section_key', update.section_key)
-    .eq('playbook_id', update.playbook_id)
-    .single();
+  // pending_updates stores playbook_slug, not playbook_id — resolve it first
+  let resolvedPlaybookId = null;
+  if (update.playbook_slug) {
+    const { data: pb } = await supabase
+      .from('playbooks')
+      .select('id')
+      .eq('slug', update.playbook_slug)
+      .single();
+    if (!pb) {
+      console.error('[approvePendingUpdate] playbook not found for slug:', update.playbook_slug);
+      return { error: new Error(`Playbook "${update.playbook_slug}" not found`) };
+    }
+    resolvedPlaybookId = pb.id;
+  }
 
-  if (section) {
-    await supabase.from('playbook_history').insert([{
-      playbook_section_id: section.id,
-      body: section.body,
-      version: section.version,
-      changed_by: 'user',
-      changed_at: new Date().toISOString(),
-    }]);
-    await supabase.from('playbook_sections').update({
-      body: newBody || update.text,
-      version: (section.version || 1) + 1,
-      updated_at: new Date().toISOString(),
-    }).eq('id', section.id);
-    await incrementPlaybookVersion(update.playbook_id || section.playbook_id);
+  if (resolvedPlaybookId && update.section_key) {
+    const { data: section } = await supabase
+      .from('playbook_sections')
+      .select('id, body, version, playbook_id')
+      .eq('section_key', update.section_key)
+      .eq('playbook_id', resolvedPlaybookId)
+      .single();
+
+    if (section) {
+      await supabase.from('playbook_history').insert([{
+        playbook_section_id: section.id,
+        body: section.body,
+        version: section.version,
+        changed_by: 'user',
+        changed_at: new Date().toISOString(),
+      }]);
+      await supabase.from('playbook_sections').update({
+        body: newBody || update.text,
+        version: (section.version || 1) + 1,
+        updated_at: new Date().toISOString(),
+      }).eq('id', section.id);
+      await incrementPlaybookVersion(resolvedPlaybookId);
+    }
   }
 
   return supabase.from('pending_updates').update({
@@ -595,7 +623,7 @@ export async function runCodexMigrationIfNeeded() {
   const { data: decisions } = await supabase.from('workshop_items')
     .select('*')
     .eq('type', 'decision')
-    .is('archived_at', null);
+    .eq('status', 'pending');
 
   if (decisions?.length) {
     const mapped = decisions.map(d => ({
