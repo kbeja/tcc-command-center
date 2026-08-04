@@ -7,7 +7,12 @@ exports.handler = async (event) => {
 
   const { videoId } = event.queryStringParameters || {};
   if (!videoId) {
-    return { statusCode: 400, body: 'Missing videoId parameter' };
+    return { statusCode: 400, body: JSON.stringify({ error: 'Missing videoId parameter' }) };
+  }
+
+  // YouTube video IDs are always exactly 11 chars: letters, digits, - and _
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid videoId format' }) };
   }
 
   try {
