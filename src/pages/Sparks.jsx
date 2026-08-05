@@ -165,6 +165,11 @@ export default function Sparks() {
       {hot.length > 0 && (
         <div style={{ marginBottom: 28 }}>
           <div className="section-label">Hot Sparks</div>
+          {hot.filter(s => !s.collection_tag).length > 0 && (
+            <div style={{ fontSize: '0.75rem', background: 'rgba(232,168,124,0.12)', border: '1px solid rgba(232,168,124,0.35)', borderRadius: 4, padding: '8px 12px', marginBottom: 10, color: '#7a4a1e' }}>
+              ⚑ {hot.filter(s => !s.collection_tag).length} hot spark{hot.filter(s => !s.collection_tag).length !== 1 ? 's have' : ' has'} no collection — tap the badge on the card to assign one so they appear in research and listing workflows.
+            </div>
+          )}
           {hot.map(s => <SparkCard key={s.id} spark={s} onAction={refetch} />)}
         </div>
       )}

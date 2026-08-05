@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions } from '../lib/hooks';
+import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals } from '../lib/hooks';
 
 const EVAL_FIELDS = [
   { key: 'evaluation_market_evidence',         label: 'Market evidence' },
@@ -29,6 +29,7 @@ export default function CollectionDetail() {
   const { sparks } = useSparks();
   const { products } = useProducts();
   const { sessions } = useResearchSessions(name);
+  const { signals } = useTrendSignals();
 
   const collection = collections.find(c => c.name === name);
 
@@ -304,6 +305,33 @@ export default function CollectionDetail() {
           <hr className="rule" />
         </>
       )}
+
+      {/* ── Trend Signals ── */}
+      {(() => {
+        const collSignals = signals.filter(s => s.collection === name || s.parent_niche === name);
+        if (!collSignals.length) return null;
+        return (
+          <>
+            <div style={{ marginBottom: 24 }}>
+              <div className="section-label" style={{ marginBottom: 10 }}>Trend Signals ({collSignals.length})</div>
+              {collSignals.map(s => {
+                const statusColors = { pursue: { bg: 'rgba(124,175,138,0.15)', color: '#2d6b3c' }, watch: { bg: 'rgba(107,130,168,0.12)', color: '#2d4270' }, timing: { bg: 'rgba(232,168,124,0.15)', color: '#7a4a1e' }, saturated: { bg: 'rgba(201,123,123,0.15)', color: '#7a2b2b' } };
+                const sc = statusColors[s.status] || statusColors.watch;
+                return (
+                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.82rem' }}>
+                    <span>{s.name}</span>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.color }}>{s.status}</span>
+                  </div>
+                );
+              })}
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => navigate('/trends')}>
+                View all signals →
+              </button>
+            </div>
+            <hr className="rule" />
+          </>
+        );
+      })()}
 
       {/* ── Notes ── */}
       <div style={{ marginBottom: 24 }}>
