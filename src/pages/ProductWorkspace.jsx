@@ -11,7 +11,7 @@ import ResearchSessionForm from '../components/ResearchSessionForm';
 
 // ─── Stage Tracker (2-col grid, no overflow) ─────────────────────────────────
 
-function StageTracker({ currentStage, onStageSelect, saved }) {
+function StageTracker({ currentStage, onStageSelect, saved, stageUpdatedAt }) {
   const currentIdx = STAGE_ORDER[currentStage] ?? 0;
 
   return (
@@ -48,7 +48,17 @@ function StageTracker({ currentStage, onStageSelect, saved }) {
               }}>
                 {stage}
               </span>
-              {active && <span style={{ marginLeft: 'auto', fontSize: '0.6rem', color: 'var(--dusty-rose)', fontWeight: 500 }}>current</span>}
+              {active && (
+                <span style={{ marginLeft: 'auto', fontSize: '0.6rem', color: 'var(--dusty-rose)', fontWeight: 500 }}>
+                  current
+                  {stageUpdatedAt && (() => {
+                    const days = Math.floor((Date.now() - new Date(stageUpdatedAt).getTime()) / 86400000);
+                    if (days === 0) return null;
+                    const color = days > 30 ? 'var(--alert)' : days > 14 ? '#E8A87C' : 'var(--charcoal-soft)';
+                    return <span style={{ color, marginLeft: 4 }}>· {days}d</span>;
+                  })()}
+                </span>
+              )}
             </button>
           );
         })}
@@ -110,6 +120,7 @@ function LiveStats({ product, onSave }) {
   async function handleSave() {
     await onSave({
       went_live_at: wentLive || null,
+      stats_updated_at: new Date().toISOString(),
       mo_sales: parseInt(moSales) || 0,
       mo_revenue: parseFloat(moRevenue) || 0,
       total_sales: parseInt(totalSales) || 0,
@@ -196,9 +207,32 @@ function LiveStats({ product, onSave }) {
         <StatInput label="ROAS" value={adRoas} onChange={setAdRoas} type="text" />
       </div>
 
+      {/* Profit & ROAS summary */}
+      {product.printify_cost && moSales > 0 && moRevenue > 0 && (() => {
+        const netProfit = parseFloat(moRevenue) - product.printify_cost * parseInt(moSales) - parseFloat(adSpend || 0);
+        const roas = adSpend > 0 ? parseFloat(adRevenue || 0) / parseFloat(adSpend) : null;
+        const margin = parseFloat(moRevenue) > 0 ? (netProfit / parseFloat(moRevenue) * 100).toFixed(0) : null;
+        const roasColor = roas === null ? 'var(--charcoal-soft)' : roas >= 3 ? '#2d6b3c' : roas >= 2 ? '#E8A87C' : 'var(--alert)';
+        return (
+          <div style={{ display: 'flex', gap: 16, padding: '10px 14px', background: netProfit > 0 ? 'rgba(124,175,138,0.1)' : 'rgba(201,123,123,0.1)', borderRadius: 4, marginBottom: 12, fontSize: '0.78rem' }}>
+            <span>Net profit: <strong style={{ color: netProfit > 0 ? '#2d6b3c' : 'var(--alert)' }}>${netProfit.toFixed(2)}</strong></span>
+            {margin && <span>Margin: <strong>{margin}%</strong></span>}
+            {roas !== null && <span>ROAS: <strong style={{ color: roasColor }}>{roas.toFixed(1)}×</strong></span>}
+          </div>
+        );
+      })()}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={handleSave}>Save Stats</button>
         {saved && <span className="inline-confirm">✓ Saved</span>}
+        {product.stats_updated_at && !saved && (
+          <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
+            {(() => {
+              const days = Math.floor((Date.now() - new Date(product.stats_updated_at).getTime()) / 86400000);
+              return days === 0 ? 'Updated today' : `Updated ${days}d ago${days > 7 ? ' ⚑' : ''}`;
+            })()}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -387,11 +421,33 @@ ${product.notes || 'None.'}
     setTimeout(() => setCopied(null), 2000);
   }
 
+  const colKnowledge = collectionKnowledge[product.collection] || {};
+  const hasStyleGuide = !!(product.niche && nicheStyleGuides[(product.niche||'').toLowerCase()]) || !!(collectionObj?.style_guide);
+  const hasEmotionalTrigger = !!product.emotional_trigger;
+  const b1Keywords = sessions.flatMap(s => (s.keywords || []).filter(k => k.tag_type === 'use')).length;
+  const validationCount = Object.values(validationNotes || {}).filter(v => v && v.trim()).length;
+
+  const healthChecks = [
+    { label: 'Style guide', ok: hasStyleGuide },
+    { label: 'Emotional trigger', ok: hasEmotionalTrigger },
+    { label: `B1 keywords (${b1Keywords})`, ok: b1Keywords >= 3 },
+    { label: `Validation (${validationCount}/4)`, ok: validationCount >= 3 },
+  ];
+
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('claude')}>📋 Copy Context for Claude</button>
-      <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('chatgpt')}>📋 Copy Context for ChatGPT</button>
-      {copied && <span className="inline-confirm">Copied to clipboard ✓</span>}
+    <div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        {healthChecks.map(h => (
+          <span key={h.label} style={{ fontSize: '0.68rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: h.ok ? 'rgba(124,175,138,0.15)' : 'rgba(201,123,123,0.15)', color: h.ok ? '#2d6b3c' : '#7a2b2b' }}>
+            {h.ok ? '✓' : '⚑'} {h.label}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('claude')}>📋 Copy Context for Claude</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('chatgpt')}>📋 Copy Context for ChatGPT</button>
+        {copied && <span className="inline-confirm">Copied to clipboard ✓</span>}
+      </div>
     </div>
   );
 }
@@ -728,6 +784,15 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
           <div className="eyebrow" style={{ marginBottom: 8 }}>Gap Analysis — {latestAudit.date}</div>
           {gaps.length > 0 ? (
             <div style={{ marginBottom: 10 }}>
+              {gaps[0] && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(232,168,124,0.12)', border: '1px solid rgba(232,168,124,0.35)', borderRadius: 4, marginBottom: 8 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7a4a1e' }}>Top opportunity:</span>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{gaps[0].keyword}</span>
+                  {gaps[0].volume && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>vol {gaps[0].volume.toLocaleString()}</span>}
+                  {gaps[0].competition && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>· comp {gaps[0].competition.toLocaleString()}</span>}
+                  <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 'auto' }}>Add to title/tags →</span>
+                </div>
+              )}
               <div style={{ fontSize: '0.7rem', color: 'var(--alert)', fontWeight: 500, marginBottom: 6 }}>
                 ⚠ {gaps.length} keyword{gaps.length !== 1 ? 's' : ''} not in your title or tags:
               </div>
@@ -869,7 +934,7 @@ export default function ProductWorkspace() {
       {/* ── Stage Tracker ── */}
       <div style={{ marginBottom: 24 }}>
         <div className="section-label" style={{ marginBottom: 10 }}>Stage</div>
-        <StageTracker currentStage={product.stage} onStageSelect={handleStageUpdate} saved={stageSaved} />
+        <StageTracker currentStage={product.stage} onStageSelect={handleStageUpdate} saved={stageSaved} stageUpdatedAt={product.stage_updated_at} />
       </div>
 
       <hr className="rule" />
@@ -950,6 +1015,19 @@ export default function ProductWorkspace() {
               onBlur={() => handleFieldBlur('printify_cost', printifyCost !== '' ? parseFloat(printifyCost) : null)}
               placeholder="e.g. 12.50"
             />
+            {printifyCost && (() => {
+              const cost = parseFloat(printifyCost);
+              if (!cost) return null;
+              const suggestPrice = (cost / 0.62).toFixed(2); // ~38% margin after Etsy fees
+              const etsyFees = p => (p * 0.065 + 0.20 + p * 0.03).toFixed(2);
+              const netAt = p => (p - cost - parseFloat(etsyFees(p))).toFixed(2);
+              const price = parseFloat(suggestPrice);
+              return (
+                <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4, lineHeight: 1.6 }}>
+                  Suggested list price: <strong>${suggestPrice}</strong> · net ${netAt(price)} after Etsy fees (${etsyFees(price)})
+                </div>
+              );
+            })()}
           </div>
           <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
             <label className="form-label">

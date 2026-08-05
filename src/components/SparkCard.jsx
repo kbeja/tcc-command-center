@@ -106,11 +106,23 @@ export default function SparkCard({ spark, onAction }) {
         <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 6 }}>
           {spark.content}
         </div>
-        {spark.temperature === 'hot' && (
-          <div style={{ fontSize: '0.72rem', color: 'var(--dusty-rose)', fontWeight: 500, marginBottom: 4 }}>
-            🔥 Hot{spark.hot_reason ? ` — ${spark.hot_reason}` : ''}
-          </div>
-        )}
+        {spark.temperature === 'hot' && (() => {
+          const days = Math.floor((Date.now() - new Date(spark.created_at).getTime()) / 86400000);
+          const isStale = days > 21;
+          return (
+            <div style={{ fontSize: '0.72rem', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ color: isStale ? '#7a4a1e' : 'var(--dusty-rose)', fontWeight: 500 }}>
+                🔥 Hot{spark.hot_reason ? ` — ${spark.hot_reason}` : ''}
+              </span>
+              <span style={{ color: 'var(--charcoal-soft)' }}>· {days}d ago</span>
+              {isStale && (
+                <span style={{ fontSize: '0.65rem', padding: '1px 7px', borderRadius: 20, background: 'rgba(232,168,124,0.2)', color: '#7a4a1e' }}>
+                  Still relevant?
+                </span>
+              )}
+            </div>
+          );
+        })()}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
             {new Date(spark.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

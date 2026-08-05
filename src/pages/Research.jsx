@@ -274,6 +274,13 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
   const [saving, setSaving]           = useState(false);
   const [rebucketing, setRebucketing] = useState(false);
   const [rebucketResult, setRebucketResult] = useState(null);
+  const [sortCol, setSortCol] = useState('');
+  const [sortDir, setSortDir] = useState('desc');
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSortCol(col); setSortDir('desc'); }
+  }
 
   const colChapterMap = {};
   for (const c of collectionObjects) {
@@ -378,6 +385,15 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
     setRebucketing(false);
   }
 
+  const sorted = sortCol ? [...filtered].sort((a, b) => {
+    let av, bv;
+    if (sortCol === 'vol')   { av = a.volume ?? -1;      bv = b.volume ?? -1; }
+    if (sortCol === 'comp')  { av = a.competition ?? -1;  bv = b.competition ?? -1; }
+    if (sortCol === 'kd')    { av = a.score ?? -1;         bv = b.score ?? -1; }
+    if (sortCol === 'bucket'){ av = a.bucket ?? 0;         bv = b.bucket ?? 0; }
+    return sortDir === 'desc' ? bv - av : av - bv;
+  }) : filtered;
+
   const totalFiltered = filtered.length;
 
   return (
@@ -435,10 +451,16 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Header */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 80px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
-            <span>Keyword</span><span>Bucket</span><span>Vol</span><span>Comp</span><span>KD</span><span>Collection</span><span>Source</span><span></span>
+            <span>Keyword</span>
+            {[['bucket','Bucket'],['vol','Vol'],['comp','Comp'],['kd','KD']].map(([col, lbl]) => (
+              <span key={col} onClick={() => toggleSort(col)} style={{ cursor: 'pointer', userSelect: 'none', color: sortCol === col ? 'var(--dusty-rose)' : undefined }}>
+                {lbl}{sortCol === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+              </span>
+            ))}
+            <span>Collection</span><span>Source</span><span></span>
           </div>
 
-          {filtered.map(k => {
+          {sorted.map(k => {
             const col = k.research_sessions?.collection || '—';
             const src = k.research_sessions?.source || '—';
             const isEditing = editId === k.id;
@@ -520,7 +542,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
                 </span>
                 <span>
                   {k.bucket ? <BucketBadge bucket={k.bucket} /> : bucketMissingReason ? (
-                    <span style={{ fontSize: '0.58rem', color: 'var(--charcoal-soft)', opacity: 0.6 }}>{bucketMissingReason}</span>
+                    <span
+                      style={{ fontSize: '0.58rem', color: 'var(--charcoal-soft)', opacity: 0.6, cursor: 'help' }}
+                      title={bucketMissingReason === 'vol < 200' ? 'Volume under 200 — too low-traffic to classify into a meaningful bucket. Enter a higher-volume alternative or keep as context.' : 'Enter volume and competition to auto-assign a bucket.'}
+                    >{bucketMissingReason}</span>
                   ) : null}
                 </span>
                 <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>

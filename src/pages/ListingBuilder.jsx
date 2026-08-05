@@ -941,6 +941,17 @@ export default function ListingBuilder() {
   const [saveStage, setSaveStage]   = useState('Live');
   const [saving, setSaving]         = useState(false);
   const [savedProductId, setSavedProductId] = useState(null);
+  const [saveEditsState, setSaveEditsState] = useState('idle');
+
+  async function handleSaveEdits() {
+    setSaveEditsState('saving');
+    await updateProduct(productId, {
+      live_title: editTitle || null,
+      live_tags: editTags.filter(Boolean).join(', ') || null,
+    });
+    setSaveEditsState('saved');
+    setTimeout(() => setSaveEditsState('idle'), 2000);
+  }
 
   async function handleSaveProduct() {
     if (!form.productName.trim() || !form.collection) return;
@@ -1295,6 +1306,20 @@ export default function ListingBuilder() {
               researchFlags={output?.research_flags || []}
               onApply={(title, tags) => { setEditTitle(title); setEditTags(tags); }}
             />
+          )}
+
+          {/* Save edits back to product — linked mode only */}
+          {productId && (editTitle || editTags.length > 0) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleSaveEdits}
+                disabled={saveEditsState === 'saving'}
+              >
+                {saveEditsState === 'saving' ? 'Saving…' : saveEditsState === 'saved' ? '✓ Saved' : 'Save edits to product →'}
+              </button>
+              <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>Writes title + tags to live listing record</span>
+            </div>
           )}
 
           {/* Save as new product — standalone only */}

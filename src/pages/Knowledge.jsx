@@ -513,8 +513,16 @@ const BLANK_FORM = {
   timeline_days: 14, reference_url: '',
 };
 
+const EXP_STATUS_TABS = [
+  { key: 'running',     label: 'Running' },
+  { key: 'proven',      label: 'Proven' },
+  { key: 'inconclusive',label: 'Inconclusive' },
+  { key: 'disproven',   label: 'Disproven' },
+];
+
 function ExperimentsTab() {
-  const { experiments, loading, refetch } = useExperiments('running');
+  const [expStatus, setExpStatus] = useState('running');
+  const { experiments, loading, refetch } = useExperiments(expStatus);
   const { playbooks } = usePlaybooks();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ ...BLANK_FORM });
@@ -585,6 +593,22 @@ function ExperimentsTab() {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 14, borderBottom: '1px solid rgba(43,41,38,0.1)', paddingBottom: 2 }}>
+        {EXP_STATUS_TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setExpStatus(t.key)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: '0.75rem', padding: '4px 10px',
+              fontWeight: expStatus === t.key ? 600 : 400,
+              color: expStatus === t.key ? 'var(--charcoal)' : 'var(--charcoal-soft)',
+              borderBottom: expStatus === t.key ? '2px solid var(--dusty-rose)' : '2px solid transparent',
+              marginBottom: -3,
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
       {!adding ? (
         <button className="btn btn-ghost btn-sm" onClick={() => setAdding(true)} style={{ marginBottom: 16 }}>
           + New Experiment
@@ -663,7 +687,7 @@ function ExperimentsTab() {
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
       {!loading && experiments.length === 0 && (
-        <div className="empty-state"><p>No running experiments.</p></div>
+        <div className="empty-state"><p>No {expStatus} experiments.</p></div>
       )}
 
       {experiments.map(exp => {

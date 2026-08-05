@@ -28,9 +28,9 @@ function pct(n) {
 
 function listingStatus(p) {
   if ((p.mo_sales || 0) > 0) return { label: '✓', title: 'Has sales' };
-  if ((p.ad_spend || 0) > 0) return { label: '⚑ Ads', title: 'Ad campaign active' };
-  if ((p.views || 0) === 0 && (p.mo_sales || 0) === 0) return { label: 'SEO', title: '0 views — discoverability problem' };
-  return { label: 'Review', title: '0 sales — worth investigating' };
+  if ((p.views || 0) === 0) return { label: '0 views', title: '0 views — discoverability problem, check SEO and tags' };
+  if ((p.ad_spend || 0) > 0) return { label: '⚑ Ads', title: 'Ad spend active but no sales this month' };
+  return { label: 'Review', title: 'Has views but 0 sales — check price, photos, or copy' };
 }
 
 function ClusterCard({ cluster, creating, onCreate }) {

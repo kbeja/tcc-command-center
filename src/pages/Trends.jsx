@@ -11,11 +11,11 @@ const STATUSES = [
 ];
 
 const SCORE_DIALS = [
-  { key: 'listing_count',       label: 'Listing count trajectory' },
-  { key: 'bestseller_density',  label: 'Bestseller density' },
-  { key: 'google_trends',       label: 'Google Trends slope' },
-  { key: 'demand_floor',        label: 'Demand floor (Everbee)' },
-  { key: 'cultural_timing',     label: 'Cultural timing' },
+  { key: 'listing_count',       label: 'Listing count trajectory', rubric: '0=declining · 1-2=flat · 3=+10% MoM · 4=+25% MoM · 5=explosive growth' },
+  { key: 'bestseller_density',  label: 'Bestseller density',       rubric: '0=none · 1=1-2 BSellers · 2=3-5 · 3=6-10 · 4=11-20 · 5=20+' },
+  { key: 'google_trends',       label: 'Google Trends slope',      rubric: '0=declining · 1=flat · 2=slight uptick · 3=rising · 4=steep climb · 5=breakout' },
+  { key: 'demand_floor',        label: 'Demand floor (Everbee)',   rubric: '0=<100 est. sales · 1=100-500 · 2=500-1k · 3=1k-3k · 4=3k-10k · 5=10k+' },
+  { key: 'cultural_timing',     label: 'Cultural timing',          rubric: '0=past peak · 1=unclear · 2=ambient · 3=growing buzz · 4=seasonal fit · 5=perfect timing' },
 ];
 
 function statusStyle(s) {
@@ -39,6 +39,7 @@ function ScoreDials({ breakdown, onChange, editable }) {
               value={breakdown?.[d.key] ?? ''}
               onChange={e => onChange({ ...breakdown, [d.key]: parseInt(e.target.value) || 0 })}
               style={{ width: 48, fontSize: '0.8rem', textAlign: 'center' }}
+              title={d.rubric}
             />
           ) : (
             <span style={{ fontSize: '0.8rem', fontWeight: 500, width: 24, textAlign: 'center' }}>
@@ -46,6 +47,7 @@ function ScoreDials({ breakdown, onChange, editable }) {
             </span>
           )}
           <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>/5</span>
+          <span title={d.rubric} style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', cursor: 'help', userSelect: 'none' }}>?</span>
         </div>
       ))}
     </div>
@@ -58,6 +60,7 @@ function SignalCard({ signal, products, collections, onAction }) {
   const [form, setForm] = useState({ ...signal });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pursueToast, setPursueToast] = useState(false);
   const { chapters } = useChapters();
 
   const st = statusStyle(signal.status);
@@ -77,6 +80,7 @@ function SignalCard({ signal, products, collections, onAction }) {
       score_breakdown: form.score_breakdown,
       evidence: form.evidence,
       notes: form.notes,
+      competitor_snapshot: form.competitor_snapshot || null,
       revisit_date: form.revisit_date || null,
       last_updated: new Date().toISOString().split('T')[0],
       updated_at: new Date().toISOString(),
@@ -125,6 +129,7 @@ function SignalCard({ signal, products, collections, onAction }) {
           />
           <textarea value={form.evidence || ''} onChange={e => setForm(f => ({ ...f, evidence: e.target.value }))} placeholder="Evidence notes…" rows={3} style={{ fontSize: '0.8rem' }} />
           <textarea value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes…" rows={2} style={{ fontSize: '0.8rem' }} />
+          <textarea value={form.competitor_snapshot || ''} onChange={e => setForm(f => ({ ...f, competitor_snapshot: e.target.value }))} placeholder="Competitor snapshot — top sellers, price ranges, avg reviews…" rows={3} style={{ fontSize: '0.8rem' }} />
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label" style={{ fontSize: '0.72rem' }}>Revisit date</label>
             <input type="date" value={form.revisit_date || ''} onChange={e => setForm(f => ({ ...f, revisit_date: e.target.value }))} />
@@ -158,9 +163,15 @@ function SignalCard({ signal, products, collections, onAction }) {
                 {signal.collection}
               </span>
             )}
-            {signal.revisit_date && (
-              <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>revisit {signal.revisit_date}</span>
-            )}
+            {signal.revisit_date && (() => {
+              const today = new Date().toISOString().split('T')[0];
+              const overdue = signal.revisit_date < today;
+              return (
+                <span style={{ fontSize: '0.65rem', color: overdue ? 'var(--alert)' : 'var(--charcoal-soft)', fontWeight: overdue ? 600 : 400 }}>
+                  {overdue ? `⚑ Revisit overdue (${signal.revisit_date})` : `revisit ${signal.revisit_date}`}
+                </span>
+              );
+            })()}
           </div>
         </div>
         <button onClick={() => setExpanded(!expanded)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', flexShrink: 0, marginLeft: 8 }}>
@@ -191,6 +202,12 @@ function SignalCard({ signal, products, collections, onAction }) {
               <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', lineHeight: 1.5 }}>{signal.notes}</div>
             </div>
           )}
+          {signal.competitor_snapshot && (
+            <div style={{ marginBottom: 12 }}>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Competitor Snapshot</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{signal.competitor_snapshot}</div>
+            </div>
+          )}
           {signal.first_spotted && (
             <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
               First spotted: {signal.first_spotted} · Last updated: {signal.last_updated || '—'}
@@ -206,6 +223,11 @@ function SignalCard({ signal, products, collections, onAction }) {
           <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
         </span>
       ) : (
+        {pursueToast && (
+          <div style={{ fontSize: '0.75rem', color: '#2d6b3c', background: 'rgba(124,175,138,0.15)', border: '1px solid rgba(124,175,138,0.4)', borderRadius: 4, padding: '6px 12px', marginTop: 8 }}>
+            ✓ Pursuing — hot sparks created for <strong>{signal.collection || 'collection'}</strong>. Check Idea Vault.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
           {signal.status !== 'pursue' && (
             <button
@@ -216,7 +238,8 @@ function SignalCard({ signal, products, collections, onAction }) {
                 await supabase.from('trend_signals').update({ status: 'pursue', last_updated: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() }).eq('id', signal.id);
                 if (signal.collection) await autoHotSparksForSignal(signal.collection);
                 setSaving(false);
-                onAction?.();
+                setPursueToast(true);
+                setTimeout(() => { setPursueToast(false); onAction?.(); }, 2500);
               }}
               disabled={saving}
             >
@@ -235,7 +258,7 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
   const { chapters } = useChapters();
   const [form, setForm] = useState({
     name: '', collection: '', parent_niche: '', status: 'watch',
-    score_breakdown: {}, evidence: '', notes: '', revisit_date: '',
+    score_breakdown: {}, evidence: '', notes: '', competitor_snapshot: '', revisit_date: '',
     first_spotted: new Date().toISOString().split('T')[0],
   });
   const [saving, setSaving] = useState(false);
@@ -286,6 +309,7 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
         />
         <textarea value={form.evidence} onChange={e => setForm(f => ({ ...f, evidence: e.target.value }))} placeholder="Evidence — bullet points, sources, data…" rows={3} style={{ fontSize: '0.8rem' }} />
         <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes…" rows={2} style={{ fontSize: '0.8rem' }} />
+        <textarea value={form.competitor_snapshot || ''} onChange={e => setForm(f => ({ ...f, competitor_snapshot: e.target.value }))} placeholder="Competitor snapshot — top sellers, price ranges, avg reviews…" rows={3} style={{ fontSize: '0.8rem' }} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label" style={{ fontSize: '0.72rem' }}>First spotted</label>
@@ -317,6 +341,41 @@ export default function Trends() {
   const [nicheFilter, setNicheFilter] = useState('');
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [importPreview, setImportPreview] = useState([]);
+  const [importDone, setImportDone] = useState('');
+
+  function parseImport(text) {
+    return text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 2)
+      .map(line => {
+        const parts = line.split(/[|,\t]/).map(p => p.trim());
+        const name = parts[0];
+        const rawStatus = (parts[1] || '').toLowerCase();
+        const status = ['pursue','watch','timing','saturated','discarded'].find(s => rawStatus.includes(s)) || 'watch';
+        const notes = parts.slice(2).join(' · ') || '';
+        return { name, status, notes };
+      })
+      .filter(s => s.name);
+  }
+
+  async function applyImport() {
+    if (!importPreview.length) return;
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
+    await supabase.from('trend_signals').insert(
+      importPreview.map(s => ({
+        name: s.name, status: s.status, notes: s.notes,
+        score: 0, score_breakdown: {},
+        first_spotted: today, last_updated: today,
+        created_at: now, updated_at: now,
+      }))
+    );
+    setImportDone(`Imported ${importPreview.length} signal${importPreview.length !== 1 ? 's' : ''}`);
+    setImportPreview([]);
+    setImportText('');
+    setTimeout(() => { setImportDone(''); refetch(); }, 2000);
+  }
 
   const filtered = signals.filter(s =>
     (!statusFilter || s.status === statusFilter) &&
@@ -410,18 +469,38 @@ export default function Trends() {
         {showImport && (
           <div>
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 10, lineHeight: 1.6 }}>
-              Paste your Cowork trend radar output below. Signal updates will be shown for approval before applying.
+              One signal per line. Optional: separate name, status, and notes with <code>|</code> or <code>,</code>.<br/>
+              Example: <code>Retro camping mugs | watch | growing seller count</code>
             </div>
             <textarea
               value={importText}
-              onChange={e => setImportText(e.target.value)}
-              placeholder="Paste Cowork trend radar output here…"
+              onChange={e => { setImportText(e.target.value); setImportPreview([]); }}
+              placeholder="Paste signal names here, one per line…"
               rows={8}
               style={{ marginBottom: 10, fontSize: '0.78rem' }}
             />
-            <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
-              Cowork import parsing coming in a future update. Add signals manually above for now.
-            </div>
+            {importDone ? (
+              <span className="inline-confirm">{importDone} ✓</span>
+            ) : importPreview.length > 0 ? (
+              <div>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>Preview ({importPreview.length} signals)</div>
+                {importPreview.map((s, i) => (
+                  <div key={i} style={{ fontSize: '0.75rem', display: 'flex', gap: 8, marginBottom: 4, alignItems: 'center' }}>
+                    <span style={{ flex: 1 }}>{s.name}</span>
+                    <span style={{ fontSize: '0.65rem', padding: '1px 7px', borderRadius: 20, background: 'rgba(43,41,38,0.08)', color: 'var(--charcoal-soft)' }}>{s.status}</span>
+                    {s.notes && <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>{s.notes}</span>}
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button className="btn btn-primary btn-sm" onClick={applyImport}>Import {importPreview.length} signals →</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setImportPreview([])}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button className="btn btn-ghost btn-sm" onClick={() => setImportPreview(parseImport(importText))} disabled={!importText.trim()}>
+                Preview →
+              </button>
+            )}
           </div>
         )}
       </div>
