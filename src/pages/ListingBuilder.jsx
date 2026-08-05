@@ -1406,9 +1406,17 @@ export default function ListingBuilder() {
               />
             </div>
           ))}
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 8 }}>
             <CopyButton text={Object.entries(DESC_META).map(([k, m]) => `${m.label.toUpperCase()}\n${editDesc[k] || ''}`).join('\n\n')} />
             <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginLeft: 8 }}>Copy all sections</span>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <CopyButton text={[
+              `TITLE\n${editTitle}`,
+              `TAGS\n${editTags.filter(Boolean).join(', ')}`,
+              ...Object.entries(DESC_META).map(([k, m]) => `${m.label.toUpperCase()}\n${editDesc[k] || ''}`),
+            ].join('\n\n')} />
+            <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginLeft: 8 }}>Copy full listing</span>
           </div>
 
           {/* Image Prompts */}

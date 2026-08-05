@@ -489,10 +489,12 @@ export default function Analytics() {
 
   // Listing table
   const tableListings = useMemo(() => {
+    const calcProfit = p => (p.printify_cost && p.mo_sales) ? (p.mo_revenue || 0) - p.printify_cost * p.mo_sales : 0;
     let list = [...live];
     if (collectionFilter) list = list.filter(p => p.collection === collectionFilter);
     list.sort((a, b) => {
-      const av = a[sortCol] || 0, bv = b[sortCol] || 0;
+      const av = sortCol === 'profit' ? calcProfit(a) : (a[sortCol] || 0);
+      const bv = sortCol === 'profit' ? calcProfit(b) : (b[sortCol] || 0);
       return sortDir === 'desc' ? bv - av : av - bv;
     });
     return list;
@@ -575,19 +577,21 @@ export default function Analytics() {
                 </div>
               </div>
               <div>
-                <div className="eyebrow" style={{ marginBottom: 8 }}>All time</div>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>This month</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--charcoal-soft)' }}>Orders</span>
-                    <span style={{ fontWeight: 500 }}>{fmtN(totalOrders)}</span>
+                    <span style={{ fontWeight: 500 }}>{fmtN(totalMoSales)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--charcoal-soft)' }}>Revenue</span>
-                    <span style={{ fontWeight: 500 }}>{fmt$(live.reduce((s, p) => s + (p.mo_revenue || 0), 0))}</span>
+                    <span style={{ fontWeight: 500 }}>{fmt$(totalMoRevenue)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--charcoal-soft)' }}>Est. profit</span>
-                    <span style={{ fontWeight: 500 }}>—</span>
+                    <span style={{ fontWeight: 500, color: hasCostData ? (totalMoProfit > 0 ? 'var(--success)' : 'var(--alert)') : undefined }}>
+                      {hasCostData ? fmt$(totalMoProfit) : '—'}
+                    </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--charcoal-soft)' }}>Avg order</span>
@@ -653,6 +657,7 @@ export default function Analytics() {
                     { key: 'views', label: 'Views' },
                     { key: 'mo_sales', label: 'Orders' },
                     { key: 'mo_revenue', label: 'Revenue' },
+                    { key: 'profit', label: 'Profit' },
                     { key: 'conversion_rate', label: 'Conv%' },
                   ].map(({ key, label }) => (
                     <th
@@ -684,6 +689,9 @@ export default function Analytics() {
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{fmtN(p.views)}</td>
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{fmtN(p.mo_sales)}</td>
                       <td style={{ textAlign: 'right', padding: '8px 8px', fontWeight: (p.mo_revenue || 0) > 0 ? 500 : 400 }}>{fmt$(p.mo_revenue)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: (() => { const profit = p.printify_cost && p.mo_sales ? (p.mo_revenue || 0) - p.printify_cost * p.mo_sales : null; return profit === null ? 'var(--charcoal-soft)' : profit > 0 ? 'var(--success)' : 'var(--alert)'; })() }}>
+                        {p.printify_cost && p.mo_sales ? fmt$((p.mo_revenue || 0) - p.printify_cost * p.mo_sales) : '—'}
+                      </td>
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{pct(p.conversion_rate)}</td>
                       <td style={{ textAlign: 'center', padding: '8px 8px' }}>
                         <span title={status.title} style={{
