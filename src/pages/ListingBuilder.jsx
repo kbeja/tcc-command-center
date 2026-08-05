@@ -819,11 +819,14 @@ export default function ListingBuilder() {
   const b1Keywords = usableForBuckets.filter(k => k.bucket === 1);
   const b2Keywords = usableForBuckets.filter(k => k.bucket === 2);
   const b3Keywords = usableForBuckets.filter(k => k.bucket === 3);
+  // Unbucketed with vol+comp provisionally satisfy coverage gates
+  const provisionalKws = usableForBuckets.filter(k => !k.bucket && k.volume && k.competition);
+  const hasProvisionalCoverage = provisionalKws.length >= 3;
 
   const missingBuckets = [
-    ...(!b1Keywords.length ? ['Bucket 1 (Visibility — high vol, low comp)'] : []),
-    ...(!b2Keywords.length ? ['Bucket 2 (Reach — supporting keywords)'] : []),
-    ...(!b3Keywords.length ? ['Bucket 3 (Bestseller — broad + buyer-intent)'] : []),
+    ...(!b1Keywords.length && !hasProvisionalCoverage ? ['Bucket 1 (Visibility — high vol, low comp)'] : []),
+    ...(!b2Keywords.length && !hasProvisionalCoverage ? ['Bucket 2 (Reach — supporting keywords)'] : []),
+    ...(!b3Keywords.length && !hasProvisionalCoverage ? ['Bucket 3 (Bestseller — broad + buyer-intent)'] : []),
   ];
 
   // Playbooks
@@ -1076,12 +1079,15 @@ export default function ListingBuilder() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {sessions.map(s => {
                 const kwCount = (s.keywords || []).filter(k => !k.tags_only && k.tag_type !== 'discard').length;
-                const b1count = (s.keywords || []).filter(k => k.bucket === 1).length;
+                const b1kws = (s.keywords || []).filter(k => k.bucket === 1);
+                const b1count = b1kws.length;
+                const b1Tooltip = b1kws.length > 0 ? `B1 keywords: ${b1kws.slice(0, 5).map(k => k.keyword).join(', ')}${b1kws.length > 5 ? ` +${b1kws.length - 5} more` : ''}` : '';
                 const isGlobal = GLOBAL_COLLECTIONS.includes(s.collection);
                 const isSelected = selectedSessionIds.has(s.id);
                 return (
                   <div key={s.id}
                     onClick={() => !isGlobal && toggleSession(s.id)}
+                    title={b1Tooltip || undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
                       borderRadius: 4, cursor: isGlobal ? 'default' : 'pointer',

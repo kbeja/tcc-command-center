@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useResearchSessions, useCollections, useCollectionObjects, useChapters, createCollection, deleteCollection, updateKeyword, deleteKeyword } from '../lib/hooks';
+import { useResearchSessions, useCollections, useCollectionObjects, useChapters, useProducts, createCollection, deleteCollection, updateKeyword, deleteKeyword } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
@@ -264,6 +264,13 @@ function SourceCompare() {
 const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
 
 function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '', initialSearch = '' }) {
+  const { products } = useProducts();
+  const liveListingWords = new Set(
+    products.filter(p => p.stage === 'Live' && (p.live_title || p.live_tags)).flatMap(p => {
+      const combined = `${p.live_title || ''} ${p.live_tags || ''}`.toLowerCase();
+      return combined.split(/[\s,]+/).filter(Boolean);
+    })
+  );
   const [keywords, setKeywords]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [filterChapter, setFilterChapter] = useState('');
@@ -567,11 +574,15 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
               );
             }
 
-            return (
-              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center' }}>
+            return (() => {
+              const kwWords = (k.keyword || '').toLowerCase().split(/\s+/);
+              const inLiveListing = kwWords.length > 0 && kwWords.every(w => liveListingWords.has(w));
+              return (
+              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center' }}>
                 <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
                   {k.keyword}
                   {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
+                  {inLiveListing && <span style={{ fontSize: '0.55rem', marginLeft: 5, padding: '1px 5px', borderRadius: 8, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', fontWeight: 600 }}>live</span>}
                 </span>
                 <span>
                   {k.bucket ? <BucketBadge bucket={k.bucket} /> : bucketMissingReason ? (
@@ -595,8 +606,9 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                   <button onClick={() => handleDelete(k.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px', opacity: 0.4 }}>🗑</button>
                 </div>
               </div>
-            );
-          })}
+              );
+            })()}
+
         </div>
       )}
     </div>
