@@ -50,7 +50,7 @@ export default function Home() {
   // Trend signals with no product in pipeline
   const pipelineCollections = new Set(active.map(p => p.collection).filter(Boolean));
   const trendAlerts = signals.filter(s =>
-    s.status === 'pursue' && s.collection && !pipelineCollections.has(s.collection)
+    s.status === 'pursue' && (!s.collection || !pipelineCollections.has(s.collection))
   );
 
   // Priority 1 collections with no products in pipeline

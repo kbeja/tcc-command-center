@@ -311,20 +311,24 @@ function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoi
       }
     }
     const fmt = k => `  ${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`;
-    const sortedUse = [...useMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
+    const allUse = [...useMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
     const sortedWatch = [...watchMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10);
     const sortedTagsOnly = [...tagsOnlyMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
 
+    // Split by explicit bucket field; fall back to positional if no buckets set
+    const hasBuckets = allUse.some(k => k.bucket);
+    const b1 = hasBuckets ? allUse.filter(k => k.bucket === 1) : allUse.slice(0, 5);
+    const b2 = hasBuckets ? allUse.filter(k => k.bucket === 2) : allUse.slice(5, 20);
+    const b3 = hasBuckets ? allUse.filter(k => k.bucket === 3) : [];
+
     const kwFallback = colKnowledge.keywords?.topKeywords?.slice(0, 15) || [];
     let keywordSection;
-    if (sortedUse.length === 0 && kwFallback.length === 0) {
+    if (allUse.length === 0 && kwFallback.length === 0) {
       keywordSection = 'No keywords found — add research sessions to this collection.';
-    } else if (sortedUse.length === 0) {
+    } else if (allUse.length === 0) {
       keywordSection = `B1 — Visibility\n${kwFallback.slice(0, 5).join('\n')}\n\nB2 — Reach\n${kwFallback.slice(5).join('\n')}\n\nB3 — Bestseller\n  ⚠ Not yet mapped — pull from competitor bestseller listings in Trend Radar.`;
     } else {
-      const b1 = sortedUse.slice(0, 5);
-      const b2 = sortedUse.slice(5, 20);
-      keywordSection = `B1 — Visibility (title anchor + first tags)\n${b1.map(fmt).join('\n')}\n\nB2 — Reach (supporting title + description terms)\n${b2.length ? b2.map(fmt).join('\n') : '  (none beyond B1)'}\n\nB3 — Bestseller (exact phrases from top competitor listings)\n  ⚠ Not yet mapped — pull from competitor bestseller research in Trend Radar.\n\nWatch List (monitoring — not yet confirmed)\n${sortedWatch.length ? sortedWatch.map(fmt).join('\n') : '  (none)'}`;
+      keywordSection = `B1 — Visibility (title anchor + first tags)\n${b1.length ? b1.map(fmt).join('\n') : '  ⚠ No B1 keywords assigned — re-bucket in Research'}\n\nB2 — Reach (supporting title + description terms)\n${b2.length ? b2.map(fmt).join('\n') : '  ⚠ No B2 keywords assigned — re-bucket in Research'}\n\nB3 — Bestseller (exact phrases from top competitor listings)\n${b3.length ? b3.map(fmt).join('\n') : '  ⚠ Not yet mapped — pull from competitor bestseller research in Trend Radar.'}\n\nWatch List (monitoring — not yet confirmed)\n${sortedWatch.length ? sortedWatch.map(fmt).join('\n') : '  (none)'}`;
     }
 
     const tagsOnlyBlock = sortedTagsOnly.length
@@ -424,15 +428,22 @@ ${product.notes || 'None.'}
   const colKnowledge = collectionKnowledge[product.collection] || {};
   const hasStyleGuide = !!(product.niche && nicheStyleGuides[(product.niche||'').toLowerCase()]) || !!(collectionObj?.style_guide);
   const hasEmotionalTrigger = !!product.emotional_trigger;
-  const b1Keywords = sessions.flatMap(s => (s.keywords || []).filter(k => k.tag_type === 'use')).length;
+  const allUseKws = sessions.flatMap(s => (s.keywords || []).filter(k => k.tag_type === 'use'));
+  const hasBucketData = allUseKws.some(k => k.bucket);
+  const b1Count = hasBucketData ? allUseKws.filter(k => k.bucket === 1).length : 0;
+  const b2Count = hasBucketData ? allUseKws.filter(k => k.bucket === 2).length : 0;
+  const b3Count = hasBucketData ? allUseKws.filter(k => k.bucket === 3).length : 0;
+  const totalUse = allUseKws.length;
   const validationCount = Object.values(validationNotes || {}).filter(v => v && v.trim()).length;
 
   const healthChecks = [
     { label: 'Style guide', ok: hasStyleGuide },
     { label: 'Emotional trigger', ok: hasEmotionalTrigger },
-    { label: `B1 keywords (${b1Keywords})`, ok: b1Keywords >= 3 },
+    { label: hasBucketData ? `B1 (${b1Count})` : `Keywords (${totalUse})`, ok: hasBucketData ? b1Count >= 1 : totalUse >= 3 },
+    { label: hasBucketData ? `B2 (${b2Count})` : null, ok: b2Count >= 3 },
+    { label: hasBucketData ? `B3 (${b3Count})` : null, ok: b3Count >= 1 },
     { label: `Validation (${validationCount}/4)`, ok: validationCount >= 3 },
-  ];
+  ].filter(h => h.label !== null);
 
   return (
     <div>
@@ -678,7 +689,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
       },
       auditRows.filter(r => r.keyword.trim())
     );
-    await updateProduct(product.id, { last_keyword_audit: today });
+    await updateProduct(product.id, { last_keyword_audit: today() });
     setAuditRows(null);
     setAuditSaving(false);
     onAuditComplete();

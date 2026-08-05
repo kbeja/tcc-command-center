@@ -498,8 +498,8 @@ export default function Analytics() {
     if (collectionFilter) list = list.filter(p => p.collection === collectionFilter);
     const calcRpv = p => p.views > 0 ? (p.mo_revenue || 0) / p.views * 1000 : 0;
     list.sort((a, b) => {
-      const av = sortCol === 'profit' ? calcProfit(a) : sortCol === 'rev_per_view' ? calcRpv(a) : (a[sortCol] || 0);
-      const bv = sortCol === 'profit' ? calcProfit(b) : sortCol === 'rev_per_view' ? calcRpv(b) : (b[sortCol] || 0);
+      const val = (p) => sortCol === 'profit' ? calcProfit(p) : sortCol === 'rev_per_view' ? calcRpv(p) : (p[sortCol] || 0);
+      const av = val(a), bv = val(b);
       return sortDir === 'desc' ? bv - av : av - bv;
     });
     return list;
@@ -698,6 +698,8 @@ export default function Analytics() {
                     { key: 'mo_sales', label: 'Orders' },
                     { key: 'mo_revenue', label: 'Revenue' },
                     { key: 'profit', label: 'Profit' },
+                    { key: 'ad_spend', label: 'Ad $' },
+                    { key: 'ad_roas', label: 'ROAS' },
                     { key: 'rev_per_view', label: '$/1k views' },
                     { key: 'conversion_rate', label: 'Conv%' },
                   ].map(({ key, label }) => (
@@ -732,6 +734,12 @@ export default function Analytics() {
                       <td style={{ textAlign: 'right', padding: '8px 8px', fontWeight: (p.mo_revenue || 0) > 0 ? 500 : 400 }}>{fmt$(p.mo_revenue)}</td>
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: (() => { const profit = p.printify_cost && p.mo_sales ? (p.mo_revenue || 0) - p.printify_cost * p.mo_sales : null; return profit === null ? 'var(--charcoal-soft)' : profit > 0 ? 'var(--success)' : 'var(--alert)'; })() }}>
                         {p.printify_cost && p.mo_sales ? fmt$((p.mo_revenue || 0) - p.printify_cost * p.mo_sales) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: (p.ad_spend || 0) > 0 && (p.mo_sales || 0) === 0 ? 'var(--alert)' : 'var(--charcoal-soft)' }}>
+                        {(p.ad_spend || 0) > 0 ? fmt$(p.ad_spend) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: (() => { const r = p.ad_roas; return !r ? 'var(--charcoal-soft)' : r >= 3 ? 'var(--success)' : r >= 2 ? '#E8A87C' : 'var(--alert)'; })() }}>
+                        {p.ad_roas ? `${Number(p.ad_roas).toFixed(1)}×` : '—'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>
                         {p.views > 0 && p.mo_revenue > 0 ? fmt$(((p.mo_revenue || 0) / p.views) * 1000) : '—'}

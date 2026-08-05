@@ -25,6 +25,13 @@ export default function ProductCard({ product, alert, kwAlert }) {
               <span className="confidence-badge">{product.confidence}</span>
             )}
           </div>
+          {product.stage === 'Live' && (product.mo_revenue > 0 || product.mo_sales > 0) && (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 6, fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+              {product.mo_revenue > 0 && <span style={{ fontWeight: 500, color: 'var(--warm-charcoal)' }}>${Number(product.mo_revenue).toFixed(0)}/mo</span>}
+              {product.mo_sales > 0 && <span>{product.mo_sales} order{product.mo_sales !== 1 ? 's' : ''}</span>}
+              {product.ad_spend > 0 && product.mo_sales === 0 && <span style={{ color: 'var(--alert)' }}>⚑ ads, no sales</span>}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>
               {STAGE_NEXT_ACTIONS[product.stage]}

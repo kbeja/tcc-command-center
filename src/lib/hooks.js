@@ -81,6 +81,7 @@ export function getNeedsAttention(products) {
     if (['Killed', 'Paused'].includes(p.stage)) return false;
     const daysLive = p.went_live_at ? daysBetween(p.went_live_at, today()) : 0;
     if (p.stage === 'Live' && daysLive >= 30 && !p.total_sales) return true;
+    if (p.stage === 'Live' && (p.ad_spend || 0) > 0 && (p.mo_sales || 0) === 0) return true;
     if (p.stage === 'Reviewing' && p.last_reviewed_at && daysBetween(p.last_reviewed_at, today()) > 7) return true;
     const daysInStage = p.stage_updated_at ? daysBetween(p.stage_updated_at, today()) : 0;
     if (!['Live', 'Killed', 'Paused'].includes(p.stage) && daysInStage >= 21) return true;
@@ -89,7 +90,7 @@ export function getNeedsAttention(products) {
 }
 
 // Priority order for Pick Up Where You Left Off
-const PICKUP_PRIORITY = ['SEO Ready', 'Assets Ready', 'Design Phase', 'Validated', 'Research', 'Ready to Publish'];
+const PICKUP_PRIORITY = ['Ready to Publish', 'SEO Ready', 'Assets Ready', 'Design Phase', 'Validated', 'Research'];
 
 export function getPickUpProduct(products) {
   const eligible = products.filter(p =>
