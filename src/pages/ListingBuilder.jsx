@@ -945,10 +945,17 @@ export default function ListingBuilder() {
 
   async function handleSaveEdits() {
     setSaveEditsState('saving');
-    await updateProduct(productId, {
+    const updates = {
       live_title: editTitle || null,
       live_tags: editTags.filter(Boolean).join(', ') || null,
-    });
+    };
+    if (Object.keys(editDesc).length > 0) {
+      updates.generated_description = editDesc;
+    }
+    if (editPrompts.length > 0) {
+      updates.generated_image_prompts = editPrompts;
+    }
+    await updateProduct(productId, updates);
     setSaveEditsState('saved');
     setTimeout(() => setSaveEditsState('idle'), 2000);
   }
@@ -965,6 +972,8 @@ export default function ListingBuilder() {
       live_title:        editTitle || null,
       live_tags:         editTags.filter(Boolean).join(', ') || null,
       stage_updated_at:  new Date().toISOString(),
+      ...(Object.keys(editDesc).length > 0 ? { generated_description: editDesc } : {}),
+      ...(editPrompts.length > 0 ? { generated_image_prompts: editPrompts } : {}),
     });
     setSaving(false);
     if (!error && data?.id) {
@@ -1227,6 +1236,20 @@ export default function ListingBuilder() {
                     ✗ No keywords for {b} — do more research before generating
                   </div>
                 ))}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => navigate(`/research?collection=${encodeURIComponent(form.collection)}`)}
+                  >
+                    Research {form.collection} →
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => navigate(`/research`)}
+                  >
+                    Open Research
+                  </button>
+                </div>
               </div>
             ) : (
               <div style={{ fontSize: '0.75rem', color: '#2d6b3c', padding: '5px 10px', borderRadius: 4, background: 'rgba(124,175,138,0.1)', border: '1px solid rgba(124,175,138,0.25)' }}>

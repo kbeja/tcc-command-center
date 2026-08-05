@@ -72,6 +72,7 @@ function ClusterCard({ cluster, creating, onCreate }) {
 }
 
 function CompetitorsTab({ listings, loading, signals, onRefetch }) {
+  const navigate = useNavigate();
   const [sortCol, setSortCol] = useState('est_sales');
   const [sortDir, setSortDir] = useState('desc');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -184,12 +185,17 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 24 }}>
         {topTags.map(([tag, count]) => (
           <div key={tag} style={{
-            fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20,
+            fontSize: '0.72rem', padding: '4px 4px 4px 10px', borderRadius: 20,
             background: 'var(--rose-faint)', border: '1px solid rgba(188,143,143,0.3)',
             display: 'flex', alignItems: 'center', gap: 5,
           }}>
             <span>{tag}</span>
             <span style={{ color: 'var(--dusty-rose)', fontWeight: 600 }}>{count}</span>
+            <button
+              onClick={() => navigate(`/research?keyword=${encodeURIComponent(tag)}`)}
+              title="Add to Research"
+              style={{ background: 'rgba(188,143,143,0.2)', border: 'none', borderRadius: 10, cursor: 'pointer', padding: '1px 6px', fontSize: '0.6rem', color: 'var(--dusty-rose)' }}
+            >+ Research</button>
           </div>
         ))}
       </div>

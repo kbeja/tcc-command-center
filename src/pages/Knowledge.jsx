@@ -573,7 +573,7 @@ function ExperimentsTab() {
   async function handleClose(exp, result) {
     const notes = closeForm[exp.id] || '';
     await closeExperiment(exp.id, result, notes);
-    if (sendToKB[exp.id]) {
+    if (result === 'proven' || sendToKB[exp.id]) {
       await createPendingUpdate({
         source_type: 'experiment',
         source_id: exp.id,
@@ -581,7 +581,9 @@ function ExperimentsTab() {
         playbook_slug: kbPlaybook[exp.id] || null,
         section_key: kbSection[exp.id] || null,
         proposed_body: notes,
-        reason: `Proven experiment — ${exp.hypothesis || exp.title}`,
+        reason: result === 'proven'
+          ? `✓ Proven — auto-added to updates: ${exp.hypothesis || exp.title}`
+          : `Experiment result — ${exp.hypothesis || exp.title}`,
         status: 'pending',
       });
     }

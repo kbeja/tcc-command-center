@@ -263,13 +263,13 @@ function SourceCompare() {
 
 const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
 
-function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '' }) {
+function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '', initialSearch = '' }) {
   const [keywords, setKeywords]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [filterChapter, setFilterChapter] = useState('');
   const [filterCollection, setFilterCollection] = useState(initialCollection);
   const [filterBucket, setFilterBucket]   = useState('');
-  const [search, setSearch]           = useState('');
+  const [search, setSearch]           = useState(initialSearch);
   const [editId, setEditId]           = useState(null);
   const [editVals, setEditVals]       = useState({});
   const [saving, setSaving]           = useState(false);
@@ -682,6 +682,7 @@ export default function Research() {
             chapters={chapters}
             onAddSession={() => setAdding(a => !a)}
             initialCollection={searchParams.get('collection') || ''}
+            initialSearch={searchParams.get('keyword') || ''}
           />
         </>
       )}
@@ -774,15 +775,31 @@ export default function Research() {
                 {/* Collections within chapter */}
                 {Object.keys(cols).sort().map(col => (
                   <div key={col} style={{ marginBottom: 20, paddingLeft: filterChapter ? 0 : 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      {!filterChapter && (
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--dusty-rose)', flexShrink: 0 }} />
-                      )}
-                      <div className="section-label" style={{ margin: 0 }}>{col}</div>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
-                        {cols[col].length} session{cols[col].length !== 1 ? 's' : ''} · {cols[col].reduce((s, r) => s + (r.keywords?.length || 0), 0)} keywords
-                      </span>
-                    </div>
+                    {(() => {
+                      const colKws = cols[col].flatMap(s => s.keywords || []);
+                      const b1 = colKws.filter(k => k.bucket === 1).length;
+                      const b2 = colKws.filter(k => k.bucket === 2).length;
+                      const b3 = colKws.filter(k => k.bucket === 3).length;
+                      const hasBuckets = b1 + b2 + b3 > 0;
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                          {!filterChapter && (
+                            <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--dusty-rose)', flexShrink: 0 }} />
+                          )}
+                          <div className="section-label" style={{ margin: 0 }}>{col}</div>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>
+                            {cols[col].length} session{cols[col].length !== 1 ? 's' : ''} · {colKws.length} keywords
+                          </span>
+                          {hasBuckets && (
+                            <span style={{ display: 'flex', gap: 4 }}>
+                              {[['B1', b1, b1 >= 1 ? '#2d6b3c' : '#7a2b2b', b1 >= 1 ? 'rgba(124,175,138,0.15)' : 'rgba(201,123,123,0.12)'], ['B2', b2, b2 >= 3 ? '#2d6b3c' : '#7a4a1e', b2 >= 3 ? 'rgba(124,175,138,0.15)' : 'rgba(232,168,124,0.15)'], ['B3', b3, b3 >= 1 ? '#2d6b3c' : '#7a2b2b', b3 >= 1 ? 'rgba(124,175,138,0.15)' : 'rgba(201,123,123,0.12)']].map(([label, count, color, bg]) => (
+                                <span key={label} style={{ fontSize: '0.6rem', fontWeight: 600, padding: '1px 6px', borderRadius: 10, color, background: bg }}>{label}:{count}</span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="card">
                       {cols[col].map(s => (
                         <ResearchSessionCard key={s.id} session={s} onDeleted={refetch} onUpdated={refetch} />
