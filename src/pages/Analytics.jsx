@@ -9,7 +9,9 @@ import EverbeeCSVImport from '../components/EverbeeCSVImport';
 import WeeklyReview from '../components/WeeklyReview';
 import EtsyStatsEntry from '../components/EtsyStatsEntry';
 
-const PRINTIFY_COST_DEFAULT = 14; // fallback if no cost set
+const PRINTIFY_COST_DEFAULT = 14;
+const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
+const TAG_KEYS = Array.from({ length: 13 }, (_, i) => `tag_${i + 1}`);
 
 function fmt$(n) {
   if (!n && n !== 0) return '—';
@@ -457,8 +459,6 @@ export default function Analytics() {
   const live = useMemo(() => products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing'), [products]);
   const inProgress = useMemo(() => products.filter(p => !['Live', 'Reviewing', 'Paused', 'Killed'].includes(p.stage)), [products]);
 
-  const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
-  const TAG_KEYS = Array.from({ length: 13 }, (_, i) => `tag_${i + 1}`);
 
   // Shop totals
   const totalOrders = live.reduce((s, p) => s + (p.total_sales || 0), 0);

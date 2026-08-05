@@ -223,12 +223,13 @@ function SignalCard({ signal, products, collections, onAction }) {
           <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
         </span>
       ) : (
-        {pursueToast && (
-          <div style={{ fontSize: '0.75rem', color: '#2d6b3c', background: 'rgba(124,175,138,0.15)', border: '1px solid rgba(124,175,138,0.4)', borderRadius: 4, padding: '6px 12px', marginTop: 8 }}>
-            ✓ Pursuing — hot sparks created for <strong>{signal.collection || 'collection'}</strong>. Check Idea Vault.
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+        <>
+          {pursueToast && (
+            <div style={{ fontSize: '0.75rem', color: '#2d6b3c', background: 'rgba(124,175,138,0.15)', border: '1px solid rgba(124,175,138,0.4)', borderRadius: 4, padding: '6px 12px', marginTop: 8 }}>
+              ✓ Pursuing — hot sparks created for <strong>{signal.collection || 'collection'}</strong>. Check Idea Vault.
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
           {signal.status !== 'pursue' && (
             <button
               className="btn btn-sm"
@@ -249,6 +250,7 @@ function SignalCard({ signal, products, collections, onAction }) {
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Update signal</button>
           <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }}>🗑</button>
         </div>
+        </>
       )}
     </div>
   );
