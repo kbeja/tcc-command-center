@@ -1361,14 +1361,14 @@ export default function ListingBuilder() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 6 }}>
             {editTags.map((tag, i) => {
               const len = tag.length;
-              const countColor = len > 20 ? '#c97b7b' : len >= 18 ? '#7CAF8A' : 'var(--charcoal-soft)';
+              const countColor = len === 20 ? '#c97b7b' : len >= 17 ? '#E8A87C' : 'var(--charcoal-soft)';
               return (
                 <div key={i} style={{ position: 'relative' }}>
                   <input
                     value={tag}
                     onChange={e => { const t = [...editTags]; t[i] = e.target.value; setEditTags(t); }}
                     style={{ width: '100%', fontSize: '0.78rem', paddingRight: 28 }}
-                    maxLength={25}
+                    maxLength={20}
                     placeholder={`Tag ${i + 1}`}
                   />
                   <span style={{

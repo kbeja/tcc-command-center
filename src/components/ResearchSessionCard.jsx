@@ -236,6 +236,13 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
             <span style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
               {session.source} · {kwCount} keyword{kwCount !== 1 ? 's' : ''}
             </span>
+            {(() => {
+              if (!session.date) return null;
+              const days = Math.floor((Date.now() - new Date(session.date).getTime()) / 86400000);
+              if (days >= 180) return <span style={{ fontSize: '0.62rem', fontWeight: 600, padding: '1px 7px', borderRadius: 20, background: 'rgba(201,123,123,0.18)', color: '#7a2b2b' }}>Stale ({Math.floor(days/30)}mo)</span>;
+              if (days >= 90)  return <span style={{ fontSize: '0.62rem', fontWeight: 600, padding: '1px 7px', borderRadius: 20, background: 'rgba(232,168,124,0.2)', color: '#7a4a1e' }}>Aged ({Math.floor(days/30)}mo)</span>;
+              return null;
+            })()}
             {session.niche && (
               <span style={{ fontSize: '0.65rem', fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: 'var(--rose-faint)', color: 'var(--dusty-rose)' }}>
                 {session.niche}
