@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useResearchSessions, useCollections, useCollectionObjects, useChapters, createCollection, deleteCollection, updateKeyword, deleteKeyword } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
@@ -262,11 +263,11 @@ function SourceCompare() {
 
 const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
 
-function KeywordList({ collectionObjects, chapters, onAddSession }) {
+function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '' }) {
   const [keywords, setKeywords]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [filterChapter, setFilterChapter] = useState('');
-  const [filterCollection, setFilterCollection] = useState('');
+  const [filterCollection, setFilterCollection] = useState(initialCollection);
   const [filterBucket, setFilterBucket]   = useState('');
   const [search, setSearch]           = useState('');
   const [editId, setEditId]           = useState(null);
@@ -439,6 +440,29 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
         </div>
       )}
 
+      {!loading && filterCollection && (() => {
+        const colKws = keywords.filter(k => k.research_sessions?.collection === filterCollection);
+        const b1 = colKws.filter(k => k.bucket === 1).length;
+        const b2 = colKws.filter(k => k.bucket === 2).length;
+        const b3 = colKws.filter(k => k.bucket === 3).length;
+        const unbucketed = colKws.filter(k => !k.bucket).length;
+        const gaps = [];
+        if (b1 < 1) gaps.push('needs B1 (visibility keyword)');
+        if (b2 < 3) gaps.push(`needs ${3 - b2} more B2`);
+        if (b3 < 1) gaps.push('needs B3 (bestseller)');
+        return (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '8px 12px', marginBottom: 12, background: gaps.length ? 'rgba(232,168,124,0.12)' : 'rgba(124,175,138,0.1)', borderRadius: 2, border: `1px solid ${gaps.length ? 'rgba(232,168,124,0.4)' : 'var(--success)'}`, fontSize: '0.72rem' }}>
+            {[['B1', b1, '#2d6b3c'], ['B2', b2, b2 >= 3 ? '#2d6b3c' : '#7a4a1e'], ['B3', b3, b3 >= 1 ? '#2d6b3c' : '#7a2b2b']].map(([label, count, color]) => (
+              <span key={label} style={{ fontWeight: 600, color }}>{label}: {count}</span>
+            ))}
+            {unbucketed > 0 && <span style={{ color: 'var(--charcoal-soft)' }}>· {unbucketed} unbucketed</span>}
+            {gaps.length > 0
+              ? <span style={{ color: '#7a4a1e', marginLeft: 4 }}>⚑ {gaps.join(' · ')}</span>
+              : <span style={{ color: '#2d6b3c', marginLeft: 4 }}>✓ Coverage complete</span>}
+          </div>
+        );
+      })()}
+
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
       {!loading && filtered.length === 0 && (
@@ -580,9 +604,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession }) {
 }
 
 export default function Research() {
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState('keywords');
   const [filterChapter, setFilterChapter] = useState('');
-  const [filterCollection, setFilterCollection] = useState('');
+  const [filterCollection, setFilterCollection] = useState(searchParams.get('collection') || '');
   const { sessions, loading, refetch } = useResearchSessions(filterCollection || undefined);
   const { collections, refetch: refetchCollections } = useCollections();
   const { collections: collectionObjects } = useCollectionObjects();
@@ -656,6 +681,7 @@ export default function Research() {
             collectionObjects={collectionObjects}
             chapters={chapters}
             onAddSession={() => setAdding(a => !a)}
+            initialCollection={searchParams.get('collection') || ''}
           />
         </>
       )}

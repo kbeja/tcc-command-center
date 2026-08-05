@@ -92,17 +92,17 @@ export function getNeedsAttention(products) {
 // Priority order for Pick Up Where You Left Off
 const PICKUP_PRIORITY = ['Ready to Publish', 'SEO Ready', 'Assets Ready', 'Design Phase', 'Validated', 'Research'];
 
-export function getPickUpProduct(products) {
+export function getPickUpProducts(products, n = 3) {
   const eligible = products.filter(p =>
     !['Killed', 'Paused', 'Live', 'Reviewing', 'Idea'].includes(p.stage)
   );
-  if (!eligible.length) return null;
+  if (!eligible.length) return [];
   return eligible.sort((a, b) => {
     const ai = PICKUP_PRIORITY.indexOf(a.stage);
     const bi = PICKUP_PRIORITY.indexOf(b.stage);
     if (ai !== bi) return ai - bi;
     return new Date(b.updated_at) - new Date(a.updated_at);
-  })[0];
+  }).slice(0, n);
 }
 
 // ─── Research Sessions ───────────────────────────────────────────────────────

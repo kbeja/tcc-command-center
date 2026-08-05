@@ -61,6 +61,22 @@ export default function Products() {
         </div>
       )}
 
+      {!loading && filter === 'development' && filtered.length > 0 && (() => {
+        const stageCounts = {};
+        for (const p of filtered) stageCounts[p.stage] = (stageCounts[p.stage] || 0) + 1;
+        const stalled = filtered.filter(p => p.stage_updated_at && Math.floor((Date.now() - new Date(p.stage_updated_at).getTime()) / 86400000) > 14);
+        return (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16, padding: '10px 14px', background: 'var(--charcoal-faint)', borderRadius: 2, fontSize: '0.72rem' }}>
+            {Object.entries(stageCounts).map(([stage, count]) => (
+              <span key={stage} style={{ color: 'var(--warm-charcoal)' }}>{stage}: <strong>{count}</strong></span>
+            ))}
+            {stalled.length > 0 && (
+              <span style={{ marginLeft: 8, color: '#7a4a1e', fontWeight: 500 }}>· {stalled.length} stalled &gt;14d</span>
+            )}
+          </div>
+        );
+      })()}
+
       {filtered.map(p => <ProductCard key={p.id} product={p} alert={attnIds.has(p.id)} kwAlert={hasNewKeywords(p)} />)}
     </div>
   );

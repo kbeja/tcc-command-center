@@ -116,6 +116,9 @@ function LiveStats({ product, onSave }) {
 
   const daysLive = wentLive ? daysBetween(wentLive, today()) : null;
   const daysTo30 = daysLive !== null ? Math.max(0, 30 - daysLive) : null;
+  const daysSinceUpdate = product.stats_updated_at ? Math.floor((Date.now() - new Date(product.stats_updated_at).getTime()) / 86400000) : null;
+  const staleThreshold = daysLive !== null && daysLive < 30 ? 2 : 7;
+  const isStale = daysSinceUpdate !== null && daysSinceUpdate >= staleThreshold;
 
   async function handleSave() {
     await onSave({
@@ -160,6 +163,11 @@ function LiveStats({ product, onSave }) {
             {daysTo30 > 0 && (
               <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
                 {daysTo30} day{daysTo30 !== 1 ? 's' : ''} until 30-day review
+              </div>
+            )}
+            {isStale && (
+              <div style={{ fontSize: '0.65rem', marginTop: 2, color: '#7a4a1e', fontWeight: 500 }}>
+                ⚑ Stats not updated in {daysSinceUpdate}d — update now
               </div>
             )}
           </div>
@@ -207,8 +215,22 @@ function LiveStats({ product, onSave }) {
         <StatInput label="ROAS" value={adRoas} onChange={setAdRoas} type="text" />
       </div>
 
-      {/* Profit & ROAS summary */}
-      {product.printify_cost && moSales > 0 && moRevenue > 0 && (() => {
+      {/* Profit & ROAS summary — always visible for live products */}
+      {(() => {
+        if (!product.printify_cost) {
+          return (
+            <div style={{ padding: '10px 14px', background: 'var(--charcoal-faint)', borderRadius: 4, marginBottom: 12, fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+              Add Printify cost in Product Details to see profit margin.
+            </div>
+          );
+        }
+        if (!moSales || !moRevenue) {
+          return (
+            <div style={{ padding: '10px 14px', background: 'var(--charcoal-faint)', borderRadius: 4, marginBottom: 12, fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+              Update stats above to see this month's margin.
+            </div>
+          );
+        }
         const netProfit = parseFloat(moRevenue) - product.printify_cost * parseInt(moSales) - parseFloat(adSpend || 0);
         const roas = adSpend > 0 ? parseFloat(adRevenue || 0) / parseFloat(adSpend) : null;
         const margin = parseFloat(moRevenue) > 0 ? (netProfit / parseFloat(moRevenue) * 100).toFixed(0) : null;
@@ -469,10 +491,12 @@ function ResearchSection({ collection, sessions, loading, onDeleted, refetch }) 
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  const topGreen = sessions
-    .flatMap(s => (s.keywords || []).filter(k => k.tag_type === 'use').map(k => k.keyword))
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .slice(0, 6);
+  const allUseKws = sessions.flatMap(s => (s.keywords || []).filter(k => k.tag_type === 'use'));
+  const topB1 = allUseKws.filter(k => k.bucket === 1).slice(0, 1);
+  const topB2 = allUseKws.filter(k => k.bucket === 2).slice(0, 3);
+  const topB3 = allUseKws.filter(k => k.bucket === 3).slice(0, 1);
+  const hasBucketedKws = topB1.length || topB2.length || topB3.length;
+  const fallbackKws = allUseKws.filter(k => !k.bucket).slice(0, 4);
 
   return (
     <div>
@@ -489,15 +513,27 @@ function ResearchSection({ collection, sessions, loading, onDeleted, refetch }) 
         </button>
       </div>
 
-      {topGreen.length > 0 && (
+      {hasBucketedKws ? (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          {topGreen.map((kw, i) => (
-            <span key={i} style={{
-              fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20,
-              background: 'rgba(124,175,138,0.15)', color: '#2d6b3c',
-              border: '1px solid rgba(124,175,138,0.3)',
-            }}>{kw}</span>
+          {topB1.length === 0 && (
+            <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(201,123,123,0.15)', color: '#7a2b2b', border: '1px solid rgba(201,123,123,0.3)' }}>No B1 ⚑</span>
+          )}
+          {topB1.map((k, i) => (
+            <span key={i} style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(124,175,138,0.25)', color: '#2d6b3c', border: '1px solid rgba(124,175,138,0.4)', fontWeight: 600 }}>B1 · {k.keyword}</span>
           ))}
+          {topB2.map((k, i) => (
+            <span key={i} style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(124,175,138,0.12)', color: '#2d6b3c', border: '1px solid rgba(124,175,138,0.25)' }}>{k.keyword}</span>
+          ))}
+          {topB3.map((k, i) => (
+            <span key={i} style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(107,130,168,0.12)', color: '#2d4270', border: '1px solid rgba(107,130,168,0.25)' }}>B3 · {k.keyword}</span>
+          ))}
+        </div>
+      ) : fallbackKws.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {fallbackKws.map((k, i) => (
+            <span key={i} style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(124,175,138,0.15)', color: '#2d6b3c', border: '1px solid rgba(124,175,138,0.3)' }}>{k.keyword}</span>
+          ))}
+          <span style={{ fontSize: '0.62rem', color: 'var(--charcoal-soft)', alignSelf: 'center' }}>Re-bucket in Research to see B1/B2/B3</span>
         </div>
       )}
 
@@ -924,13 +960,36 @@ export default function ProductWorkspace() {
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', fontWeight: 300, lineHeight: 1.2, marginBottom: 8 }}>
             {product.name}
           </div>
-          <button
-            className="btn btn-primary btn-sm"
-            style={{ flexShrink: 0, marginTop: 4 }}
-            onClick={() => navigate(`/listing-builder?product=${id}`)}
-          >
-            Create Listing →
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+            {['SEO Ready', 'Assets Ready', 'Ready to Publish'].includes(product.stage) ? (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => navigate(`/listing-builder?product=${id}`)}
+              >
+                Create Listing →
+              </button>
+            ) : (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ opacity: 0.5, cursor: 'default' }}
+                title="Available at SEO Ready stage — complete research first"
+                disabled
+              >
+                Create Listing
+              </button>
+            )}
+            {product.etsy_listing_url && (
+              <a
+                href={product.etsy_listing_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-ghost btn-sm"
+                style={{ textDecoration: 'none' }}
+              >
+                View on Etsy ↗
+              </a>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
           {product.collection && <span style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>{product.collection}</span>}

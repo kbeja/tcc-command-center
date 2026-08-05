@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProducts, useWorkshopItems, useSparks, useTrendSignals, useCollectionObjects, getNeedsAttention, getPickUpProduct } from '../lib/hooks';
+import { useProducts, useWorkshopItems, useSparks, useTrendSignals, useCollectionObjects, getNeedsAttention, getPickUpProducts } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
 import { getNextReviewDates, daysBetween, today, seasonalWindows } from '../data/seasons';
 import ProductCard from '../components/ProductCard';
@@ -39,7 +39,7 @@ export default function Home() {
   const { collections: collectionObjects } = useCollectionObjects();
 
   const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
-  const pickUp = getPickUpProduct(active);
+  const pickUps = getPickUpProducts(active, 3);
   const needsAttn = getNeedsAttention(products);
   const inProgress = active.filter(p => !['Live', 'Idea'].includes(p.stage));
   const hotSparks = sparks.filter(s => s.temperature === 'hot');
@@ -75,22 +75,29 @@ export default function Home() {
       </div>
 
       {/* Pick Up Where You Left Off */}
-      {pickUp && (
+      {pickUps.length > 0 && (
         <div style={{ background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.12)', borderRadius: 2, padding: 20, marginBottom: 20 }}>
           <div className="eyebrow" style={{ marginBottom: 12 }}>⭐ pick up where you left off</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', fontWeight: 400, marginBottom: 6 }}>
-            {pickUp.name}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-            <span className={`stage-pill ${STAGE_PILL_CLASS[pickUp.stage]}`}>{pickUp.stage}</span>
-            {pickUp.confidence && <span className="confidence-badge">{pickUp.confidence}</span>}
-          </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)', marginBottom: 16 }}>
-            {STAGE_NEXT_ACTIONS[pickUp.stage]}
-          </div>
-          <button className="btn btn-primary btn-sm" onClick={() => navigate(`/products/${pickUp.id}`)}>
-            Continue →
-          </button>
+          {pickUps.map((p, i) => {
+            const daysInStage = p.stage_updated_at ? Math.floor((Date.now() - new Date(p.stage_updated_at).getTime()) / 86400000) : null;
+            const isStalled = daysInStage !== null && daysInStage > 14;
+            return (
+              <div key={p.id} style={{ marginBottom: i < pickUps.length - 1 ? 14 : 0, paddingBottom: i < pickUps.length - 1 ? 14 : 0, borderBottom: i < pickUps.length - 1 ? '1px solid rgba(43,41,38,0.08)' : 'none' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: i === 0 ? '1.2rem' : '0.95rem', fontWeight: 400, marginBottom: 4 }}>
+                  {p.name}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                  <span className={`stage-pill ${STAGE_PILL_CLASS[p.stage]}`}>{p.stage}</span>
+                  {p.confidence && <span className="confidence-badge">{p.confidence}</span>}
+                  {isStalled && <span style={{ fontSize: '0.6rem', color: '#7a4a1e', background: 'rgba(232,168,124,0.2)', padding: '1px 6px', borderRadius: 10 }}>stalled {daysInStage}d</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', flex: 1 }}>{STAGE_NEXT_ACTIONS[p.stage]}</div>
+                  <button className="btn btn-primary btn-sm" onClick={() => navigate(`/products/${p.id}`)}>Continue →</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -121,8 +128,13 @@ export default function Home() {
               <div key={s.id} style={{ background: 'rgba(124,175,138,0.1)', border: '1px solid var(--success)', borderRadius: 2, padding: '12px 14px', marginBottom: 8 }}>
                 <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2d6b3c', marginBottom: 4 }}>🟢 Trend Signal — Pursue</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 4 }}>{s.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>Score {s.score}/25 · {s.collection} · No product in pipeline</div>
-                <button className="btn btn-sm btn-ghost" onClick={() => navigate('/trends')}>View in Trend Radar →</button>
+                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
+                  Score {s.score}/25 · {s.collection || '⚑ No collection assigned'} · No product in pipeline
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-sm btn-primary" onClick={() => navigate(s.collection ? `/sparks?collection=${encodeURIComponent(s.collection)}` : '/sparks')}>Activate a spark →</button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => navigate('/trends')}>View signal</button>
+                </div>
               </div>
             ))}
           </>

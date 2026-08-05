@@ -28,11 +28,15 @@ export default function SparkCard({ spark, onAction }) {
   const [activating, setActivating] = useState(false);
 
   async function handleActivate() {
+    if (!spark.collection_tag) {
+      setEditingCollection(true);
+      return;
+    }
     setActivating(true);
     const { data, error } = await createProduct({
       name: spark.content,
       stage: 'Idea',
-      collection: spark.collection_tag || null,
+      collection: spark.collection_tag,
     });
     if (error || !data?.id) { setActivating(false); return; }
     await archiveSpark(spark.id);

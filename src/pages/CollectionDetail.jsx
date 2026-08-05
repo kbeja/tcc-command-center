@@ -114,6 +114,13 @@ export default function CollectionDetail() {
         </div>
       </div>
 
+      {/* ── Quick Actions ── */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+        <button className="btn btn-primary btn-sm" onClick={() => navigate(`/research?collection=${encodeURIComponent(name)}`)}>+ Research Session</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/listing-builder?collection=${encodeURIComponent(name)}`)}>Build Listing</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/sparks?collection=${encodeURIComponent(name)}`)}>Add Spark</button>
+      </div>
+
       <hr className="rule" />
 
       {/* ── Evaluation ── */}
@@ -285,26 +292,50 @@ export default function CollectionDetail() {
 
       <hr className="rule" />
 
-      {/* ── Research ── */}
-      {sessions && sessions.length > 0 && (
-        <>
+      {/* ── Keyword Coverage ── */}
+      {sessions && sessions.length > 0 && (() => {
+        const allKws = sessions.flatMap(s => s.keywords || []);
+        const b1 = allKws.filter(k => k.bucket === 1);
+        const b2 = allKws.filter(k => k.bucket === 2);
+        const b3 = allKws.filter(k => k.bucket === 3);
+        const topB1 = b1[0];
+        const hasBuckets = b1.length || b2.length || b3.length;
+        const lastDate = sessions[0]?.date || sessions[0]?.created_at;
+        return (
           <div style={{ marginBottom: 24 }}>
-            <div className="section-label" style={{ marginBottom: 10 }}>Research ({sessions.length})</div>
-            {sessions.slice(0, 3).map(s => (
-              <div key={s.id} style={{ fontSize: '0.82rem', padding: '6px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', display: 'flex', justifyContent: 'space-between' }}>
-                <span>{s.niche || s.collection || 'General'}</span>
-                <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>
-                  {new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
+            <div className="section-label" style={{ marginBottom: 10 }}>Keyword Coverage</div>
+            {hasBuckets ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                {[['B1', b1.length, '#2d6b3c', 'rgba(124,175,138,0.2)'], ['B2', b2.length, b2.length >= 3 ? '#2d6b3c' : '#7a4a1e', b2.length >= 3 ? 'rgba(124,175,138,0.12)' : 'rgba(232,168,124,0.2)'], ['B3', b3.length, b3.length > 0 ? '#2d6b3c' : '#7a2b2b', b3.length > 0 ? 'rgba(124,175,138,0.12)' : 'rgba(201,123,123,0.15)']].map(([label, count, color, bg]) => (
+                  <span key={label} style={{ fontSize: '0.72rem', fontWeight: 500, padding: '3px 10px', borderRadius: 20, color, background: bg }}>
+                    {label}: {count}
+                  </span>
+                ))}
+                {topB1 && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', alignSelf: 'center' }}>Top B1: {topB1.keyword}{topB1.volume ? ` (vol ${topB1.volume.toLocaleString()})` : ''}</span>}
               </div>
-            ))}
-            <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => navigate('/research')}>
+            ) : (
+              <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+                {allKws.length} keywords · Run Re-bucket in Research to classify B1/B2/B3
+              </div>
+            )}
+            <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+              {sessions.length} session{sessions.length !== 1 ? 's' : ''}{lastDate ? ` · Last: ${new Date(lastDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/research?collection=${encodeURIComponent(name)}`)}>
               View research →
             </button>
           </div>
-          <hr className="rule" />
-        </>
+        );
+      })()}
+
+      {sessions && sessions.length === 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="section-label" style={{ marginBottom: 10 }}>Keyword Coverage</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>No research sessions yet.</div>
+        </div>
       )}
+
+      <hr className="rule" />
 
       {/* ── Trend Signals ── */}
       {(() => {

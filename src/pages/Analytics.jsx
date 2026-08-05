@@ -554,7 +554,10 @@ export default function Analytics() {
       {tab === 'overview' && !loading && (
         <div>
           {/* Shop Overview */}
-          <div className="section-label" style={{ marginBottom: 10 }}>Shop Overview</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div className="section-label" style={{ margin: 0 }}>Shop Overview</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/products?view=live')} title="Update live product stats">Update Stats →</button>
+          </div>
           <div style={{ border: 'var(--border)', borderRadius: 2, padding: '16px', marginBottom: 24 }}>
             <div style={{ fontSize: '0.72rem', fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
               THE CURRENT CHAPTER
@@ -585,25 +588,25 @@ export default function Analytics() {
                 </div>
               </div>
               <div>
-                <div className="eyebrow" style={{ marginBottom: 8 }}>This month</div>
+                <div className="eyebrow" style={{ marginBottom: 8 }}>Averages</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                    <span style={{ color: 'var(--charcoal-soft)' }}>Orders</span>
-                    <span style={{ fontWeight: 500 }}>{fmtN(totalMoSales)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                    <span style={{ color: 'var(--charcoal-soft)' }}>Revenue</span>
-                    <span style={{ fontWeight: 500 }}>{fmt$(totalMoRevenue)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                    <span style={{ color: 'var(--charcoal-soft)' }}>Est. profit</span>
-                    <span style={{ fontWeight: 500, color: hasCostData ? (totalMoProfit > 0 ? 'var(--success)' : 'var(--alert)') : undefined }}>
-                      {hasCostData ? fmt$(totalMoProfit) : '—'}
-                    </span>
-                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--charcoal-soft)' }}>Avg order</span>
                     <span style={{ fontWeight: 500 }}>{avgOrderValue ? fmt$(avgOrderValue) : '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--charcoal-soft)' }}>Profit margin</span>
+                    <span style={{ fontWeight: 500, color: hasCostData ? (totalMoProfit > 0 ? 'var(--success)' : 'var(--alert)') : undefined }}>
+                      {hasCostData && totalMoRevenue > 0 ? `${Math.round((totalMoProfit / totalMoRevenue) * 100)}%` : '—'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--charcoal-soft)' }}>Revenue/listing</span>
+                    <span style={{ fontWeight: 500 }}>{live.length > 0 ? fmt$(totalMoRevenue / live.length) : '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--charcoal-soft)' }}>Conversion</span>
+                    <span style={{ fontWeight: 500 }}>{pct(conversionRate)}</span>
                   </div>
                 </div>
               </div>

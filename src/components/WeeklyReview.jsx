@@ -79,7 +79,7 @@ export default function WeeklyReview({ onApplied }) {
     <div>
       <div className="section-label" style={{ marginBottom: 10 }}>Weekly Review</div>
       <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 12, lineHeight: 1.6 }}>
-        Paste your Etsy Stats summary below. The system will extract the numbers automatically.
+        Paste your Etsy Stats summary. Numbers are extracted and logged to history — use them as a reference when updating individual listing stats.
       </div>
 
       {!parsed && (
@@ -128,7 +128,7 @@ export default function WeeklyReview({ onApplied }) {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary" onClick={handleApply} disabled={applying}>
-              {applying ? 'Applying…' : 'Apply to shop overview →'}
+              {applying ? 'Saving…' : 'Save to history →'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => setParsed(null)}>Edit paste</button>
             <button className="btn btn-ghost btn-sm" onClick={() => { setParsed(null); setText(''); }}>Start over</button>
