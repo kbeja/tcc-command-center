@@ -20,7 +20,7 @@ export function useProducts() {
   useEffect(() => {
     fetch();
     const sub = supabase
-      .channel('products')
+      .channel('products-' + Math.random().toString(36).slice(2))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, fetch)
       .subscribe();
     return () => supabase.removeChannel(sub);
@@ -247,7 +247,7 @@ export function useCollections() {
 
   useEffect(() => {
     fetch();
-    const sub = supabase.channel('tcc-collections-names')
+    const sub = supabase.channel('tcc-collections-names-' + Math.random().toString(36).slice(2))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'collections' }, fetch)
       .subscribe();
     return () => supabase.removeChannel(sub);
