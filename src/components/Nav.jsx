@@ -1,9 +1,18 @@
 import { NavLink } from 'react-router-dom';
 
-export default function Nav({ workshopCount }) {
+export default function Nav({ workshopCount, moSales, moRevenue }) {
+  const fmt$ = n => n != null ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null;
+  const hasPulse = moSales > 0 || moRevenue > 0;
   return (
     <nav className="bottom-nav">
-      <span className="nav-brand">TCC</span>
+      <span className="nav-brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+        <span>TCC</span>
+        {hasPulse && (
+          <span style={{ fontSize: '0.55rem', color: 'var(--charcoal-soft)', fontWeight: 400, whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+            {moSales}x · {fmt$(moRevenue)}
+          </span>
+        )}
+      </span>
       <NavLink to="/" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} end>
         <span className="nav-icon">🏠</span>
         <span>Home</span>

@@ -638,6 +638,30 @@ export default function Analytics() {
             ))}
           </div>
 
+          {/* Needs Attention — shown above the table so urgent items aren't buried */}
+          {attention.length > 0 && (
+            <div style={{ marginBottom: 20, background: 'rgba(232,168,124,0.08)', border: '1px solid rgba(232,168,124,0.35)', borderRadius: 4, padding: '12px 14px' }}>
+              <div className="section-label" style={{ marginBottom: 8, color: '#7a4a1e' }}>⚑ Needs Your Attention ({attention.length})</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {attention.map((a, i) => (
+                  <div
+                    key={i}
+                    onClick={() => a.id && navigate(`/products/${a.id}`)}
+                    style={{
+                      display: 'flex', gap: 10, alignItems: 'flex-start',
+                      padding: '8px 10px', borderRadius: 2,
+                      background: 'rgba(255,255,255,0.6)', cursor: a.id ? 'pointer' : 'default',
+                      fontSize: '0.78rem',
+                    }}
+                  >
+                    <span>{a.icon}</span>
+                    <span>{a.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Listing Table */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <div className="section-label" style={{ margin: 0 }}>
@@ -714,29 +738,6 @@ export default function Analytics() {
             )}
           </div>
 
-          {/* Needs Attention */}
-          {attention.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <div className="section-label" style={{ marginBottom: 10 }}>Needs Your Attention</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {attention.map((a, i) => (
-                  <div
-                    key={i}
-                    onClick={() => a.id && navigate(`/products/${a.id}`)}
-                    style={{
-                      display: 'flex', gap: 10, alignItems: 'flex-start',
-                      padding: '10px 14px', border: 'var(--border)', borderRadius: 2,
-                      background: 'var(--warm-white)', cursor: a.id ? 'pointer' : 'default',
-                      fontSize: '0.8rem',
-                    }}
-                  >
-                    <span>{a.icon}</span>
-                    <span>{a.text}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

@@ -206,7 +206,23 @@ function SignalCard({ signal, products, collections, onAction }) {
           <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
         </span>
       ) : (
-        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+          {signal.status !== 'pursue' && (
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(124,175,138,0.15)', color: '#2d6b3c', border: '1px solid rgba(124,175,138,0.4)', fontWeight: 600 }}
+              onClick={async () => {
+                setSaving(true);
+                await supabase.from('trend_signals').update({ status: 'pursue', last_updated: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() }).eq('id', signal.id);
+                if (signal.collection) await autoHotSparksForSignal(signal.collection);
+                setSaving(false);
+                onAction?.();
+              }}
+              disabled={saving}
+            >
+              🟢 Pursue
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Update signal</button>
           <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }}>🗑</button>
         </div>
