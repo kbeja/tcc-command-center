@@ -479,11 +479,15 @@ export default function Analytics() {
   const collections = [...new Set(live.map(p => p.collection).filter(Boolean))];
   const collectionStats = collections.map(col => {
     const items = live.filter(p => p.collection === col);
+    const revenue = items.reduce((s, p) => s + (p.mo_revenue || 0), 0);
+    const withConv = items.filter(p => p.conversion_rate);
     return {
       name: col,
       count: items.length,
       orders: items.reduce((s, p) => s + (p.mo_sales || 0), 0),
-      revenue: items.reduce((s, p) => s + (p.mo_revenue || 0), 0),
+      revenue,
+      revenuePerListing: items.length > 0 ? revenue / items.length : 0,
+      avgConv: withConv.length > 0 ? withConv.reduce((s, p) => s + (p.conversion_rate || 0), 0) / withConv.length : null,
     };
   }).sort((a, b) => b.revenue - a.revenue);
 
@@ -528,14 +532,17 @@ export default function Analytics() {
     <div className="page">
       <div className="page-header">
         <div className="page-title">Analytics</div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-          {['overview', 'etsy', 'goals', 'competitors', 'import', 'weekly'].map(t => (
-            <button
-              key={t}
-              className={`btn btn-sm ${tab === t ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setTab(t)}
-            >
-              {{ overview: 'Overview', etsy: 'Etsy Stats', goals: 'Goals', competitors: 'Competitors', import: 'Import Data', weekly: 'Weekly Review' }[t]}
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {[['overview','Overview'],['etsy','Etsy Stats'],['goals','Goals'],['competitors','Competitors']].map(([t, label]) => (
+            <button key={t} className={`btn btn-sm ${tab === t ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t)}>
+              {label}
+            </button>
+          ))}
+          <span style={{ width: 1, height: 18, background: 'rgba(43,41,38,0.15)', margin: '0 2px' }} />
+          {[['import','Import Data'],['weekly','Weekly Review']].map(([t, label]) => (
+            <button key={t} className={`btn btn-sm ${tab === t ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(t)}
+              style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+              {label}
             </button>
           ))}
         </div>
@@ -630,10 +637,18 @@ export default function Analytics() {
                   <div style={{ fontWeight: 500, fontSize: '0.82rem' }}>{col.name}</div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
                     {col.count} listing{col.count !== 1 ? 's' : ''} · {col.orders} order{col.orders !== 1 ? 's' : ''}
+                    {col.avgConv != null && ` · ${col.avgConv.toFixed(1)}% conv`}
                   </div>
                 </div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem' }}>
-                  {col.revenue > 0 ? fmt$(col.revenue) : '—'}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem' }}>
+                    {col.revenue > 0 ? fmt$(col.revenue) : '—'}
+                  </div>
+                  {col.revenuePerListing > 0 && (
+                    <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
+                      {fmt$(col.revenuePerListing)}/listing
+                    </div>
+                  )}
                 </div>
               </button>
             ))}

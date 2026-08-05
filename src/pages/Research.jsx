@@ -165,10 +165,10 @@ function SourceCompare() {
       // Keep only keywords that appear in both eRank and Everbee
       const conflicts = Object.values(map).filter(r => {
         const sources = new Set(r.entries.map(e => e.source?.toLowerCase()));
-        return sources.has('erank') && r.entries.some(e => e.source?.toLowerCase() !== 'erank');
+        return sources.has('erank') && sources.has('everbee');
       }).map(r => {
         const erank   = r.entries.find(e => e.source?.toLowerCase() === 'erank');
-        const everbee = r.entries.find(e => e.source?.toLowerCase() !== 'erank');
+        const everbee = r.entries.find(e => e.source?.toLowerCase() === 'everbee');
         const volDiff = (erank?.volume != null && everbee?.volume != null)
           ? Math.abs(erank.volume - everbee.volume) : null;
         const compDiff = (erank?.competition != null && everbee?.competition != null)

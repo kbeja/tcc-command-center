@@ -552,6 +552,7 @@ function InlineKeywordAdd({ collection, sessions, onSaved }) {
         status: 'Needs More Data',
       }).select('id').single();
       sessionId = data?.id;
+      if (sessionId) setTargetSession(sessionId);
     }
 
     if (!sessionId) { setSaving(false); return; }
@@ -573,9 +574,8 @@ function InlineKeywordAdd({ collection, sessions, onSaved }) {
     setSaving(false);
     setSaved(true);
     setRows([{ keyword: '', volume: '', competition: '', bucket: '' }]);
-    setTargetSession('');
     onSaved?.();
-    setTimeout(() => { setSaved(false); setOpen(false); }, 1500);
+    setTimeout(() => setSaved(false), 1500);
   }
 
   return (
