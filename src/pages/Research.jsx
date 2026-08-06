@@ -323,7 +323,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     const ch  = colChapterMap[col] || '';
     if (filterChapter && ch !== filterChapter) return false;
     if (filterCollection && col !== filterCollection) return false;
-    if (filterBucket && k.bucket !== Number(filterBucket)) return false;
+    if (filterBucket !== '') {
+      const bucketNum = Number(filterBucket);
+      if (bucketNum === 0 ? !!k.bucket : k.bucket !== bucketNum) return false;
+    }
     if (search && !k.keyword?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -372,8 +375,14 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
   }
 
   async function handleDelete(id) {
-    await deleteKeyword(id);
-    setKeywords(prev => prev.filter(k => k.id !== id));
+    // Delete all rows with the same keyword text (deduped display → all sources)
+    const target = keywords.find(k => k.id === id);
+    const targetText = (target?.keyword || '').toLowerCase().trim();
+    const allIds = targetText
+      ? keywords.filter(k => (k.keyword || '').toLowerCase().trim() === targetText).map(k => k.id)
+      : [id];
+    await Promise.all(allIds.map(deleteKeyword));
+    setKeywords(prev => prev.filter(k => !allIds.includes(k.id)));
   }
 
   async function handleRebucket() {
