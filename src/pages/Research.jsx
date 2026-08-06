@@ -495,7 +495,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
             // Dedup by keyword text — merge source badges onto one row
             const dedupMap = new Map();
             for (const k of sorted) {
-              const key = k.keyword?.toLowerCase();
+              const key = (k.keyword || '').toLowerCase().trim();
               if (!key) continue;
               if (!dedupMap.has(key)) {
                 dedupMap.set(key, { primary: k, sources: [] });
@@ -506,16 +506,16 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
               // Prefer the entry with a bucket assigned
               if (k.bucket && !entry.primary.bucket) entry.primary = k;
             }
-            return [...dedupMap.values()];
-          })().map(({ primary: k, sources }) => {
-            const col = k.research_sessions?.collection || '—';
-            const isEditing = editId === k.id;
-            // Bucket missing reason
-            const hasVol = k.volume != null;
-            const hasComp = k.competition != null;
-            const bucketMissingReason = !k.bucket ? (!hasVol || !hasComp ? 'no metrics' : k.volume < 200 ? 'vol < 200' : null) : null;
+            return [...dedupMap.values()].map(({ primary: k, sources }) => {
+              const col = k.research_sessions?.collection || '—';
+              const isEditing = editId === k.id;
+              const hasVol = k.volume != null;
+              const hasComp = k.competition != null;
+              const bucketMissingReason = !k.bucket ? (!hasVol || !hasComp ? 'no metrics' : k.volume < 200 ? 'vol < 200' : null) : null;
+              const kwWords = (k.keyword || '').toLowerCase().trim().split(/\s+/);
+              const inLiveListing = kwWords.length > 0 && kwWords.every(w => liveListingWords.has(w));
 
-            if (isEditing) {
+              if (isEditing) {
               const editableCollections = editVals.editChapter
                 ? allCollectionsFromData.filter(col => colChapterMap[col] === editVals.editChapter)
                 : allCollectionsFromData;
@@ -574,40 +574,38 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
               );
             }
 
-            return (() => {
-              const kwWords = (k.keyword || '').toLowerCase().split(/\s+/);
-              const inLiveListing = kwWords.length > 0 && kwWords.every(w => liveListingWords.has(w));
               return (
-              <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
-                  {k.keyword}
-                  {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
-                  {inLiveListing && <span style={{ fontSize: '0.55rem', marginLeft: 5, padding: '1px 5px', borderRadius: 8, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', fontWeight: 600 }}>live</span>}
-                </span>
-                <span>
-                  {k.bucket ? <BucketBadge bucket={k.bucket} /> : bucketMissingReason ? (
-                    <span
-                      style={{ fontSize: '0.58rem', color: 'var(--charcoal-soft)', opacity: 0.6, cursor: 'help' }}
-                      title={bucketMissingReason === 'vol < 200' ? 'Volume under 200 — too low-traffic to classify into a meaningful bucket. Enter a higher-volume alternative or keep as context.' : 'Enter volume and competition to auto-assign a bucket.'}
-                    >{bucketMissingReason}</span>
-                  ) : null}
-                </span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.competition?.toLocaleString() ?? '—'}</span>
-                <span style={{ fontSize: '0.72rem', color: k.score >= 70 ? '#7a2b2b' : k.score >= 40 ? '#6b4a10' : k.score ? '#2d6b3c' : 'var(--charcoal-soft)' }}>{k.score ?? '—'}</span>
-                <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
-                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                  {sources.map(s => (
-                    <span key={s} style={{ fontSize: '0.58rem', padding: '1px 5px', borderRadius: 8, background: 'var(--rose-faint)', border: '1px solid rgba(188,143,143,0.3)', color: 'var(--dusty-rose)', whiteSpace: 'nowrap' }}>{s}</span>
-                  ))}
-                </span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => startEdit(k)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px' }}>✎</button>
-                  <button onClick={() => handleDelete(k.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px', opacity: 0.4 }}>🗑</button>
+                <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
+                    {k.keyword}
+                    {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
+                    {inLiveListing && <span style={{ fontSize: '0.55rem', marginLeft: 5, padding: '1px 5px', borderRadius: 8, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', fontWeight: 600 }}>live</span>}
+                  </span>
+                  <span>
+                    {k.bucket ? <BucketBadge bucket={k.bucket} /> : bucketMissingReason ? (
+                      <span
+                        style={{ fontSize: '0.58rem', color: 'var(--charcoal-soft)', opacity: 0.6, cursor: 'help' }}
+                        title={bucketMissingReason === 'vol < 200' ? 'Volume under 200 — too low-traffic to classify into a meaningful bucket. Enter a higher-volume alternative or keep as context.' : 'Enter volume and competition to auto-assign a bucket.'}
+                      >{bucketMissingReason}</span>
+                    ) : null}
+                  </span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.competition?.toLocaleString() ?? '—'}</span>
+                  <span style={{ fontSize: '0.72rem', color: k.score >= 70 ? '#7a2b2b' : k.score >= 40 ? '#6b4a10' : k.score ? '#2d6b3c' : 'var(--charcoal-soft)' }}>{k.score ?? '—'}</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
+                  <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                    {sources.map(s => (
+                      <span key={s} style={{ fontSize: '0.58rem', padding: '1px 5px', borderRadius: 8, background: 'var(--rose-faint)', border: '1px solid rgba(188,143,143,0.3)', color: 'var(--dusty-rose)', whiteSpace: 'nowrap' }}>{s}</span>
+                    ))}
+                  </span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => startEdit(k)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px' }}>✎</button>
+                    <button onClick={() => handleDelete(k.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px', opacity: 0.4 }}>🗑</button>
+                  </div>
                 </div>
-              </div>
               );
-            })()}
+            });
+          })()}
 
         </div>
       )}
