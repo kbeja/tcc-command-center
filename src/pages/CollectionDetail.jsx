@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals } from '../lib/hooks';
+import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts } from '../lib/hooks';
+import ConceptChatImport from '../components/ConceptChatImport';
 
 const EVAL_FIELDS = [
   { key: 'evaluation_market_evidence',         label: 'Market evidence' },
@@ -33,6 +34,10 @@ export default function CollectionDetail() {
 
   const collection = collections.find(c => c.name === name);
 
+  const { concepts, loading: conceptsLoading, refetch: refetchConcepts } = useConcepts(name);
+
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showImport, setShowImport] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -115,11 +120,77 @@ export default function CollectionDetail() {
       </div>
 
       {/* ── Quick Actions ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         <button className="btn btn-primary btn-sm" onClick={() => navigate(`/research?collection=${encodeURIComponent(name)}`)}>+ Research Session</button>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/listing-builder?collection=${encodeURIComponent(name)}`)}>Build Listing</button>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/sparks?collection=${encodeURIComponent(name)}`)}>Add Spark</button>
       </div>
+
+      {/* ── Tab Bar ── */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(43,41,38,0.12)', marginBottom: 20 }}>
+        {[['overview', 'Overview'], ['concepts', `Concepts${concepts.length ? ` (${concepts.length})` : ''}`]].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            style={{
+              padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: '0.8rem', fontWeight: activeTab === key ? 600 : 400,
+              color: activeTab === key ? 'var(--warm-charcoal)' : 'var(--charcoal-soft)',
+              borderBottom: activeTab === key ? '2px solid var(--warm-charcoal)' : '2px solid transparent',
+              marginBottom: -1,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Concepts Tab ── */}
+      {activeTab === 'concepts' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+              Design concepts for {name}
+            </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowImport(true)}
+            >
+              + Import Concept
+            </button>
+          </div>
+
+          {showImport && (
+            <div style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+            }}>
+              <div style={{ background: 'var(--warm-white)', borderRadius: 10, maxWidth: 700, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+                <ConceptChatImport
+                  onSaved={() => { refetchConcepts(); setShowImport(false); }}
+                  onClose={() => setShowImport(false)}
+                />
+              </div>
+            </div>
+          )}
+
+          {conceptsLoading ? (
+            <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.82rem' }}>Loading…</div>
+          ) : concepts.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--charcoal-soft)' }}>
+              <div style={{ fontSize: '0.9rem', marginBottom: 8 }}>No concepts yet</div>
+              <div style={{ fontSize: '0.75rem', marginBottom: 16 }}>Import a concept from ChatGPT to get started</div>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowImport(true)}>+ Import Concept</button>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {concepts.map(c => <ConceptCard key={c.id} concept={c} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'overview' && <>
 
       <hr className="rule" />
 
@@ -397,6 +468,62 @@ export default function CollectionDetail() {
           >
             Archive collection
           </button>
+        )}
+      </div>
+      </>}
+    </div>
+  );
+}
+
+// ── Concept card ──────────────────────────────────────────────────────────────
+
+function ConceptCard({ concept }) {
+  const kittlOutput = concept.concept_outputs?.find(o => o.output_type === 'kittl_prompt' && o.is_current);
+  const outputCount = concept.concept_outputs?.length || 0;
+
+  return (
+    <div style={{
+      border: '1px solid rgba(43,41,38,0.12)', borderRadius: 8, padding: '14px 16px',
+      background: 'var(--warm-white)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+        <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{concept.name}</div>
+        {concept.concept_code && (
+          <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', fontFamily: 'monospace', background: 'rgba(43,41,38,0.06)', padding: '2px 6px', borderRadius: 4 }}>
+            {concept.concept_code}
+          </span>
+        )}
+      </div>
+
+      {concept.visual_style && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>{concept.visual_style}</div>
+      )}
+      {concept.design_direction && (
+        <div style={{ fontSize: '0.78rem', color: 'var(--warm-charcoal)', marginBottom: 8, lineHeight: 1.4 }}>
+          {concept.design_direction.length > 100 ? concept.design_direction.slice(0, 100) + '…' : concept.design_direction}
+        </div>
+      )}
+
+      {concept.mood_keywords?.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+          {concept.mood_keywords.slice(0, 5).map(k => (
+            <span key={k} style={{ fontSize: '0.65rem', padding: '2px 7px', borderRadius: 20, background: 'rgba(107,130,168,0.12)', color: '#2d4270' }}>
+              {k}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+        {kittlOutput ? (
+          <span style={{ fontSize: '0.68rem', color: '#2d6b3c', background: 'rgba(124,175,138,0.15)', padding: '2px 8px', borderRadius: 20 }}>
+            Kittl prompt · {kittlOutput.output_source === 'imported' ? 'imported' : `v${kittlOutput.version}`}
+          </span>
+        ) : (
+          <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>No Kittl prompt yet</span>
+        )}
+        {outputCount > 1 && (
+          <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>{outputCount} outputs</span>
         )}
       </div>
     </div>

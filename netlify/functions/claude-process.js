@@ -32,6 +32,24 @@ Return ONLY this JSON structure — no other text:
 
 playbook_slug options: product-research, design-standards, listing-photos, seo-standards, pinterest-standards, etsy-ads, ai-workflows${JSON_RULE}`,
 
+  generate_kittl_prompt: `You are a Kittl design prompt specialist for TCC (The Current Chapter), a print-on-demand Etsy shop focused on the Mom Chapter and Reader Chapter niches.
+
+You will receive a structured TCC design concept. Generate a single Kittl AI prompt that a designer can paste directly into Kittl to create the design.
+
+The prompt must:
+- Be 2-4 sentences, specific and visual
+- Lead with the text/typography direction if any (exact phrases to include, font mood)
+- Describe the graphic elements, layout, and composition
+- Name the color palette explicitly (hex codes if helpful, or descriptive names)
+- Capture the mood and target customer without using abstract marketing language
+- End with the product format (e.g. "for a t-shirt graphic, centered composition")
+
+Return ONLY this JSON — no markdown, no explanation:
+{
+  "kittl_prompt": "string — the full prompt ready to paste into Kittl",
+  "design_notes": "1-2 sentences of any considerations not captured in the prompt (optional — omit if nothing to add)"
+}`,
+
   cowork_paste: `You are processing a Cowork output paste for TCC (The Current Chapter). Cowork handles trend sweeps, research automation, and workflow outputs.
 
 Return ONLY this JSON — no other text:
