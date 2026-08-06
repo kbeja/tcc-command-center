@@ -658,3 +658,140 @@ export async function autoHotSparksForSignal(collection) {
     })
     .in('id', sparks.map(s => s.id));
 }
+
+// ─── Design Intelligence — Concepts ─────────────────────────────────────────
+
+export function useConcepts(collectionName) {
+  const [concepts, setConcepts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    let q = supabase
+      .from('concepts')
+      .select('*, concept_outputs(id, output_type, version, is_current, output_source, body, created_at)')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    if (collectionName) q = q.eq('collection_name', collectionName);
+    const { data } = await q;
+    setConcepts(data || []);
+    setLoading(false);
+  }, [collectionName]);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('concepts-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'concepts' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  return { concepts, loading, refetch: fetch };
+}
+
+export function useConcept(id) {
+  const [concept, setConcept] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!id) { setLoading(false); return; }
+    const { data } = await supabase
+      .from('concepts')
+      .select('*, concept_outputs(*), concept_assets(*)')
+      .eq('id', id)
+      .single();
+    setConcept(data || null);
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+
+  return { concept, loading, refetch: fetch };
+}
+
+export async function createConcept(fields) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('concepts')
+    .insert({ ...fields, created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function updateConcept(id, updates) {
+  const { data, error } = await supabase
+    .from('concepts')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function archiveConcept(id) {
+  return updateConcept(id, { status: 'archived' });
+}
+
+// ─── Design Intelligence — Concept Outputs ──────────────────────────────────
+
+export async function createConceptOutput(fields) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('concept_outputs')
+    .insert({ ...fields, created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function setCurrentOutput(conceptId, outputType, newOutputId) {
+  await supabase
+    .from('concept_outputs')
+    .update({ is_current: false })
+    .eq('concept_id', conceptId)
+    .eq('output_type', outputType);
+  const { data, error } = await supabase
+    .from('concept_outputs')
+    .update({ is_current: true, updated_at: new Date().toISOString() })
+    .eq('id', newOutputId)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function updateConceptOutput(id, updates) {
+  const { data, error } = await supabase
+    .from('concept_outputs')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function nextOutputVersion(conceptId, outputType) {
+  const { data } = await supabase
+    .from('concept_outputs')
+    .select('version')
+    .eq('concept_id', conceptId)
+    .eq('output_type', outputType)
+    .order('version', { ascending: false })
+    .limit(1);
+  return data?.length ? data[0].version + 1 : 1;
+}
+
+export async function generateConceptCode(collectionName) {
+  const prefix = (collectionName || 'XX')
+    .split(/\s+/)
+    .map(w => w[0]?.toUpperCase() || '')
+    .join('')
+    .slice(0, 3);
+  const { count } = await supabase
+    .from('concepts')
+    .select('*', { count: 'exact', head: true })
+    .eq('collection_name', collectionName);
+  const seq = String((count || 0) + 1).padStart(3, '0');
+  return `${prefix}-${seq}`;
+}
