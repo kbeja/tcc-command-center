@@ -15,6 +15,7 @@ import CollectionDetail from './pages/CollectionDetail';
 import Knowledge from './pages/Knowledge';
 import ListingBuilder from './pages/ListingBuilder';
 import Studio from './pages/Studio';
+import ConceptWorkspace from './pages/ConceptWorkspace';
 import './styles/global.css';
 
 function AppInner() {
@@ -40,6 +41,7 @@ function AppInner() {
         <Route path="/knowledge" element={<Knowledge />} />
         <Route path="/listing-builder" element={<ListingBuilder />} />
         <Route path="/studio" element={<Studio />} />
+        <Route path="/concepts/:id" element={<ConceptWorkspace />} />
       </Routes>
       <CaptureButton />
     </>
