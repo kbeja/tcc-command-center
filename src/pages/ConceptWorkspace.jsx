@@ -53,8 +53,10 @@ async function generateOutput(concept, functionType) {
 
 // ── Upload asset to design-vault ──────────────────────────────────────────────
 
-async function uploadAsset(conceptId, conceptCode, file) {
-  const ext = file.name.split('.').pop();
+const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+async function uploadAsset(conceptId, conceptCode, file, assetType = 'reference_image') {
+  const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : (EXT_BY_MIME[file.type] || 'jpg');
   const slug = (conceptCode || conceptId).toLowerCase().replace(/[^a-z0-9]/g, '-');
   const path = `${slug}/${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from('design-vault').upload(path, file, {
@@ -66,11 +68,56 @@ async function uploadAsset(conceptId, conceptCode, file) {
     .from('concept_assets')
     .insert({
       concept_id: conceptId,
-      asset_type: 'reference_image',
+      asset_type: assetType,
       storage_path: path,
       mime_type: file.type,
       size_bytes: file.size,
-      label: file.name,
+      label: file.name || 'Pasted image',
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (dbError) throw dbError;
+  return assetRow;
+}
+
+// Fetches an external image URL via the fetch-image function (bypasses the
+// CORS wall a direct browser fetch would hit on most image hosts) and
+// uploads the result the same way a local file upload would.
+async function uploadAssetFromUrl(conceptId, conceptCode, url, assetType = 'mood_board') {
+  const res = await fetch('/.netlify/functions/fetch-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || `Fetch failed (${res.status})`);
+  const byteChars = atob(data.base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([bytes], { type: data.mediaType });
+  return uploadAsset(conceptId, conceptCode, blob, assetType);
+}
+
+// Duplicates an existing asset's file to a new storage path rather than
+// re-tagging/sharing the original row — so a Mood Board copy and its Visuals
+// original never share a storage_path, and deleting one can never silently
+// break the other (the existing AssetCard delete always removes the file).
+async function copyAssetToMoodBoard(conceptId, conceptCode, asset) {
+  const ext = asset.storage_path.split('.').pop();
+  const slug = (conceptCode || conceptId).toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const newPath = `${slug}/${Date.now()}.${ext}`;
+  const { error: copyError } = await supabase.storage.from('design-vault').copy(asset.storage_path, newPath);
+  if (copyError) throw copyError;
+  const { data: assetRow, error: dbError } = await supabase
+    .from('concept_assets')
+    .insert({
+      concept_id: conceptId,
+      asset_type: 'mood_board',
+      storage_path: newPath,
+      mime_type: asset.mime_type,
+      size_bytes: asset.size_bytes,
+      label: asset.label,
       created_at: new Date().toISOString(),
     })
     .select()
@@ -142,9 +189,12 @@ export default function ConceptWorkspace() {
     setAssetsLoaded(true);
   }
 
-  if (activeTab === 'visuals' && !assetsLoaded) {
+  if ((activeTab === 'visuals' || activeTab === 'moodboard') && !assetsLoaded) {
     loadAssetUrls();
   }
+
+  const moodAssets = (concept.concept_assets || []).filter(a => a.asset_type === 'mood_board');
+  const otherAssets = (concept.concept_assets || []).filter(a => a.asset_type !== 'mood_board');
 
   const saved = (field) => fieldSaved === field;
   const activeOutputTab = OUTPUT_TABS.find(t => t.key === activeTab);
@@ -180,7 +230,8 @@ export default function ConceptWorkspace() {
             const current = versions.find(o => o.is_current);
             return [t.key, `${t.label}${versions.length > 1 ? ` (v${current?.version || 1})` : ''}`];
           }),
-          ['visuals', `Visuals${concept.concept_assets?.length ? ` (${concept.concept_assets.length})` : ''}`],
+          ['moodboard', `Mood Board${moodAssets.length ? ` (${moodAssets.length})` : ''}`],
+          ['visuals', `Visuals${otherAssets.length ? ` (${otherAssets.length})` : ''}`],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -281,12 +332,25 @@ export default function ConceptWorkspace() {
         />
       )}
 
+      {/* ── Mood Board tab ── */}
+      {activeTab === 'moodboard' && (
+        <MoodBoardTab
+          concept={concept}
+          conceptId={id}
+          refetch={refetch}
+          assetUrls={assetUrls}
+          moodAssets={moodAssets}
+          otherAssets={otherAssets}
+          onAssetsChanged={() => setAssetsLoaded(false)}
+        />
+      )}
+
       {/* ── Visuals tab ── */}
       {activeTab === 'visuals' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
-              Reference images, mood board photos, exported designs
+              Reference images and exported designs
             </div>
             <button
               className="btn btn-primary btn-sm"
@@ -304,16 +368,16 @@ export default function ConceptWorkspace() {
             />
           </div>
 
-          {!concept.concept_assets?.length ? (
+          {!otherAssets.length ? (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--charcoal-soft)' }}>
               <div style={{ fontSize: '2rem', marginBottom: 8 }}>🖼</div>
               <div style={{ fontSize: '0.85rem', marginBottom: 8 }}>No visuals yet</div>
-              <div style={{ fontSize: '0.72rem', marginBottom: 16 }}>Upload reference images, mood board photos, or Kittl exports</div>
+              <div style={{ fontSize: '0.72rem', marginBottom: 16 }}>Upload reference images or Kittl exports</div>
               <button className="btn btn-primary btn-sm" onClick={() => fileInputRef.current?.click()}>+ Add Image</button>
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-              {concept.concept_assets.map(asset => (
+              {otherAssets.map(asset => (
                 <AssetCard
                   key={asset.id}
                   asset={asset}
@@ -568,6 +632,190 @@ function AssetCard({ asset, url, onDelete }) {
           </div>
         ) : (
           <button onClick={() => setConfirmDelete(true)} style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}>Remove</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Pinterest-style masonry board, independent from the Visuals tab's assets —
+// images get here by direct upload, drag-and-drop, pasting an image URL, or
+// copying one over from Visuals. Each add method funnels through the same
+// asset_type: 'mood_board' concept_assets row.
+function MoodBoardTab({ concept, conceptId, refetch, assetUrls, moodAssets, otherAssets, onAssetsChanged }) {
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlSubmitting, setUrlSubmitting] = useState(false);
+  const [showAddExisting, setShowAddExisting] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef(null);
+
+  async function addFile(file) {
+    setError('');
+    setUploading(true);
+    try {
+      await uploadAsset(conceptId, concept.concept_code, file, 'mood_board');
+      refetch();
+      onAssetsChanged();
+    } catch (err) {
+      setError('Upload failed: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleFileInput(e) {
+    const file = e.target.files?.[0];
+    if (file) addFile(file);
+    e.target.value = '';
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) addFile(file);
+  }
+
+  async function handleAddUrl() {
+    if (!urlInput.trim()) return;
+    setError('');
+    setUrlSubmitting(true);
+    try {
+      await uploadAssetFromUrl(conceptId, concept.concept_code, urlInput.trim());
+      setUrlInput('');
+      refetch();
+      onAssetsChanged();
+    } catch (err) {
+      setError("Couldn't add that image: " + err.message);
+    } finally {
+      setUrlSubmitting(false);
+    }
+  }
+
+  async function handleAddExisting(asset) {
+    setError('');
+    try {
+      await copyAssetToMoodBoard(conceptId, concept.concept_code, asset);
+      refetch();
+      onAssetsChanged();
+    } catch (err) {
+      setError("Couldn't add that image: " + err.message);
+    }
+  }
+
+  async function handleRemove(asset) {
+    await supabase.storage.from('design-vault').remove([asset.storage_path]);
+    await supabase.from('concept_assets').delete().eq('id', asset.id);
+    refetch();
+    onAssetsChanged();
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 16 }}>
+        Inspiration and reference images for this concept — upload, drag in, paste an image URL, or pull one from Visuals.
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        <button className="btn btn-primary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          {uploading ? 'Uploading…' : '+ Upload Image'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          style={{ display: 'none' }}
+          onChange={handleFileInput}
+        />
+        {otherAssets.length > 0 && (
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowAddExisting(v => !v)}>
+            {showAddExisting ? 'Close' : '+ Add from Visuals'}
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input
+          value={urlInput}
+          onChange={e => setUrlInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleAddUrl(); }}
+          placeholder="Paste an image URL (e.g. from Pinterest)…"
+          style={{ flex: 1, fontSize: '0.8rem' }}
+        />
+        <button className="btn btn-ghost btn-sm" onClick={handleAddUrl} disabled={urlSubmitting || !urlInput.trim()}>
+          {urlSubmitting ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+
+      {error && <div style={{ fontSize: '0.75rem', color: 'var(--alert)', marginBottom: 12 }}>{error}</div>}
+
+      {showAddExisting && (
+        <div style={{ marginBottom: 16, padding: 12, background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 8 }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>Click an image to copy it onto the board</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8 }}>
+            {otherAssets.map(asset => (
+              <img
+                key={asset.id}
+                src={assetUrls[asset.id]}
+                alt={asset.label || 'asset'}
+                onClick={() => handleAddExisting(asset)}
+                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6, cursor: 'pointer', display: 'block' }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        style={{
+          border: dragOver ? '2px dashed var(--dusty-rose)' : '2px solid transparent',
+          borderRadius: 8, padding: dragOver ? 10 : 0,
+          background: dragOver ? 'rgba(124,175,138,0.05)' : 'transparent',
+        }}
+      >
+        {!moodAssets.length ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--charcoal-soft)', border: '2px dashed rgba(43,41,38,0.15)', borderRadius: 8 }}>
+            <div style={{ fontSize: '2rem', marginBottom: 8 }}>📌</div>
+            <div style={{ fontSize: '0.85rem', marginBottom: 4 }}>No mood board images yet</div>
+            <div style={{ fontSize: '0.72rem' }}>Drag an image here, upload one, or paste a URL above</div>
+          </div>
+        ) : (
+          <div style={{ columnWidth: 180, columnGap: 12 }}>
+            {moodAssets.map(asset => (
+              <MoodBoardCard key={asset.id} asset={asset} url={assetUrls[asset.id]} onDelete={() => handleRemove(asset)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MoodBoardCard({ asset, url, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  return (
+    <div style={{ breakInside: 'avoid', marginBottom: 12, position: 'relative', borderRadius: 8, overflow: 'hidden', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)' }}>
+      {url ? (
+        <img src={url} alt={asset.label || 'mood board image'} style={{ width: '100%', display: 'block' }} />
+      ) : (
+        <div style={{ width: '100%', aspectRatio: '1', background: 'rgba(43,41,38,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>🖼</div>
+      )}
+      <div style={{ position: 'absolute', top: 6, right: 6 }}>
+        {confirmDelete ? (
+          <div style={{ display: 'flex', gap: 4, background: 'rgba(43,41,38,0.85)', borderRadius: 6, padding: '3px 6px' }}>
+            <button onClick={onDelete} style={{ color: '#fff', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 600 }}>Remove</button>
+            <button onClick={() => setConfirmDelete(false)} style={{ color: 'rgba(255,255,255,0.7)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.68rem' }}>Cancel</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            style={{ background: 'rgba(43,41,38,0.6)', color: '#fff', border: 'none', borderRadius: '50%', width: 24, height: 24, cursor: 'pointer', fontSize: '0.7rem' }}
+          >✕</button>
         )}
       </div>
     </div>
