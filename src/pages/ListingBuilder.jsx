@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, createProduct, updateProduct, createCollection } from '../lib/hooks';
@@ -687,6 +687,7 @@ export default function ListingBuilder() {
   const [imageMediaType, setImageMediaType] = useState('image/png');
   const [analyzing, setAnalyzing]       = useState(false);
   const [imageAnalysis, setImageAnalysis] = useState('');
+  const [imageAnalysisError, setImageAnalysisError] = useState('');
   const [selectedSessionIds, setSelectedSessionIds] = useState(new Set());
   const [extraCollections, setExtraCollections] = useState(new Set());
   const [output, setOutput]         = useState(null);
@@ -829,6 +830,22 @@ export default function ListingBuilder() {
     ...(!b3Keywords.length && !hasProvisionalCoverage ? ['Bucket 3 (Bestseller — broad + buyer-intent)'] : []),
   ];
 
+  // Auto-select the top-volume B1 candidate as the anchor once, per collection,
+  // so "No anchor keyword set" doesn't sit warning-red while a perfectly good
+  // candidate is already showing right above it. User can still override by
+  // clicking another chip, or clear it — once tried for a collection, it's
+  // never re-imposed (respects a deliberate clear).
+  const autoAnchorTriedRef = useRef(new Set());
+  useEffect(() => {
+    if (!form.collection || form.anchorKeyword) return;
+    if (autoAnchorTriedRef.current.has(form.collection)) return;
+    const topB1 = b1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
+    if (topB1) {
+      autoAnchorTriedRef.current.add(form.collection);
+      setField('anchorKeyword', topB1.keyword);
+    }
+  }, [form.collection, form.anchorKeyword, b1Keywords]);
+
   // Playbooks
   const photoPlaybook      = playbooks.find(p => p.slug === 'listing-photos');
   const seoPlaybook        = playbooks.find(p => p.slug === 'seo-standards');
@@ -843,6 +860,33 @@ export default function ListingBuilder() {
   const styleGuide = nicheStyleGuides[nicheKey] || collectionObj?.style_guide || '';
 
   // Design image
+  const analyzeImage = useCallback(async (base64, mediaType) => {
+    setAnalyzing(true);
+    setImageAnalysisError('');
+    try {
+      const res = await fetch('/.netlify/functions/claude-process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'analyze_design_image', payload: { imageBase64: base64, mediaType } }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImageAnalysis('');
+        setImageAnalysisError(data.error || `Analysis failed (${res.status})`);
+      } else if (data.analysis) {
+        setImageAnalysis(data.analysis);
+      } else {
+        setImageAnalysis('');
+        setImageAnalysisError('Analysis returned no result — try again');
+      }
+    } catch (err) {
+      console.error('Image analysis failed:', err);
+      setImageAnalysis('');
+      setImageAnalysisError('Image analysis failed — check your connection and try again');
+    }
+    setAnalyzing(false);
+  }, []);
+
   const handleImage = useCallback(async (file) => {
     if (!file) return;
     const reader = new FileReader();
@@ -853,22 +897,10 @@ export default function ListingBuilder() {
       const mediaType = file.type || 'image/png';
       setImageBase64(base64);
       setImageMediaType(mediaType);
-      setAnalyzing(true);
-      try {
-        const res = await fetch('/.netlify/functions/claude-process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'analyze_design_image', payload: { imageBase64: base64, mediaType } }),
-        });
-        const data = await res.json();
-        setImageAnalysis(data.analysis || '');
-      } catch (err) {
-        console.error('Image analysis failed:', err);
-      }
-      setAnalyzing(false);
+      await analyzeImage(base64, mediaType);
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [analyzeImage]);
 
   // Ctrl+V paste listener for design image
   useEffect(() => {
@@ -902,7 +934,15 @@ export default function ListingBuilder() {
     },
     { label: styleGuide ? 'Style guide' : 'Style guide missing', ok: !!styleGuide, warn: !styleGuide },
     { label: form.anchorKeyword ? `Anchor: "${form.anchorKeyword}"` : 'No anchor keyword set', ok: !!form.anchorKeyword, warn: !form.anchorKeyword },
-    { label: imageAnalysis ? 'Design image analyzed' : (imagePreview ? 'Analyzing image…' : 'No design image'), ok: !!imageAnalysis, warn: !imageAnalysis },
+    {
+      label: analyzing
+        ? 'Analyzing image…'
+        : imageAnalysis
+          ? 'Design image analyzed'
+          : (imageAnalysisError || imagePreview) ? 'Image analysis failed — retry' : 'No design image',
+      ok: !!imageAnalysis,
+      warn: !imageAnalysis,
+    },
   ];
   const hasWarnings = readiness.some(r => r.warn);
   const bucketWarnings = form.collection ? computeBucketWarnings(allKeywords, sessions) : [];
@@ -1112,13 +1152,12 @@ export default function ListingBuilder() {
 
         {/* B1 anchor picker */}
         {(() => {
-          const b1s = allKeywords.filter(k => k.bucket === 1 && !k.tags_only && k.tag_type !== 'discard');
-          if (!b1s.length) return null;
+          if (!b1Keywords.length) return null;
           return (
             <div style={{ marginBottom: 12 }}>
               <label className="form-label">Anchor Keyword (B1) <span style={{ fontWeight: 400, opacity: 0.5 }}>— leads the title</span></label>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                {b1s.sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
+                {b1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
                   <button key={k.id} type="button"
                     onClick={() => setField('anchorKeyword', form.anchorKeyword === k.keyword ? '' : k.keyword)}
                     style={{
@@ -1179,6 +1218,14 @@ export default function ListingBuilder() {
             </div>
             {analyzing && (
               <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)' }}>Analyzing design…</div>
+            )}
+            {imageAnalysisError && !analyzing && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.8rem', color: 'var(--alert)' }}>
+                <span>⚠ {imageAnalysisError}</span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => analyzeImage(imageBase64, imageMediaType)}>
+                  Retry
+                </button>
+              </div>
             )}
             {imageAnalysis && !analyzing && (
               <div>

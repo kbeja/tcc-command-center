@@ -5,7 +5,7 @@ import { useResearchSessions, useCollections, useCollectionObjects, useChapters,
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
-import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
+import { assignBucket, BucketBadge, BUCKET_STYLE, isLowQualityKeyword } from '../lib/keywords';
 
 const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', 'Summer', 'Spring', 'Fall'];
 
@@ -282,6 +282,8 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
   const [saving, setSaving]           = useState(false);
   const [rebucketing, setRebucketing] = useState(false);
   const [rebucketResult, setRebucketResult] = useState(null);
+  const [cleaning, setCleaning]       = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
   const [sortCol, setSortCol] = useState('');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -391,15 +393,35 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     const toUpdate = keywords.filter(k => k.volume != null && k.competition != null);
     const changed = toUpdate.filter(k => assignBucket(k.volume, k.competition) !== k.bucket);
     if (changed.length > 0) {
-      const rows = changed.map(k => {
+      // .update().eq('id', …) per row — .upsert() would compile to an INSERT
+      // under the hood and reject this partial row on keywords' other NOT NULL
+      // columns (keyword, created_at) that this payload doesn't set.
+      await Promise.all(changed.map(k => {
         const newBucket = assignBucket(k.volume, k.competition);
-        return { id: k.id, bucket: newBucket, bucket_source: newBucket ? 'manual' : null };
-      });
-      await supabase.from('keywords').upsert(rows, { onConflict: 'id' });
+        return supabase.from('keywords').update({ bucket: newBucket, bucket_source: newBucket ? 'manual' : null }).eq('id', k.id);
+      }));
     }
     await load();
     setRebucketResult({ updated: changed.length, skipped: toUpdate.length - changed.length, noMetrics: keywords.length - toUpdate.length });
     setRebucketing(false);
+  }
+
+  // One-time catch-up for keywords imported before the low-quality-text filter
+  // existed — flags mashed tag-combos / invented words (e.g. "gifte-sweatshirt")
+  // as tags_only so they stop competing for anchor/bucket slots. New imports are
+  // already caught automatically by assignBucketsToList().
+  async function handleCleanupLowQuality() {
+    setCleaning(true);
+    setCleanupResult(null);
+    const toFlag = keywords.filter(k => !k.tags_only && isLowQualityKeyword(k.keyword));
+    if (toFlag.length > 0) {
+      await Promise.all(toFlag.map(k =>
+        supabase.from('keywords').update({ tags_only: true, bucket: null, bucket_source: null }).eq('id', k.id)
+      ));
+    }
+    await load();
+    setCleanupResult({ updated: toFlag.length });
+    setCleaning(false);
   }
 
   const sorted = sortCol ? [...filtered].sort((a, b) => {
@@ -448,11 +470,20 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
           title="Re-run bucket assignment on all keywords with volume + competition data">
           {rebucketing ? 'Re-bucketing…' : '⟳ Re-bucket'}
         </button>
+        <button className="btn btn-ghost btn-sm" onClick={handleCleanupLowQuality} disabled={cleaning}
+          title="Flag mashed tag-combo / invented-word keywords (e.g. 'gifte-sweatshirt') as tags-only so they stop competing for anchor/bucket slots">
+          {cleaning ? 'Cleaning…' : '🧹 Clean up low-quality'}
+        </button>
         <button className="btn btn-primary btn-sm" onClick={onAddSession}>+ Add Session</button>
       </div>
       {rebucketResult && (
         <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
           ✓ {rebucketResult.updated} updated · {rebucketResult.skipped} already correct · {rebucketResult.noMetrics} skipped (no metrics)
+        </div>
+      )}
+      {cleanupResult && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+          ✓ {cleanupResult.updated} keyword{cleanupResult.updated !== 1 ? 's' : ''} flagged tags-only (mashed/invented text)
         </div>
       )}
 

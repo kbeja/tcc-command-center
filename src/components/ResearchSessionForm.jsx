@@ -170,12 +170,18 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
           );
           if (idx >= 0) { merged[idx] = incoming; } else { merged.push(incoming); }
         }
-        // Auto-assign buckets to the merged list
+        // Auto-assign buckets to the merged list (also flags low-quality keyword
+        // text — e.g. mashed tag combos — as tags_only, deprioritized)
         return assignBucketsToList(merged.map(k => ({
           ...k,
           volume:      k.volume      !== '' ? parseInt(k.volume)      : null,
           competition: k.competition !== '' ? parseInt(k.competition) : null,
-        }))).map((k, i) => ({ ...merged[i], bucket: k.bucket, bucket_source: k.bucket_source }));
+        }))).map((k, i) => ({
+          ...merged[i],
+          bucket: k.bucket,
+          bucket_source: k.bucket_source,
+          tags_only: k.tags_only || merged[i].tags_only,
+        }));
       });
       setBulkText('');
       setShowBulk(false);

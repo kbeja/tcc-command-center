@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { createResearchSession, useChapters } from '../lib/hooks';
-import { assignBucketsToList } from '../lib/keywords.jsx';
+import { assignBucketsToList, isLowQualityKeyword } from '../lib/keywords.jsx';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -76,14 +76,11 @@ function scoreKeyword(volume, competition) {
   return (volume / competition) * 1000;
 }
 
-function isGarbage(keyword, volume, competition, score) {
-  if (/[-_]/.test(keyword) && keyword.split(/[-_]/).length > 3) return true;
-  if (score > 50000 && competition <= 1) return true;
-  return false;
-}
-
-function isMisspelling(keyword) {
-  return /[a-z]e\b/.test(keyword) && !/coffee|bee|free|see|tree|three/.test(keyword);
+// Statistical outlier — score wildly inflated relative to near-zero competition.
+// Text-quality issues (mashed tag combos, invented words) are handled separately
+// by isLowQualityKeyword() and routed to tags_only instead of discarded outright.
+function isGarbage(volume, competition, score) {
+  return score > 50000 && competition <= 1;
 }
 
 // ─── Signal Matching ──────────────────────────────────────────────────────────
@@ -152,9 +149,9 @@ export default function EverbeeCSVImport({ products, onImported }) {
           const volume = int(col(r, 'volume'));
           const competition = int(col(r, 'competition'));
           const score = scoreKeyword(volume, competition);
-          const garbage = isGarbage(keyword, volume, competition, score);
-          const misspelling = !garbage && isMisspelling(keyword);
-          const keep = !garbage && score >= 50;
+          const garbage = isGarbage(volume, competition, score);
+          const misspelling = !garbage && isLowQualityKeyword(keyword);
+          const keep = !garbage && !misspelling && score >= 50;
           return { keyword, volume, competition, score: Math.round(score), garbage, misspelling, keep };
         });
         const keep = parsed.filter(r => r.keep);
@@ -231,16 +228,14 @@ export default function EverbeeCSVImport({ products, onImported }) {
             score: k.score ?? null,
             tag_type: (k.score ?? 0) >= 1000 ? 'use' : 'watch',
           })),
-          ...preview.misspellings
-            .filter(k => !preview.keep.some(kk => kk.keyword === k.keyword))
-            .map(k => ({
-              keyword: k.keyword,
-              volume: k.volume ?? null,
-              competition: k.competition ?? null,
-              score: k.score ?? null,
-              tag_type: 'watch',
-              tags_only: true,
-            })),
+          ...preview.misspellings.map(k => ({
+            keyword: k.keyword,
+            volume: k.volume ?? null,
+            competition: k.competition ?? null,
+            score: k.score ?? null,
+            tag_type: 'watch',
+            tags_only: true,
+          })),
         ];
         const kwRows = assignBucketsToList(rawRows);
 

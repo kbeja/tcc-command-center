@@ -189,8 +189,18 @@ exports.handler = async (event) => {
           }],
         }),
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('[claude-process] analyze_design_image upstream error:', response.status, errText);
+        return { statusCode: 502, body: JSON.stringify({ error: 'Image analysis failed upstream. Please try again.' }) };
+      }
       const data = await response.json();
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ analysis: data.content?.[0]?.text || '' }) };
+      const analysis = data.content?.[0]?.text || '';
+      if (!analysis) {
+        console.error('[claude-process] analyze_design_image empty response:', JSON.stringify(data));
+        return { statusCode: 502, body: JSON.stringify({ error: 'Image analysis returned no result. Please try again.' }) };
+      }
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ analysis }) };
     } catch (err) {
       return safeError(err, 'analyze_design_image');
     }

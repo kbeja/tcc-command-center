@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createSpark, createWorkshopItem, updateProduct, createResearchSession } from '../lib/hooks';
+import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 
 function autoColor(score, competition) {
@@ -121,7 +122,7 @@ function parseSummary(text, products) {
       collection: colMatch[1].trim(),
       niche: nicheMatch?.[1]?.trim() || null,
       source,
-      keywords,
+      keywords: assignBucketsToList(keywords),
     });
   }
 

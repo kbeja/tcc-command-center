@@ -155,6 +155,12 @@ export async function updateKeyword(id, updates) {
   return supabase.from('keywords').update(updates).eq('id', id);
 }
 
+// Re-importing a keyword you already track (same collection, same text) updates
+// the existing row in place — fresh volume/competition/score/bucket — instead of
+// inserting a duplicate. The row's prior values are snapshotted to keyword_history
+// first, so nothing is lost, it just stops cluttering the keyword bank.
+// tags_only keywords (misspelling/tag variants) are always inserted fresh — they're
+// not part of the bucket-ranked "current value" concept this merge is for.
 export async function createResearchSession(session, keywords) {
   const now = new Date().toISOString();
   const { data: s, error } = await supabase
@@ -163,14 +169,87 @@ export async function createResearchSession(session, keywords) {
     .select()
     .single();
   if (error || !s) return { error };
+
   if (keywords?.length) {
-    const { error: kwError } = await supabase.from('keywords').insert(
-      keywords.map(k => ({ ...k, research_session_id: s.id, created_at: now, updated_at: now }))
-    );
-    if (kwError) {
-      // Roll back the session so we don't leave an orphaned session with no keywords
-      await supabase.from('research_sessions').delete().eq('id', s.id);
-      return { error: kwError };
+    const mergeable = keywords.filter(k => !k.tags_only && k.keyword?.trim());
+    const alwaysInsert = keywords.filter(k => k.tags_only || !k.keyword?.trim());
+
+    let existingByKeyword = new Map();
+    if (mergeable.length && session.collection) {
+      const { data: existingRows } = await supabase
+        .from('keywords')
+        .select('id, keyword, volume, competition, score, updated_at, created_at, research_sessions!inner(collection, source)')
+        .eq('research_sessions.collection', session.collection);
+      for (const row of existingRows || []) {
+        const key = (row.keyword || '').toLowerCase().trim();
+        if (key && !existingByKeyword.has(key)) existingByKeyword.set(key, row);
+      }
+    }
+
+    const toInsert = [];
+    const toUpdate = [];
+    const historyRows = [];
+
+    for (const k of mergeable) {
+      const match = existingByKeyword.get(k.keyword.toLowerCase().trim());
+      if (match) {
+        historyRows.push({
+          keyword_id: match.id,
+          keyword: match.keyword,
+          volume: match.volume,
+          competition: match.competition,
+          score: match.score,
+          source: match.research_sessions?.source || null,
+          recorded_at: match.updated_at || match.created_at,
+        });
+        toUpdate.push({
+          id: match.id,
+          keyword: k.keyword,
+          volume: k.volume ?? null,
+          competition: k.competition ?? null,
+          score: k.score ?? null,
+          tag_type: k.tag_type,
+          bucket: k.bucket ?? null,
+          bucket_source: k.bucket_source ?? null,
+          research_session_id: s.id,
+          updated_at: now,
+        });
+      } else {
+        toInsert.push({ ...k, research_session_id: s.id, created_at: now, updated_at: now });
+      }
+    }
+    for (const k of alwaysInsert) {
+      toInsert.push({ ...k, research_session_id: s.id, created_at: now, updated_at: now });
+    }
+
+    // Roll back the session so we don't leave an orphaned session on any failure
+    if (historyRows.length) {
+      const { error: histErr } = await supabase.from('keyword_history').insert(historyRows);
+      if (histErr) {
+        await supabase.from('research_sessions').delete().eq('id', s.id);
+        return { error: histErr };
+      }
+    }
+    if (toUpdate.length) {
+      // Plain .update() per row, not .upsert() — upsert compiles to INSERT ... ON
+      // CONFLICT under the hood, so a partial row still has to satisfy NOT NULL
+      // constraints (keyword, created_at, …) on columns this payload never
+      // touches. .update().eq('id', …) only ever SETs the named columns.
+      const results = await Promise.all(toUpdate.map(({ id, ...fields }) =>
+        supabase.from('keywords').update(fields).eq('id', id)
+      ));
+      const updErr = results.find(r => r.error)?.error;
+      if (updErr) {
+        await supabase.from('research_sessions').delete().eq('id', s.id);
+        return { error: updErr };
+      }
+    }
+    if (toInsert.length) {
+      const { error: insErr } = await supabase.from('keywords').insert(toInsert);
+      if (insErr) {
+        await supabase.from('research_sessions').delete().eq('id', s.id);
+        return { error: insErr };
+      }
     }
   }
   return { data: s };
