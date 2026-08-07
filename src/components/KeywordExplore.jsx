@@ -494,13 +494,24 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
     setSelected(new Set());
   }
 
+  function deleteSelected() {
+    setKeywords(prev => applyBuckets(prev.filter(k => !selected.has(k.id))));
+    setSelected(new Set());
+  }
+
+  function assignSelectedToGroup(groupId) {
+    if (!groupId) return;
+    setKeywords(prev => prev.map(k => selected.has(k.id) ? { ...k, groupId } : k));
+    setSelected(new Set());
+  }
+
   function renameGroup(id, name) {
     setGroups(prev => prev.map(g => g.id === id ? { ...g, name } : g));
   }
 
   function deleteGroup(id) {
     setGroups(prev => prev.filter(g => g.id !== id));
-    setKeywords(prev => prev.map(k => k.groupId === id ? { ...k, groupId: null } : k));
+    setKeywords(prev => applyBuckets(prev.filter(k => k.groupId !== id)));
   }
 
   async function handleCluster() {
@@ -619,9 +630,18 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
         {hasKeywords && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
             {selected.size > 0 && (
-              <button className="btn btn-ghost btn-sm" onClick={addGroupFromSelected}>
-                + Group {selected.size}
-              </button>
+              <>
+                <button className="btn btn-ghost btn-sm" onClick={addGroupFromSelected}>
+                  + Group {selected.size}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { if (window.confirm(`Delete ${selected.size} keyword${selected.size > 1 ? 's' : ''}?`)) deleteSelected(); }}
+                  style={{ color: 'var(--alert)', opacity: 0.7 }}
+                >
+                  Delete {selected.size}
+                </button>
+              </>
             )}
             <button className="btn btn-ghost btn-sm" onClick={handleCluster} disabled={clustering}>
               {clustering ? 'Clustering…' : '✦ AI Group'}
@@ -715,8 +735,25 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
                   selected={selected.has(kw.id)} onToggle={toggleSelect} />
               ))}
               {selected.size > 0 && (
-                <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={addGroupFromSelected}>+ Group {selected.size} selected</button>
+                <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={addGroupFromSelected}>+ New group ({selected.size})</button>
+                  {groups.length > 0 && (
+                    <select
+                      defaultValue=""
+                      onChange={e => { if (e.target.value) assignSelectedToGroup(e.target.value); e.target.value = ''; }}
+                      style={{ fontSize: '0.72rem', padding: '3px 6px' }}
+                    >
+                      <option value="">Move to group…</option>
+                      {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  )}
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => { if (window.confirm(`Delete ${selected.size} keyword${selected.size > 1 ? 's' : ''}?`)) deleteSelected(); }}
+                    style={{ color: 'var(--alert)', opacity: 0.7 }}
+                  >
+                    Delete {selected.size}
+                  </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())} style={{ opacity: 0.5 }}>Clear</button>
                 </div>
               )}

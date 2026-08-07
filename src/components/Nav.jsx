@@ -54,6 +54,10 @@ export default function Nav({ workshopCount, moSales, moRevenue }) {
         <span className="nav-icon">✍</span>
         <span>Listing</span>
       </NavLink>
+      <NavLink to="/concepts" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+        <span className="nav-icon">✦</span>
+        <span>Designs</span>
+      </NavLink>
       <NavLink to="/studio" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
         <span className="nav-icon">🎨</span>
         <span>Studio</span>

@@ -478,14 +478,18 @@ export default function CollectionDetail() {
 // ── Concept card ──────────────────────────────────────────────────────────────
 
 function ConceptCard({ concept }) {
+  const navigate = useNavigate();
   const kittlOutput = concept.concept_outputs?.find(o => o.output_type === 'kittl_prompt' && o.is_current);
   const outputCount = concept.concept_outputs?.length || 0;
 
   return (
-    <div style={{
-      border: '1px solid rgba(43,41,38,0.12)', borderRadius: 8, padding: '14px 16px',
-      background: 'var(--warm-white)',
-    }}>
+    <div
+      onClick={() => navigate(`/concepts/${concept.id}`)}
+      style={{
+        border: '1px solid rgba(43,41,38,0.12)', borderRadius: 8, padding: '14px 16px',
+        background: 'var(--warm-white)', cursor: 'pointer',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
         <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{concept.name}</div>
         {concept.concept_code && (
