@@ -14,7 +14,6 @@ import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
 import Knowledge from './pages/Knowledge';
 import ListingBuilder from './pages/ListingBuilder';
-import Studio from './pages/Studio';
 import ConceptWorkspace from './pages/ConceptWorkspace';
 import Concepts from './pages/Concepts';
 import './styles/global.css';
@@ -41,7 +40,6 @@ function AppInner() {
         <Route path="/collections/:name" element={<CollectionDetail />} />
         <Route path="/knowledge" element={<Knowledge />} />
         <Route path="/listing-builder" element={<ListingBuilder />} />
-        <Route path="/studio" element={<Studio />} />
         <Route path="/concepts" element={<Concepts />} />
         <Route path="/concepts/:id" element={<ConceptWorkspace />} />
       </Routes>

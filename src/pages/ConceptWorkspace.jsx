@@ -13,10 +13,21 @@ import {
 
 const FUNCTION_URL = '/.netlify/functions/claude-process';
 
-// ── Generate Kittl prompt via Netlify function ────────────────────────────────
+// Every AI-generated concept output — Kittl prompt, mockup prompt, listing
+// draft, Pinterest copy — is generated from the same concept brief and shares
+// the same version/current/edit lifecycle, so they're driven off one config
+// list and one <GeneratedOutputTab> rather than four near-duplicate blocks.
+const OUTPUT_TABS = [
+  { key: 'kittl', outputType: 'kittl_prompt', functionType: 'generate_kittl_prompt', label: 'Kittl Prompt', resultField: 'kittl_prompt', notesField: 'design_notes' },
+  { key: 'mockup', outputType: 'mockup_prompt', functionType: 'generate_mockup_prompt', label: 'Mockup Prompt', resultField: 'body', notesField: 'notes' },
+  { key: 'listing', outputType: 'listing_draft', functionType: 'generate_listing_draft', label: 'Listing Draft', resultField: 'body', notesField: 'notes', extraField: { key: 'tags', label: 'Suggested tags' } },
+  { key: 'pinterest', outputType: 'pinterest_copy', functionType: 'generate_pinterest_copy', label: 'Pinterest Copy', resultField: 'body', notesField: 'notes', extraField: { key: 'boards', label: 'Suggested boards' } },
+];
 
-async function generateKittlPrompt(concept) {
-  const payload = `Concept Name: ${concept.name}
+// ── Build the concept brief sent to every generator ────────────────────────────
+
+function buildConceptBrief(concept) {
+  return `Concept Name: ${concept.name}
 Collection: ${concept.collection_name}
 Design Direction: ${concept.design_direction || ''}
 Target Customer: ${concept.target_customer || ''}
@@ -27,13 +38,16 @@ Mood Keywords: ${(concept.mood_keywords || []).join(', ')}
 Product Types: ${(concept.product_types || []).join(', ')}
 Seasonal Flag: ${concept.seasonal_flag || 'evergreen'}
 Emotional Trigger: ${concept.emotional_trigger || ''}`;
+}
 
+async function generateOutput(concept, functionType) {
   const res = await fetch(FUNCTION_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'generate_kittl_prompt', payload }),
+    body: JSON.stringify({ type: functionType, payload: buildConceptBrief(concept) }),
   });
   const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || `Generation failed (${res.status})`);
   return data.parsed || data;
 }
 
@@ -78,25 +92,14 @@ export default function ConceptWorkspace() {
   const { concept, loading, refetch } = useConcept(id);
 
   const [activeTab, setActiveTab] = useState('overview');
-  const [generating, setGenerating] = useState(false);
-  const [genResult, setGenResult] = useState(null);
-  const [genError, setGenError] = useState('');
-  const [saving, setSaving] = useState(false);
   const [fieldSaved, setFieldSaved] = useState('');
   const [uploading, setUploading] = useState(false);
   const [assetUrls, setAssetUrls] = useState({});
   const [assetsLoaded, setAssetsLoaded] = useState(false);
-  const [editingOutput, setEditingOutput] = useState(null);
-  const [editBody, setEditBody] = useState('');
   const fileInputRef = useRef(null);
 
   if (loading) return <div className="page"><div style={{ color: 'var(--charcoal-soft)', padding: 24 }}>Loading…</div></div>;
   if (!concept) return <div className="page"><div style={{ color: 'var(--charcoal-soft)', padding: 24 }}>Concept not found.</div></div>;
-
-  const kittlOutput = concept.concept_outputs?.find(o => o.output_type === 'kittl_prompt' && o.is_current);
-  const allKittlVersions = (concept.concept_outputs || [])
-    .filter(o => o.output_type === 'kittl_prompt')
-    .sort((a, b) => b.version - a.version);
 
   async function handleFieldBlur(field, value) {
     await updateConcept(id, { [field]: value || null });
@@ -111,62 +114,6 @@ export default function ConceptWorkspace() {
     setFieldSaved(field);
     refetch();
     setTimeout(() => setFieldSaved(''), 1500);
-  }
-
-  async function handleGenerate() {
-    setGenerating(true);
-    setGenError('');
-    setGenResult(null);
-    try {
-      const result = await generateKittlPrompt(concept);
-      if (!result?.kittl_prompt) throw new Error('No prompt returned');
-      setGenResult(result);
-    } catch (err) {
-      setGenError('Generation failed: ' + err.message);
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function handleSaveGenerated() {
-    if (!genResult?.kittl_prompt) return;
-    setSaving(true);
-    try {
-      const version = await nextOutputVersion(id, 'kittl_prompt');
-      const { data: output, error } = await createConceptOutput({
-        concept_id: id,
-        output_type: 'kittl_prompt',
-        version,
-        is_current: true,
-        body: genResult.kittl_prompt,
-        output_source: 'generated',
-        model_used: 'claude-haiku-4-5-20251001',
-        generation_notes: genResult.design_notes || null,
-      });
-      if (error || !output) throw new Error(error?.message || 'Save failed');
-      await setCurrentOutput(id, 'kittl_prompt', output.id);
-      setGenResult(null);
-      refetch();
-    } catch (err) {
-      setGenError('Save failed: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleEditSave() {
-    if (!editingOutput) return;
-    setSaving(true);
-    await updateConceptOutput(editingOutput.id, { body: editBody });
-    setEditingOutput(null);
-    setEditBody('');
-    refetch();
-    setSaving(false);
-  }
-
-  async function handleSetCurrent(outputId) {
-    await setCurrentOutput(id, 'kittl_prompt', outputId);
-    refetch();
   }
 
   async function handleUpload(e) {
@@ -200,6 +147,7 @@ export default function ConceptWorkspace() {
   }
 
   const saved = (field) => fieldSaved === field;
+  const activeOutputTab = OUTPUT_TABS.find(t => t.key === activeTab);
 
   return (
     <div className="page">
@@ -224,10 +172,14 @@ export default function ConceptWorkspace() {
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(43,41,38,0.12)', marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(43,41,38,0.12)', marginBottom: 20, flexWrap: 'wrap' }}>
         {[
           ['overview', 'Overview'],
-          ['kittl', `Kittl Prompt${allKittlVersions.length > 1 ? ` (v${kittlOutput?.version || 1})` : ''}`],
+          ...OUTPUT_TABS.map(t => {
+            const versions = (concept.concept_outputs || []).filter(o => o.output_type === t.outputType);
+            const current = versions.find(o => o.is_current);
+            return [t.key, `${t.label}${versions.length > 1 ? ` (v${current?.version || 1})` : ''}`];
+          }),
           ['visuals', `Visuals${concept.concept_assets?.length ? ` (${concept.concept_assets.length})` : ''}`],
         ].map(([key, label]) => (
           <button
@@ -318,120 +270,15 @@ export default function ConceptWorkspace() {
         </div>
       )}
 
-      {/* ── Kittl Prompt tab ── */}
-      {activeTab === 'kittl' && (
-        <div>
-          {/* Current prompt */}
-          {kittlOutput ? (
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
-                  Current · v{kittlOutput.version} · {kittlOutput.output_source === 'imported' ? 'imported' : 'generated'}
-                </div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => { setEditingOutput(kittlOutput); setEditBody(kittlOutput.body); }}
-                >
-                  Edit
-                </button>
-              </div>
-
-              {editingOutput?.id === kittlOutput.id ? (
-                <div>
-                  <textarea
-                    value={editBody}
-                    onChange={e => setEditBody(e.target.value)}
-                    rows={8}
-                    style={{ width: '100%', fontSize: '0.82rem', padding: '10px 12px', borderRadius: 6, border: '1px solid rgba(43,41,38,0.2)', background: 'var(--warm-white)', resize: 'vertical' }}
-                  />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleEditSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setEditingOutput(null)}>Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ padding: '14px 16px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {kittlOutput.body}
-                </div>
-              )}
-
-              {kittlOutput.generation_notes && (
-                <div style={{ marginTop: 8, fontSize: '0.72rem', color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
-                  {kittlOutput.generation_notes}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ marginBottom: 24, padding: '16px', background: 'rgba(232,168,124,0.08)', border: '1px solid rgba(232,168,124,0.3)', borderRadius: 8, fontSize: '0.82rem', color: 'var(--charcoal-soft)' }}>
-              No Kittl prompt yet. Generate one below or import a concept that includes one.
-            </div>
-          )}
-
-          {/* Generate new */}
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
-              Generate a new Kittl prompt from this concept's brief using Claude.
-            </div>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={handleGenerate}
-              disabled={generating}
-            >
-              {generating ? 'Generating…' : kittlOutput ? 'Generate new version' : 'Generate Kittl Prompt'}
-            </button>
-
-            {genError && (
-              <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--alert)' }}>{genError}</div>
-            )}
-
-            {genResult && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>
-                  Preview — v{allKittlVersions.length + 1} · generated
-                </div>
-                <div style={{ padding: '14px 16px', background: 'rgba(124,175,138,0.08)', border: '1px solid rgba(124,175,138,0.3)', borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 10 }}>
-                  {genResult.kittl_prompt}
-                </div>
-                {genResult.design_notes && (
-                  <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', fontStyle: 'italic', marginBottom: 10 }}>
-                    {genResult.design_notes}
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-primary btn-sm" onClick={handleSaveGenerated} disabled={saving}>
-                    {saving ? 'Saving…' : 'Save as current'}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setGenResult(null)}>Discard</button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Version history */}
-          {allKittlVersions.length > 1 && (
-            <div>
-              <div className="section-label" style={{ marginBottom: 10 }}>Version history</div>
-              {allKittlVersions.map(v => (
-                <div key={v.id} style={{ padding: '10px 14px', marginBottom: 6, background: 'var(--warm-white)', border: `1px solid ${v.is_current ? 'rgba(124,175,138,0.4)' : 'rgba(43,41,38,0.1)'}`, borderRadius: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
-                      v{v.version} · {v.output_source}
-                      {v.is_current && <span style={{ marginLeft: 6, color: '#2d6b3c', fontWeight: 600 }}>current</span>}
-                    </div>
-                    {!v.is_current && (
-                      <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7rem' }} onClick={() => handleSetCurrent(v.id)}>
-                        Set as current
-                      </button>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', lineHeight: 1.5 }}>
-                    {v.body.length > 140 ? v.body.slice(0, 140) + '…' : v.body}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* ── Generated output tabs (Kittl Prompt, Mockup Prompt, Listing Draft, Pinterest Copy) ── */}
+      {activeOutputTab && (
+        <GeneratedOutputTab
+          key={activeOutputTab.key}
+          concept={concept}
+          refetch={refetch}
+          conceptId={id}
+          config={activeOutputTab}
+        />
       )}
 
       {/* ── Visuals tab ── */}
@@ -497,6 +344,206 @@ function FieldRow({ label, saved, children, inline }) {
         {saved && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
       </label>
       {children}
+    </div>
+  );
+}
+
+// One tab's worth of "current output / generate new / version history" — shared
+// by Kittl Prompt, Mockup Prompt, Listing Draft, and Pinterest Copy. Each tab
+// instance owns its own generate/edit state so switching tabs doesn't bleed
+// state between output types.
+function GeneratedOutputTab({ concept, refetch, conceptId, config }) {
+  const { outputType, functionType, label, resultField, notesField, extraField } = config;
+  const [generating, setGenerating] = useState(false);
+  const [genResult, setGenResult] = useState(null);
+  const [genError, setGenError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [editingOutput, setEditingOutput] = useState(null);
+  const [editBody, setEditBody] = useState('');
+
+  const current = concept.concept_outputs?.find(o => o.output_type === outputType && o.is_current);
+  const allVersions = (concept.concept_outputs || [])
+    .filter(o => o.output_type === outputType)
+    .sort((a, b) => b.version - a.version);
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setGenError('');
+    setGenResult(null);
+    try {
+      const result = await generateOutput(concept, functionType);
+      if (!result?.[resultField]) throw new Error('No result returned');
+      setGenResult(result);
+    } catch (err) {
+      setGenError('Generation failed: ' + err.message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleSaveGenerated() {
+    if (!genResult?.[resultField]) return;
+    setSaving(true);
+    try {
+      const version = await nextOutputVersion(conceptId, outputType);
+      const { data: output, error } = await createConceptOutput({
+        concept_id: conceptId,
+        output_type: outputType,
+        version,
+        is_current: true,
+        body: genResult[resultField],
+        output_source: 'generated',
+        model_used: 'claude-haiku-4-5-20251001',
+        generation_notes: genResult[notesField] || null,
+      });
+      if (error || !output) throw new Error(error?.message || 'Save failed');
+      await setCurrentOutput(conceptId, outputType, output.id);
+      setGenResult(null);
+      refetch();
+    } catch (err) {
+      setGenError('Save failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleEditSave() {
+    if (!editingOutput) return;
+    setSaving(true);
+    await updateConceptOutput(editingOutput.id, { body: editBody });
+    setEditingOutput(null);
+    setEditBody('');
+    refetch();
+    setSaving(false);
+  }
+
+  async function handleSetCurrent(outputId) {
+    await setCurrentOutput(conceptId, outputType, outputId);
+    refetch();
+  }
+
+  return (
+    <div>
+      {/* Current output */}
+      {current ? (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+              Current · v{current.version} · {current.output_source === 'imported' ? 'imported' : 'generated'}
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => { setEditingOutput(current); setEditBody(current.body); }}
+            >
+              Edit
+            </button>
+          </div>
+
+          {editingOutput?.id === current.id ? (
+            <div>
+              <textarea
+                value={editBody}
+                onChange={e => setEditBody(e.target.value)}
+                rows={8}
+                style={{ width: '100%', fontSize: '0.82rem', padding: '10px 12px', borderRadius: 6, border: '1px solid rgba(43,41,38,0.2)', background: 'var(--warm-white)', resize: 'vertical' }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleEditSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEditingOutput(null)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '14px 16px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {current.body}
+            </div>
+          )}
+
+          {current.generation_notes && (
+            <div style={{ marginTop: 8, fontSize: '0.72rem', color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
+              {current.generation_notes}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ marginBottom: 24, padding: '16px', background: 'rgba(232,168,124,0.08)', border: '1px solid rgba(232,168,124,0.3)', borderRadius: 8, fontSize: '0.82rem', color: 'var(--charcoal-soft)' }}>
+          No {label.toLowerCase()} yet. Generate one below or import a concept that includes one.
+        </div>
+      )}
+
+      {/* Generate new */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+          Generate a new {label.toLowerCase()} from this concept's brief using Claude.
+        </div>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={handleGenerate}
+          disabled={generating}
+        >
+          {generating ? 'Generating…' : current ? 'Generate new version' : `Generate ${label}`}
+        </button>
+
+        {genError && (
+          <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'var(--alert)' }}>{genError}</div>
+        )}
+
+        {genResult && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>
+              Preview — v{allVersions.length + 1} · generated
+            </div>
+            <div style={{ padding: '14px 16px', background: 'rgba(124,175,138,0.08)', border: '1px solid rgba(124,175,138,0.3)', borderRadius: 8, fontSize: '0.85rem', lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 10 }}>
+              {genResult[resultField]}
+            </div>
+            {extraField && genResult[extraField.key]?.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>{extraField.label}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {genResult[extraField.key].map((v, i) => (
+                    <span key={i} style={{ fontSize: '0.72rem', padding: '3px 9px', borderRadius: 12, background: 'rgba(124,175,138,0.12)', color: '#2d6b3c' }}>{v}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {genResult[notesField] && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', fontStyle: 'italic', marginBottom: 10 }}>
+                {genResult[notesField]}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={handleSaveGenerated} disabled={saving}>
+                {saving ? 'Saving…' : 'Save as current'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setGenResult(null)}>Discard</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Version history */}
+      {allVersions.length > 1 && (
+        <div>
+          <div className="section-label" style={{ marginBottom: 10 }}>Version history</div>
+          {allVersions.map(v => (
+            <div key={v.id} style={{ padding: '10px 14px', marginBottom: 6, background: 'var(--warm-white)', border: `1px solid ${v.is_current ? 'rgba(124,175,138,0.4)' : 'rgba(43,41,38,0.1)'}`, borderRadius: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+                  v{v.version} · {v.output_source}
+                  {v.is_current && <span style={{ marginLeft: 6, color: '#2d6b3c', fontWeight: 600 }}>current</span>}
+                </div>
+                {!v.is_current && (
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7rem' }} onClick={() => handleSetCurrent(v.id)}>
+                    Set as current
+                  </button>
+                )}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', lineHeight: 1.5 }}>
+                {v.body.length > 140 ? v.body.slice(0, 140) + '…' : v.body}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

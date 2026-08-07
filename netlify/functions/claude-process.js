@@ -50,6 +50,55 @@ Return ONLY this JSON — no markdown, no explanation:
   "design_notes": "1-2 sentences of any considerations not captured in the prompt (optional — omit if nothing to add)"
 }`,
 
+  generate_mockup_prompt: `You are an AI product-photography prompt specialist for TCC (The Current Chapter), a print-on-demand Etsy shop focused on the Mom Chapter and Reader Chapter niches.
+
+You will receive a structured TCC design concept. Generate a single prompt for an AI image tool (e.g. Midjourney, Google Imagen) that renders a realistic product mockup/lifestyle photo of this design on its product — NOT the design graphic itself, the finished physical product as it would be photographed for the Etsy listing's main image.
+
+The prompt must:
+- Name the exact product format (e.g. "unisex crewneck sweatshirt, heather sand color")
+- Describe the staging: flatlay vs. on-model vs. styled scene, background, props, lighting
+- Match the mood/aesthetic of the concept's visual style and color palette
+- Avoid describing the design graphic in detail (that's the Kittl prompt's job) — focus on the photography context around it
+- End with camera/composition direction (e.g. "shot from above, soft natural light, negative space top-left for text overlay")
+
+Return ONLY this JSON — no markdown, no explanation:
+{
+  "body": "string — the full mockup/photography prompt ready to paste into an AI image tool",
+  "notes": "1-2 sentences of any considerations not captured in the prompt (optional — omit if nothing to add)"
+}`,
+
+  generate_listing_draft: `You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop focused on the Mom Chapter and Reader Chapter niches.
+
+You will receive a structured TCC design concept — this is an EARLY-STAGE draft written before real keyword research has happened, meant as a starting reference point for the concept, not a final SEO-optimized listing. Do not invent keyword volumes or bucket structure.
+
+Generate:
+- A working title (under 140 characters) that reads naturally and names the product, style, and audience
+- A short 2-3 sentence listing description in TCC's warm, specific, non-corporate brand voice
+- 5-8 suggested tag phrases (lowercase, natural search-phrase style, not single words)
+
+Return ONLY this JSON — no markdown, no explanation:
+{
+  "body": "string — formatted as: the title on the first line, a blank line, then the description",
+  "tags": ["tag phrase 1", "tag phrase 2"],
+  "notes": "reminder that this is a pre-keyword-research draft and should be re-optimized in Listing Builder once real keyword data exists"
+}`,
+
+  generate_pinterest_copy: `You are a Pinterest marketing specialist for TCC (The Current Chapter), a print-on-demand Etsy shop focused on the Mom Chapter and Reader Chapter niches. Pinterest drives Etsy traffic here, not standalone engagement.
+
+You will receive a structured TCC design concept. Generate a Pinterest pin title and description built to surface in Pinterest search and pull click-throughs to the eventual Etsy listing.
+
+The output must:
+- Title: under 100 characters, keyword-forward, names the product and its appeal
+- Description: 2-3 sentences, natural keyword-rich language (not a hashtag dump), ends with a soft call to action
+- Suggest 1-2 Pinterest board categories/themes this pin would fit (e.g. "Gifts for Book Lovers", "Mom Life Humor")
+
+Return ONLY this JSON — no markdown, no explanation:
+{
+  "body": "string — formatted as: the title on the first line, a blank line, then the description",
+  "boards": ["board theme 1", "board theme 2"],
+  "notes": "1-2 sentences of any considerations not captured above (optional — omit if nothing to add)"
+}`,
+
   cowork_paste: `You are processing a Cowork output paste for TCC (The Current Chapter). Cowork handles trend sweeps, research automation, and workflow outputs.
 
 Return ONLY this JSON — no other text:
@@ -400,6 +449,12 @@ Return ONLY this JSON:
         messages: [{ role: 'user', content }],
       }),
     });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[claude-process] ${type} upstream error:`, response.status, errText);
+      return { statusCode: 502, body: JSON.stringify({ error: 'Generation failed upstream. Please try again.' }) };
+    }
 
     const data = await response.json();
     const text = data.content?.[0]?.text || '';
