@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { isConfigured } from '../lib/supabase.js';
-import { fetchCollections, saveSpark, saveWorkshopNote, saveKeyword } from '../lib/data.js';
+import { fetchCollections, fetchConcepts, saveSpark, saveWorkshopNote, saveKeyword, saveMoodBoardImage } from '../lib/data.js';
 
 const DESTINATIONS = [
   { key: 'spark', label: 'Spark' },
@@ -29,14 +29,32 @@ export default function Popup() {
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState(null);
 
+  // Set only when the popup was opened via the right-click "Save image to TCC
+  // Mood Board" menu item — the background script stashes the fetched image
+  // here (or an error) before opening the popup, since a context menu click
+  // has no other way to hand data to a freshly-opened popup instance.
+  const [imageCapture, setImageCapture] = useState(null);
+  const [concepts, setConcepts] = useState([]);
+  const [conceptChoice, setConceptChoice] = useState('');
+
   useEffect(() => {
     (async () => {
       const ok = await isConfigured();
       setConfigured(ok);
       if (!ok) return;
 
+      const { pendingCapture } = await chrome.storage.local.get('pendingCapture');
+      if (pendingCapture) await chrome.storage.local.remove('pendingCapture');
+
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       setTab(activeTab || null);
+
+      if (pendingCapture?.type === 'image') {
+        setImageCapture(pendingCapture);
+        const { data } = await fetchConcepts();
+        setConcepts(data);
+        return;
+      }
 
       let selectedText = '';
       if (activeTab?.id) {
@@ -80,6 +98,29 @@ export default function Popup() {
     }
   }
 
+  async function handleSaveImage() {
+    if (!conceptChoice) return;
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const concept = concepts.find(c => c.id === conceptChoice);
+      const result = await saveMoodBoardImage({
+        conceptId: conceptChoice,
+        conceptCode: concept?.concept_code,
+        base64: imageCapture.base64,
+        mediaType: imageCapture.mediaType,
+        label: imageCapture.pageTitle || 'Captured image',
+      });
+      if (result.error) throw result.error;
+      setSaveResult({ ok: true, message: 'Saved to Mood Board ✓' });
+      setTimeout(() => window.close(), 900);
+    } catch (err) {
+      setSaveResult({ ok: false, message: err.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (configured === null) {
     return <div style={{ padding: 20, fontSize: '0.8rem', color: 'var(--charcoal-soft)' }}>Loading…</div>;
   }
@@ -94,6 +135,71 @@ export default function Popup() {
         <button className="btn btn-primary" onClick={() => chrome.runtime.openOptionsPage()}>
           Set up connection →
         </button>
+      </div>
+    );
+  }
+
+  if (imageCapture) {
+    return (
+      <div style={{ padding: '16px 18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h2 style={{ fontSize: '1rem' }}>Save to Mood Board</h2>
+          <button className="btn btn-ghost btn-sm" onClick={() => chrome.runtime.openOptionsPage()} title="Settings">⚙</button>
+        </div>
+
+        {imageCapture.error ? (
+          <div style={{ fontSize: '0.78rem', color: 'var(--alert)', marginBottom: 10 }}>
+            Couldn't fetch that image: {imageCapture.error}
+          </div>
+        ) : (
+          <>
+            <img
+              src={`data:${imageCapture.mediaType};base64,${imageCapture.base64}`}
+              alt="captured"
+              style={{ width: '100%', maxHeight: 180, objectFit: 'contain', borderRadius: 2, background: 'var(--charcoal-faint)', marginBottom: 10, display: 'block' }}
+            />
+
+            {concepts.length === 0 ? (
+              <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+                No concepts yet — create one in TCC Command Center's Design Vault first.
+              </div>
+            ) : (
+              <div className="form-group">
+                <label className="form-label">Concept</label>
+                <select value={conceptChoice} onChange={e => setConceptChoice(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {[...new Set(concepts.map(c => c.collection_name))].sort().map(col => (
+                    <optgroup key={col} label={col}>
+                      {concepts.filter(c => c.collection_name === col).map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {saveResult && (
+              <div style={{
+                fontSize: '0.75rem', marginBottom: 10, padding: '6px 10px', borderRadius: 2,
+                background: saveResult.ok ? 'rgba(124,175,138,0.1)' : 'rgba(201,123,123,0.08)',
+                border: `1px solid ${saveResult.ok ? 'var(--success)' : 'var(--alert)'}`,
+                color: saveResult.ok ? '#2d6b3c' : 'var(--alert)',
+              }}>
+                {saveResult.message}
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary"
+              style={{ width: '100%', justifyContent: 'center' }}
+              onClick={handleSaveImage}
+              disabled={saving || !conceptChoice}
+            >
+              {saving ? 'Saving…' : 'Save to Mood Board'}
+            </button>
+          </>
+        )}
       </div>
     );
   }

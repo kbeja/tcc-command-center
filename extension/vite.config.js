@@ -12,6 +12,7 @@ export default defineConfig({
         popup: resolve(import.meta.dirname, 'popup.html'),
         options: resolve(import.meta.dirname, 'options.html'),
         content: resolve(import.meta.dirname, 'src/content.js'),
+        background: resolve(import.meta.dirname, 'src/background.js'),
       },
       output: {
         entryFileNames: '[name].js',

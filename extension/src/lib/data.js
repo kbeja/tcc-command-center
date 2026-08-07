@@ -1,5 +1,56 @@
 import { getClient } from './supabase.js';
 
+const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+export async function fetchConcepts() {
+  const supabase = await getClient();
+  if (!supabase) return { data: [], error: new Error('Not configured') };
+  const { data, error } = await supabase
+    .from('concepts')
+    .select('id, name, concept_code, collection_name')
+    .eq('status', 'active')
+    .order('collection_name', { ascending: true });
+  return { data: data || [], error };
+}
+
+// Mirrors ConceptWorkspace.jsx's uploadAsset()/copyAssetToMoodBoard() shape —
+// same design-vault bucket, same concept_assets row shape, tagged mood_board
+// so it shows up on that concept's Mood Board tab in the main app.
+export async function saveMoodBoardImage({ conceptId, conceptCode, base64, mediaType, label }) {
+  const supabase = await getClient();
+  if (!supabase) return { error: new Error('Not configured') };
+
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mediaType });
+
+  const ext = EXT_BY_MIME[mediaType] || 'jpg';
+  const slug = (conceptCode || conceptId).toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const path = `${slug}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage.from('design-vault').upload(path, blob, {
+    cacheControl: '3600',
+    upsert: false,
+  });
+  if (uploadError) return { error: uploadError };
+
+  const { data, error } = await supabase
+    .from('concept_assets')
+    .insert({
+      concept_id: conceptId,
+      asset_type: 'mood_board',
+      storage_path: path,
+      mime_type: mediaType,
+      size_bytes: blob.size,
+      label: label || 'Captured image',
+      created_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  return { data, error };
+}
+
 export async function fetchCollections() {
   const supabase = await getClient();
   if (!supabase) return { data: [], error: new Error('Not configured') };
