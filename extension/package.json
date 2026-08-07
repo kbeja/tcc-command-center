@@ -1,0 +1,19 @@
+{
+  "name": "tcc-quick-capture",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node copy-static.js",
+    "dev": "vite build --watch"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.1"
+  }
+}

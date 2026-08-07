@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@400;500&display=swap');
+
+:root {
+  --linen: #F5F1EA;
+  --warm-white: #FDFAF5;
+  --dusty-rose: #C9A89A;
+  --warm-charcoal: #2B2926;
+  --charcoal-soft: rgba(43, 41, 38, 0.5);
+  --charcoal-faint: rgba(43, 41, 38, 0.07);
+  --success: #7CAF8A;
+  --warning: #E8A87C;
+  --alert: #C97B7B;
+  --font-display: 'Cormorant Garamond', serif;
+  --font-body: 'DM Sans', sans-serif;
+  --border: 1px solid rgba(43, 41, 38, 0.12);
+  --radius: 2px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--linen);
+  color: var(--warm-charcoal);
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; line-height: 1.2; }
+
+button { font-family: var(--font-body); cursor: pointer; border: none; background: none; }
+
+input, textarea, select {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--warm-charcoal);
+  background: var(--warm-white);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input:focus, textarea:focus, select:focus { border-color: var(--dusty-rose); }
+
+textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border-radius: var(--radius);
+  transition: all 0.15s;
+  cursor: pointer;
+  border: var(--border);
+}
+
+.btn-primary { background: var(--warm-charcoal); color: var(--warm-white); border-color: var(--warm-charcoal); }
+.btn-primary:hover { background: rgba(43, 41, 38, 0.85); }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+.btn-ghost { background: transparent; color: var(--warm-charcoal); }
+.btn-ghost:hover { background: var(--charcoal-faint); }
+
+.btn-sm { padding: 5px 10px; font-size: 0.72rem; }
+
+.section-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--charcoal-soft);
+  font-weight: 500;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--charcoal-soft);
+  margin-bottom: 4px;
+}
+
+.form-group { margin-bottom: 12px; }
