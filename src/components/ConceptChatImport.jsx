@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode } from '../lib/hooks';
+import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
+
+const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', 'Summer', 'Spring', 'Fall'];
 
 // ── Parse --- TCC CONCEPT --- paste block ────────────────────────────────────
 
@@ -51,13 +53,26 @@ function parsePasteBlock(raw) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ConceptChatImport({ onSaved, onClose }) {
+  const { collections: collectionObjects } = useCollectionObjects();
+  const { chapters } = useChapters();
   const [paste, setPaste] = useState('');
   const [parsed, setParsed] = useState(null);
   const [parseError, setParseError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedConceptData, setSavedConceptData] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [editedConcept, setEditedConcept] = useState(null);
+
+  // Collection selection — separate from editedConcept.collection_name because
+  // it can be either an existing collection or '__new__' with its own draft
+  // fields (style guide, season…), only materialized into a real row on save.
+  const [collectionChoice, setCollectionChoice] = useState('');
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [newCollectionChapter, setNewCollectionChapter] = useState('');
+  const [newCollectionStyleGuide, setNewCollectionStyleGuide] = useState('');
+  const [newCollectionSeason, setNewCollectionSeason] = useState('');
+  const [newCollectionLaunch, setNewCollectionLaunch] = useState('');
 
   function handleParse() {
     setParseError('');
@@ -78,6 +93,22 @@ export default function ConceptChatImport({ onSaved, onClose }) {
     }
     setParsed(result);
     setEditedConcept({ ...result });
+
+    // Seed the collection picker from whatever text was in the paste — if it
+    // matches a real collection, select it; otherwise default to creating a
+    // new one with that name (the brand-new-collection case).
+    const matched = collectionObjects.find(c => c.name.toLowerCase() === result.collection_name.toLowerCase());
+    if (matched) {
+      setCollectionChoice(matched.name);
+      setNewCollectionName('');
+    } else {
+      setCollectionChoice('__new__');
+      setNewCollectionName(result.collection_name);
+    }
+    setNewCollectionChapter('');
+    setNewCollectionStyleGuide('');
+    setNewCollectionSeason('');
+    setNewCollectionLaunch('');
   }
 
   function handleFieldChange(field, value) {
@@ -88,7 +119,35 @@ export default function ConceptChatImport({ onSaved, onClose }) {
     setSaving(true);
     setSaveError('');
     try {
-      const concept = editedConcept || parsed;
+      let effectiveCollectionName = collectionChoice;
+      if (collectionChoice === '__new__') {
+        const name = newCollectionName.trim();
+        if (!name) {
+          setSaveError('Enter a name for the new collection.');
+          setSaving(false);
+          return;
+        }
+        const { error: collErr } = await createCollection(name, {
+          ...(newCollectionChapter ? { chapter: newCollectionChapter } : {}),
+          ...(newCollectionStyleGuide.trim() ? { style_guide: newCollectionStyleGuide.trim() } : {}),
+          ...(newCollectionSeason ? { season: newCollectionSeason } : {}),
+          ...(newCollectionLaunch ? { launch_date: newCollectionLaunch } : {}),
+        });
+        // A unique-constraint error just means it already exists — fine, use it.
+        if (collErr && !collErr.message?.toLowerCase().includes('unique')) {
+          setSaveError('Failed to create collection: ' + collErr.message);
+          setSaving(false);
+          return;
+        }
+        effectiveCollectionName = name;
+      }
+      if (!effectiveCollectionName) {
+        setSaveError('Please select or create a collection.');
+        setSaving(false);
+        return;
+      }
+
+      const concept = { ...(editedConcept || parsed), collection_name: effectiveCollectionName };
       const concept_code = await generateConceptCode(concept.collection_name);
 
       const { kittl_prompt, ...conceptFields } = concept;
@@ -119,6 +178,7 @@ export default function ConceptChatImport({ onSaved, onClose }) {
         }
       }
 
+      setSavedConceptData(savedConcept);
       setSaved(true);
       onSaved?.(savedConcept);
     } catch (err) {
@@ -134,7 +194,7 @@ export default function ConceptChatImport({ onSaved, onClose }) {
         <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
         <div style={{ fontWeight: 600, marginBottom: 4 }}>Concept saved</div>
         <div style={{ color: '#888', fontSize: 13, marginBottom: 20 }}>
-          {editedConcept?.name} added to {editedConcept?.collection_name}
+          {savedConceptData?.name} added to {savedConceptData?.collection_name}
           {editedConcept?.kittl_prompt ? ' with Kittl prompt' : ''}
         </div>
         <button
@@ -206,6 +266,20 @@ export default function ConceptChatImport({ onSaved, onClose }) {
           <ConceptPreview
             concept={editedConcept}
             onChange={handleFieldChange}
+            collectionObjects={collectionObjects}
+            chapters={chapters}
+            collectionChoice={collectionChoice}
+            setCollectionChoice={setCollectionChoice}
+            newCollectionName={newCollectionName}
+            setNewCollectionName={setNewCollectionName}
+            newCollectionChapter={newCollectionChapter}
+            setNewCollectionChapter={setNewCollectionChapter}
+            newCollectionStyleGuide={newCollectionStyleGuide}
+            setNewCollectionStyleGuide={setNewCollectionStyleGuide}
+            newCollectionSeason={newCollectionSeason}
+            setNewCollectionSeason={setNewCollectionSeason}
+            newCollectionLaunch={newCollectionLaunch}
+            setNewCollectionLaunch={setNewCollectionLaunch}
           />
 
           {saveError && (
@@ -260,8 +334,18 @@ function Field({ label, value, onChange, multiline }) {
   );
 }
 
-function ConceptPreview({ concept, onChange }) {
+function ConceptPreview({
+  concept, onChange, collectionObjects, chapters,
+  collectionChoice, setCollectionChoice,
+  newCollectionName, setNewCollectionName,
+  newCollectionChapter, setNewCollectionChapter,
+  newCollectionStyleGuide, setNewCollectionStyleGuide,
+  newCollectionSeason, setNewCollectionSeason,
+  newCollectionLaunch, setNewCollectionLaunch,
+}) {
   const hasKittlPrompt = !!concept.kittl_prompt;
+  const fieldStyle = { width: '100%', padding: '6px 10px', borderRadius: 5, border: '1px solid #333', background: '#111', color: '#e5e5e5', fontSize: 13, boxSizing: 'border-box' };
+  const labelStyle = { fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 };
 
   return (
     <div>
@@ -271,9 +355,82 @@ function ConceptPreview({ concept, onChange }) {
           : 'No Kittl Prompt section found — concept-only import. You can generate a Kittl prompt after saving.'}
       </div>
 
+      <div style={{ marginBottom: 10 }}>
+        <div style={labelStyle}>Collection</div>
+        {collectionChoice === '__new__' ? (
+          <div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <input
+                autoFocus
+                value={newCollectionName}
+                onChange={e => setNewCollectionName(e.target.value)}
+                placeholder="New collection name…"
+                style={{ ...fieldStyle, flex: 1 }}
+              />
+              {collectionObjects.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCollectionChoice(collectionObjects[0].name)}
+                  style={{ padding: '6px 10px', borderRadius: 5, background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}
+                >
+                  Pick existing instead
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>⚑ This will create a new collection</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+              <select value={newCollectionChapter} onChange={e => setNewCollectionChapter(e.target.value)} style={fieldStyle}>
+                <option value="">— Chapter (optional) —</option>
+                {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+              </select>
+              <select value={newCollectionSeason} onChange={e => setNewCollectionSeason(e.target.value)} style={fieldStyle}>
+                <option value="">— Evergreen —</option>
+                {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {newCollectionSeason && (
+              <input
+                type="date"
+                value={newCollectionLaunch}
+                onChange={e => setNewCollectionLaunch(e.target.value)}
+                placeholder="Target launch"
+                style={{ ...fieldStyle, marginBottom: 6 }}
+              />
+            )}
+            <textarea
+              value={newCollectionStyleGuide}
+              onChange={e => setNewCollectionStyleGuide(e.target.value)}
+              placeholder="Style guide — aesthetic, colors, typography, vibe… (optional)"
+              rows={2}
+              style={{ ...fieldStyle, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
+        ) : (
+          <select
+            value={collectionChoice}
+            onChange={e => {
+              if (e.target.value === '__new__') { setCollectionChoice('__new__'); setNewCollectionName(''); }
+              else setCollectionChoice(e.target.value);
+            }}
+            style={fieldStyle}
+          >
+            <option value="">— Select —</option>
+            {chapters.map(ch => {
+              const inChapter = collectionObjects.filter(c => c.chapter === ch);
+              if (!inChapter.length) return null;
+              return (
+                <optgroup key={ch} label={ch}>
+                  {inChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                </optgroup>
+              );
+            })}
+            <option value="__new__">+ New collection…</option>
+          </select>
+        )}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
         <Field label="Concept Name" value={concept.name} onChange={v => onChange('name', v)} />
-        <Field label="Collection" value={concept.collection_name} onChange={v => onChange('collection_name', v)} />
         <Field label="Visual Style" value={concept.visual_style} onChange={v => onChange('visual_style', v)} />
         <Field label="Seasonal Flag" value={concept.seasonal_flag} onChange={v => onChange('seasonal_flag', v)} />
         <Field label="Color Palette" value={concept.color_palette} onChange={v => onChange('color_palette', v)} />
