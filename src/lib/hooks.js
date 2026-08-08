@@ -501,11 +501,30 @@ export function useCompetitorListings() {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    const { data } = await supabase
-      .from('competitor_listings')
-      .select('*')
-      .order('last_updated_at', { ascending: false });
-    if (data) setListings(data);
+    setLoading(true);
+    // Supabase/PostgREST caps an unbounded select at 1000 rows by default —
+    // this table already exceeds that, so page through with .range() until a
+    // page comes back short. A secondary sort on id keeps pagination stable
+    // even when many rows share the same last_updated_at (e.g. a whole CSV
+    // import batch stamped with one timestamp), which .range() alone can't
+    // guarantee — without it, ties at a page boundary could be skipped or
+    // duplicated across pages.
+    const PAGE_SIZE = 1000;
+    let all = [];
+    let from = 0;
+    while (true) {
+      const { data } = await supabase
+        .from('competitor_listings')
+        .select('*')
+        .order('last_updated_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    setListings(all);
     setLoading(false);
   }, []);
 
