@@ -301,7 +301,7 @@ export default function Popup() {
         <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>
           {etsyCapture.shopName}
           {etsyCapture.lowPrice != null && (
-            <span> · ${etsyCapture.lowPrice}{etsyCapture.highPrice && etsyCapture.highPrice !== etsyCapture.lowPrice ? `–$${etsyCapture.highPrice}` : ''}</span>
+            <span> · ${etsyCapture.lowPrice.toFixed(2)}{etsyCapture.highPrice && etsyCapture.highPrice !== etsyCapture.lowPrice ? `–$${etsyCapture.highPrice.toFixed(2)}` : ''}</span>
           )}
           {etsyCapture.ratingValue != null && <span> · ★{etsyCapture.ratingValue} ({etsyCapture.reviewCount || 0})</span>}
         </div>

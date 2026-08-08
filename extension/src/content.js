@@ -7,6 +7,17 @@
 // metadata, far less likely to break on a redesign than scraping CSS
 // classes). Tags aren't in it — Etsy stopped exposing the seller's actual
 // tags publicly — so those stay unavailable here on purpose, not a bug.
+// Etsy's JSON-LD text fields come HTML-entity-escaped (e.g. "Women&#39;s") —
+// decode via a <textarea> roundtrip, which the browser's own HTML parser
+// handles correctly and which (unlike a div) never executes the content as
+// markup, so this stays safe for arbitrary third-party page text.
+function decodeHtmlEntities(str) {
+  if (!str) return str;
+  const el = document.createElement('textarea');
+  el.innerHTML = str;
+  return el.value;
+}
+
 function extractProductJsonLd() {
   for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
     try {
@@ -62,12 +73,12 @@ function extractEtsyListing() {
     // search click-through vs. a direct/shared link can carry different
     // tracking params, and product_link is what dedup is keyed on downstream.
     url: location.origin + location.pathname,
-    title: product?.name || document.title || '',
+    title: decodeHtmlEntities(product?.name) || document.title || '',
     lowPrice: product?.offers?.lowPrice != null ? Number(product.offers.lowPrice) : null,
     highPrice: product?.offers?.highPrice != null ? Number(product.offers.highPrice) : null,
-    shopName: product?.brand?.name || null,
+    shopName: decodeHtmlEntities(product?.brand?.name) || null,
     shopLink,
-    category: product?.category || null,
+    category: decodeHtmlEntities(product?.category) || null,
     ratingValue: product?.aggregateRating?.ratingValue != null ? Number(product.aggregateRating.ratingValue) : null,
     reviewCount: product?.aggregateRating?.reviewCount != null ? Number(product.aggregateRating.reviewCount) : null,
     everbeeStats: extractEverbeeStats(),
