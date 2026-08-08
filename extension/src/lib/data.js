@@ -51,6 +51,63 @@ export async function saveMoodBoardImage({ conceptId, conceptCode, base64, media
   return { data, error };
 }
 
+// Fields Everbee's own CSV export computes but a live page can never expose
+// (growth_rate, shop_age, avg_reviews, total_shop_sales, est_revenue) are
+// simply omitted here rather than guessed — they stay whatever the DB
+// default is (null) instead of being fabricated.
+//
+// Unlike EverbeeCSVImport's bulk upsert (which blindly overwrites
+// first_seen_at on every re-import — fine for a full re-sync, not for a
+// single ad-hoc capture), this checks for an existing row first so
+// first_seen_at is only ever set once, on the row's actual first capture.
+export async function saveCompetitorListing(fields) {
+  const supabase = await getClient();
+  if (!supabase) return { error: new Error('Not configured') };
+  const now = new Date().toISOString();
+
+  const { data: existing } = await supabase
+    .from('competitor_listings')
+    .select('id')
+    .eq('product_link', fields.product_link)
+    .maybeSingle();
+
+  const row = {
+    product_name: fields.product_name,
+    product_link: fields.product_link,
+    shop_name: fields.shop_name || null,
+    shop_link: fields.shop_link || null,
+    price: fields.price ?? null,
+    category: fields.category || null,
+    avg_reviews: fields.avg_reviews ?? null,
+    total_reviews: fields.total_reviews ?? null,
+    est_sales: fields.est_sales ?? null,
+    est_total_sales: fields.est_total_sales ?? null,
+    total_views: fields.total_views ?? null,
+    conversion_rate: fields.conversion_rate ?? null,
+    listing_age: fields.listing_age || null,
+    total_favorites: fields.total_favorites ?? null,
+    import_context: fields.import_context || 'Captured via Quick Capture extension',
+    last_updated_at: now,
+  };
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('competitor_listings')
+      .update(row)
+      .eq('id', existing.id)
+      .select()
+      .single();
+    return { data, error };
+  }
+
+  const { data, error } = await supabase
+    .from('competitor_listings')
+    .insert({ ...row, first_seen_at: now, white_space_flag: true })
+    .select()
+    .single();
+  return { data, error };
+}
+
 export async function fetchCollections() {
   const supabase = await getClient();
   if (!supabase) return { data: [], error: new Error('Not configured') };

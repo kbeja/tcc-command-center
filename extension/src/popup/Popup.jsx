@@ -1,6 +1,26 @@
 import { useState, useEffect } from 'react';
 import { isConfigured } from '../lib/supabase.js';
-import { fetchCollections, fetchConcepts, saveSpark, saveWorkshopNote, saveKeyword, saveMoodBoardImage } from '../lib/data.js';
+import { fetchCollections, fetchConcepts, saveSpark, saveWorkshopNote, saveKeyword, saveMoodBoardImage, saveCompetitorListing } from '../lib/data.js';
+
+// Everbee's injected stats arrive as raw display text ("12.43%", "13 Mo.") —
+// pull the number back out where there is one; listing age stays text since
+// competitor_listings.listing_age is itself a text field, not a number.
+function parseEverbeeStats(stats = {}) {
+  const num = key => {
+    const raw = stats[key];
+    if (!raw) return null;
+    const cleaned = raw.replace(/[^0-9.]/g, '');
+    return cleaned ? Number(cleaned) : null;
+  };
+  return {
+    est_sales: num('Mo. Sales'),
+    est_total_sales: num('Total Sales'),
+    total_views: num('Views'),
+    conversion_rate: num('Conv. rate'),
+    listing_age: stats['List. Age'] || null,
+    total_favorites: num('Favorites'),
+  };
+}
 
 const DESTINATIONS = [
   { key: 'spark', label: 'Spark' },
@@ -37,6 +57,13 @@ export default function Popup() {
   const [concepts, setConcepts] = useState([]);
   const [conceptChoice, setConceptChoice] = useState('');
 
+  // Set when the active tab is an Etsy listing page — detected by asking the
+  // content script directly (no context-menu handoff needed, unlike image
+  // capture, since this is just reading the current page, not a privileged
+  // cross-origin fetch).
+  const [etsyCapture, setEtsyCapture] = useState(null);
+  const [etsyNotes, setEtsyNotes] = useState('');
+
   useEffect(() => {
     (async () => {
       const ok = await isConfigured();
@@ -54,6 +81,21 @@ export default function Popup() {
         const { data } = await fetchConcepts();
         setConcepts(data);
         return;
+      }
+
+      // Only auto-detect Etsy context when the popup wasn't opened via an
+      // explicit "capture this selection" click — that's a more specific,
+      // deliberate choice that should win even on an Etsy listing page.
+      if (!pendingCapture && activeTab?.id) {
+        try {
+          const listingInfo = await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_ETSY_LISTING' });
+          if (listingInfo?.isEtsyListing) {
+            setEtsyCapture(listingInfo);
+            return;
+          }
+        } catch {
+          // No content script here — fine, not an Etsy listing then.
+        }
       }
 
       let selectedText = pendingCapture?.type === 'text' ? (pendingCapture.text || '') : '';
@@ -117,6 +159,33 @@ export default function Popup() {
       });
       if (result.error) throw result.error;
       setSaveResult({ ok: true, message: 'Saved to Mood Board ✓' });
+      setTimeout(() => window.close(), 900);
+    } catch (err) {
+      setSaveResult({ ok: false, message: err.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveEtsy() {
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const everbee = parseEverbeeStats(etsyCapture.everbeeStats);
+      const result = await saveCompetitorListing({
+        product_name: etsyCapture.title,
+        product_link: etsyCapture.url,
+        shop_name: etsyCapture.shopName,
+        shop_link: etsyCapture.shopLink,
+        price: etsyCapture.lowPrice,
+        category: etsyCapture.category,
+        avg_reviews: etsyCapture.ratingValue,
+        total_reviews: etsyCapture.reviewCount,
+        ...everbee,
+        import_context: etsyNotes.trim() || undefined,
+      });
+      if (result.error) throw result.error;
+      setSaveResult({ ok: true, message: 'Saved to Competitors ✓' });
       setTimeout(() => window.close(), 900);
     } catch (err) {
       setSaveResult({ ok: false, message: err.message });
@@ -204,6 +273,80 @@ export default function Popup() {
             </button>
           </>
         )}
+      </div>
+    );
+  }
+
+  if (etsyCapture) {
+    const everbee = parseEverbeeStats(etsyCapture.everbeeStats);
+    const stats = [
+      ['Mo. Sales', everbee.est_sales],
+      ['Total Sales', everbee.est_total_sales],
+      ['Views', everbee.total_views],
+      ['Conv.', everbee.conversion_rate != null ? `${everbee.conversion_rate}%` : null],
+      ['Age', everbee.listing_age],
+      ['Favorites', everbee.total_favorites],
+    ].filter(([, v]) => v != null && v !== '');
+
+    return (
+      <div style={{ padding: '16px 18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h2 style={{ fontSize: '1rem' }}>Capture Etsy Listing</h2>
+          <button className="btn btn-ghost btn-sm" onClick={() => chrome.runtime.openOptionsPage()} title="Settings">⚙</button>
+        </div>
+
+        <div style={{ fontSize: '0.82rem', fontWeight: 500, marginBottom: 4, lineHeight: 1.4 }}>
+          {etsyCapture.title}
+        </div>
+        <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>
+          {etsyCapture.shopName}
+          {etsyCapture.lowPrice != null && (
+            <span> · ${etsyCapture.lowPrice}{etsyCapture.highPrice && etsyCapture.highPrice !== etsyCapture.lowPrice ? `–$${etsyCapture.highPrice}` : ''}</span>
+          )}
+          {etsyCapture.ratingValue != null && <span> · ★{etsyCapture.ratingValue} ({etsyCapture.reviewCount || 0})</span>}
+        </div>
+        {etsyCapture.category && (
+          <div style={{ fontSize: '0.66rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>{etsyCapture.category}</div>
+        )}
+
+        {stats.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            {stats.map(([label, value]) => (
+              <span key={label} style={{ fontSize: '0.66rem', padding: '3px 8px', borderRadius: 10, background: 'rgba(124,175,138,0.12)', color: '#2d6b3c' }}>
+                {label}: {value}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: '0.66rem', color: 'var(--charcoal-soft)', marginBottom: 10, fontStyle: 'italic' }}>
+            No Everbee stats detected on this page.
+          </div>
+        )}
+
+        <div className="form-group">
+          <label className="form-label">Notes (optional)</label>
+          <textarea value={etsyNotes} onChange={e => setEtsyNotes(e.target.value)} rows={2} placeholder="Why this caught your eye…" />
+        </div>
+
+        {saveResult && (
+          <div style={{
+            fontSize: '0.75rem', marginBottom: 10, padding: '6px 10px', borderRadius: 2,
+            background: saveResult.ok ? 'rgba(124,175,138,0.1)' : 'rgba(201,123,123,0.08)',
+            border: `1px solid ${saveResult.ok ? 'var(--success)' : 'var(--alert)'}`,
+            color: saveResult.ok ? '#2d6b3c' : 'var(--alert)',
+          }}>
+            {saveResult.message}
+          </div>
+        )}
+
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+          onClick={handleSaveEtsy}
+          disabled={saving}
+        >
+          {saving ? 'Saving…' : 'Save to Competitors'}
+        </button>
       </div>
     );
   }

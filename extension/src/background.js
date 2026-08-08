@@ -16,6 +16,12 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Save image to TCC Mood Board',
     contexts: ['image'],
   });
+  chrome.contextMenus.create({
+    id: 'tcc-capture-etsy-listing',
+    title: 'Capture this Etsy listing to TCC',
+    contexts: ['page'],
+    documentUrlPatterns: ['*://*.etsy.com/listing/*'],
+  });
 });
 
 function arrayBufferToBase64(buffer) {
@@ -65,6 +71,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         pendingCapture: { type: 'image', error: err.message },
       });
     }
+    chrome.action.openPopup();
+    return;
+  }
+
+  if (info.menuItemId === 'tcc-capture-etsy-listing') {
+    // No handoff needed — the popup queries the content script for the
+    // listing data directly on mount, same as it does for text selection
+    // when opened via the icon/shortcut.
     chrome.action.openPopup();
   }
 });
