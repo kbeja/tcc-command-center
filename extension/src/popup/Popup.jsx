@@ -56,8 +56,12 @@ export default function Popup() {
         return;
       }
 
-      let selectedText = '';
-      if (activeTab?.id) {
+      let selectedText = pendingCapture?.type === 'text' ? (pendingCapture.text || '') : '';
+      // Only fall back to a live content-script query when the popup was opened
+      // normally (icon click / keyboard shortcut, no pendingCapture at all) — a
+      // context-menu selection capture already has the exact text from the
+      // click event itself, which a re-query moments later can't beat.
+      if (!pendingCapture && activeTab?.id) {
         try {
           const response = await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_SELECTION' });
           selectedText = response?.selection || '';

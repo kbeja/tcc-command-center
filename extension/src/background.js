@@ -30,8 +30,17 @@ function arrayBufferToBase64(buffer) {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'tcc-capture-selection') {
-    // The popup re-reads the current selection itself via the content script
-    // on mount, so there's nothing to hand off here.
+    // info.selectionText is the text as of the click itself — more reliable
+    // than having the popup re-query the page a moment later, since by then
+    // the selection may no longer be readable the same way.
+    await chrome.storage.local.set({
+      pendingCapture: {
+        type: 'text',
+        text: info.selectionText || '',
+        pageUrl: tab?.url || '',
+        pageTitle: tab?.title || '',
+      },
+    });
     chrome.action.openPopup();
     return;
   }
