@@ -282,7 +282,6 @@ TITLE STRUCTURE — ORDER IS FIXED
 TAG RULES
 • Bucket 1 phrase repeats directly in tags — intentional, not redundant
 • Buckets 2–3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
-• Misspellings: tags only — never title or description
 
 DESCRIPTION — 6-SECTION STRUCTURE
 1. SEO Opener  2. Product Details  3. Ordering Steps  4. Cross-Sell  5. Shipping  6. Brand Voice Closer`;
@@ -310,19 +309,18 @@ function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoi
     const colKnowledge = collectionKnowledge[product.collection] || {};
     const isSeasonalProduct = product.portfolio_level === 'Seasonal';
 
-    // ── Keywords: B1/B2/Watch/Tags-only ──
+    // ── Keywords: B1/B2/Watch ──
     const useMap = new Map();
     const watchMap = new Map();
-    const tagsOnlyMap = new Map();
     for (const s of sessions) {
       if (s.seasonal && !isSeasonalProduct) continue;
       for (const k of (s.keywords || [])) {
         const key = k.keyword.toLowerCase();
-        if (k.tags_only) {
-          const ex = tagsOnlyMap.get(key);
-          if (!ex || (k.score || 0) > (ex.score || 0)) tagsOnlyMap.set(key, k);
-          continue;
-        }
+        // Misspelling variants: Etsy's search normalizes these to the correct
+        // spelling itself, so they're excluded entirely — not title/description
+        // (unchanged), and no longer tags either (a dedicated misspelled tag is
+        // redundant now). Still captured as research signal in the raw session data.
+        if (k.tags_only) continue;
         if (k.tag_type === 'use') {
           const ex = useMap.get(key);
           if (!ex || (k.score || 0) > (ex.score || 0)) useMap.set(key, k);
@@ -335,7 +333,6 @@ function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoi
     const fmt = k => `  ${k.keyword}${k.volume ? ` | vol ${k.volume}` : ''}${k.score ? ` | score ${k.score}` : ''}`;
     const allUse = [...useMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
     const sortedWatch = [...watchMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 10);
-    const sortedTagsOnly = [...tagsOnlyMap.values()].sort((a, b) => (b.score || 0) - (a.score || 0));
 
     // Split by explicit bucket field; fall back to positional if no buckets set
     const hasBuckets = allUse.some(k => k.bucket);
@@ -352,10 +349,6 @@ function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoi
     } else {
       keywordSection = `B1 — Visibility (title anchor + first tags)\n${b1.length ? b1.map(fmt).join('\n') : '  ⚠ No B1 keywords assigned — re-bucket in Research'}\n\nB2 — Reach (supporting title + description terms)\n${b2.length ? b2.map(fmt).join('\n') : '  ⚠ No B2 keywords assigned — re-bucket in Research'}\n\nB3 — Bestseller (exact phrases from top competitor listings)\n${b3.length ? b3.map(fmt).join('\n') : '  ⚠ Not yet mapped — pull from competitor bestseller research in Trend Radar.'}\n\nWatch List (monitoring — not yet confirmed)\n${sortedWatch.length ? sortedWatch.map(fmt).join('\n') : '  (none)'}`;
     }
-
-    const tagsOnlyBlock = sortedTagsOnly.length
-      ? `\nTAGS-ONLY — misspelling variants (never use in title or description)\n${sortedTagsOnly.map(fmt).join('\n')}`
-      : '';
 
     // ── Style guide: niche-specific → collection DB guide → warning (no chapter fallback) ──
     const nicheKey = (product.niche || '').toLowerCase();
@@ -422,7 +415,6 @@ ${validationBlock}
 
 TOP KEYWORDS
 ${keywordSection}
-${tagsOnlyBlock}
 
 STYLE GUIDE
 ${styleGuide}

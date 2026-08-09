@@ -27,7 +27,6 @@ TAG RULES
 • Bucket 1 phrase repeats exactly in tags — intentional, not a mistake
 • Bucket 2 phrase also repeats exactly in tags — same rule as B1
 • Bucket 3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
-• Misspellings (is_misspelling_variant): tags only — never title or description
 
 DESCRIPTION — 6-SECTION STRUCTURE
 1. SEO Opener  2. Product Details  3. Ordering Steps  4. Cross-Sell  5. Shipping  6. Brand Voice Closer`;
@@ -255,10 +254,12 @@ function computeBucketWarnings(keywords, sessions) {
 }
 
 function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames }) {
-  // Misspelling variants are excluded from every title-bound pool (usable + watch) —
-  // per SEO standards they're tags-only, never title or description, regardless of volume.
+  // Misspelling variants are excluded everywhere now — title, description, AND tags.
+  // Etsy's search normalizes misspellings to the correct spelling itself, so a tag
+  // slot (1 of only 13) spent on a misspelled variant is redundant, not helpful.
+  // They're still captured as research signal (search volume for that phrasing),
+  // just never fed into generation.
   const usable    = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard' && !k.is_misspelling_variant);
-  const tagsKws   = keywords.filter(k => k.tags_only || k.is_misspelling_variant);
 
   const b1All = usable.filter(k => k.bucket === 1 && k.tag_type !== 'watch');
   const b2 = usable.filter(k => k.bucket === 2 && k.tag_type !== 'watch');
@@ -335,6 +336,22 @@ function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seo
     (k.volume      != null ? ')' : '') +
     typeConflictNote(k.keyword);
 
+  // Title style A/B test: "keyword_rich" is the original cram-to-140-chars
+  // behavior; "short_clean" matches Etsy's current stated search guidance
+  // (short, natural titles — phrase position doesn't affect ranking per their
+  // own docs). Kristen wants this run as a real trackable comparison against
+  // Shop Stats rather than a guess, so the choice gets stamped onto the saved
+  // product record (title_style column) — see handleSaveEdits/handleSaveProduct.
+  const titleStyle = form.titleStyle === 'short_clean' ? 'short_clean' : 'keyword_rich';
+  const titleFormatRules = titleStyle === 'short_clean'
+    ? `  - SHORT & CLEAN STYLE (active test): write a natural, concise title a real shopper would say out loud — Title Case, B1 first, then only the B2/B3 phrases that genuinely belong. Do NOT pad with extra comma-separated phrases just to use more characters; stop once it reads like a real product name. Still under Etsy's 140-char hard limit, but do not treat 140 as a target.
+  - CORRECT: "Morally Gray Enthusiast Shirt, Dark Romance Book Lover Gift" (stops naturally, no padding)
+  - WRONG: tacking on more keyword phrases after the title already reads complete, just to fill space`
+    : `  - Title Case Throughout, MUST be as close to 140 characters as possible — target 130–140. A short title wastes indexing space. Keep adding keyword phrases until you hit the limit.
+  - After placing B1 , B2 , B3 — if characters remain, append additional keyword phrases from the list separated by commas until you reach 130–140 chars. Prioritize phrases that add new unique words not already in the title.
+  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Dark Romance Book Tee, Romantasy Reader"
+  - WRONG: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift" (too short — unused character budget)`;
+
   return `Generate a complete Etsy listing for TCC (The Current Chapter).
 
 ━━━ TCC SEO STANDARDS v2 — 3-BUCKET SYSTEM — FOLLOW EXACTLY ━━━
@@ -347,10 +364,7 @@ TITLE FORMAT — ORDER IS FIXED:
   [Bucket 1] , [Bucket 2] , [Bucket 3]
   - Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
   - First 30–50 characters must contain the Bucket 1 phrase
-  - Title Case Throughout, MUST be as close to 140 characters as possible — target 130–140. A short title wastes indexing space. Keep adding keyword phrases until you hit the limit.
-  - After placing B1 , B2 , B3 — if characters remain, append additional keyword phrases from the list separated by commas until you reach 130–140 chars. Prioritize phrases that add new unique words not already in the title.
-  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Dark Romance Book Tee, Romantasy Reader"
-  - WRONG: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift" (too short — unused character budget)
+${titleFormatRules}
   - WORD DEDUPLICATION — critical: once a word appears in a phrase in the title, do NOT add that word again as a standalone term or in a separate phrase. Example: if "Mahjong Shirt" is in the title, the word "Mahjong" is already indexed by Etsy — adding "Mahjong Gift" separately would only be worthwhile if the FULL phrase "Mahjong Gift" is not already covered. Pick the phrases that together cover the most unique word surface area. No redundant single-word repeats.
   - OVERLAP CHECK: if two keywords significantly overlap (e.g. "SLP grad" and "SLP grad student"), use the longer phrase only — Etsy direct-matches the shorter within it
 
@@ -358,8 +372,7 @@ TAG RULES:
   - Bucket 1 phrase: repeat exactly in tags — INTENTIONAL, not an error
   - Bucket 2 phrases: also repeat exactly in tags — same rule as B1
   - Bucket 3: reinforce with adjacent/variant phrasing (e.g. "birthday gift" → "birthday gifts for her"), do NOT restate title terms verbatim
-  - Misspellings listed below: include in tags exactly as shown — never invent new ones
-  - Fill ALL 13 tag slots: after B1, B2, B3, and misspellings are placed, fill remaining slots with the highest-scoring unused keyword fragments from the list — prioritize phrases not already covered word-for-word in the title
+  - Fill ALL 13 tag slots: after B1, B2, B3 are placed, fill remaining slots with the highest-scoring unused keyword fragments from the list — prioritize phrases not already covered word-for-word in the title
   - Each tag: 18–20 characters, max 20
 
 BALANCE REQUIREMENT: all three buckets must have real representation in both title and tags.
@@ -390,9 +403,6 @@ ${byScore(b3).map(fmtKw).join('\n') || '  [none — do not invent B3 keywords]'}
 ${unclassified.length ? `Unclassified (assign to the bucket that best fits their metrics, then use them):\n${byScore(unclassified).map(fmtKw).join('\n')}\n` : ''}
 Watch keywords — lower confidence, grouped by bucket. Use one only if it's a genuinely better fit than the confirmed list above, not just to pad coverage.
 ${watchB1.length ? `  Bucket 1:\n${byScore(watchB1).map(fmtKw).join('\n')}\n` : ''}${watchB2.length ? `  Bucket 2:\n${byScore(watchB2).map(fmtKw).join('\n')}\n` : ''}${watchB3.length ? `  Bucket 3:\n${byScore(watchB3).map(fmtKw).join('\n')}\n` : ''}${watchUnclassified.length ? `  Unclassified:\n${byScore(watchUnclassified).map(fmtKw).join('\n')}\n` : ''}${!watchAll.length ? '  [none]' : ''}
-
-Misspelling variants (tags only — NEVER in title or description):
-${tagsKws.map(k => `  "${k.keyword}"`).join('\n') || '  [none]'}
 
 STYLE GUIDE:
 ${[
@@ -437,7 +447,6 @@ REQUIREMENTS:
 - Title: [B1] , [B2] , [B3] comma order, max 140 chars, Title Case, B1 in first 30–50 chars
 - Tags: exactly 13, each max 20 chars, B1 repeats intentionally, B2–3 reinforce not duplicate
 - Balance: all three buckets represented in both title and tags
-- Misspellings/tags-only keywords: tags only, never title or description
 - Each description section distinct — not one paragraph split arbitrarily${productBrandTerms.length ? `\n- Blank/Brand (${productBrandTerms.join(', ')}) MUST appear as a factual statement in product_details` : ''}
 - brand_voice_closer MUST end with the exact phrase: "The Current Chapter- for the current chapter and every chapter in between."
 - Image prompts: specific enough for ChatGPT — include product type, colors, setting, lighting, demographic, angle${season ? `. This is a ${season} product — work ${season}-appropriate props, setting, and color accents into the lifestyle, gift-context, and brand-aesthetic slots specifically (not the main product shot or size reference) without covering or altering the core design graphic itself` : ''}
@@ -757,6 +766,7 @@ export default function ListingBuilder() {
     collection: '', niche: '',
     productType: conceptPushData?.productType || '',
     emotionalTrigger: '', notes: '', anchorKeyword: '',
+    titleStyle: 'keyword_rich',
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -770,6 +780,7 @@ export default function ListingBuilder() {
       collection:       product.collection || '',
       niche:            product.niche || '',
       emotionalTrigger: product.emotional_trigger || '',
+      titleStyle:       product.title_style || 'keyword_rich',
     }));
     if (product.live_title) {
       setEditTitle(product.live_title);
@@ -1173,6 +1184,7 @@ export default function ListingBuilder() {
     const updates = {
       live_title: editTitle || null,
       live_tags: editTags.filter(Boolean).join(', ') || null,
+      title_style: form.titleStyle || 'keyword_rich',
     };
     if (Object.keys(editDesc).length > 0) {
       updates.generated_description = editDesc;
@@ -1196,6 +1208,7 @@ export default function ListingBuilder() {
       stage:             saveStage,
       live_title:        editTitle || null,
       live_tags:         editTags.filter(Boolean).join(', ') || null,
+      title_style:       form.titleStyle || 'keyword_rich',
       stage_updated_at:  new Date().toISOString(),
       ...(Object.keys(editDesc).length > 0 ? { generated_description: editDesc } : {}),
       ...(editPrompts.length > 0 ? { generated_image_prompts: editPrompts } : {}),
@@ -1382,6 +1395,34 @@ export default function ListingBuilder() {
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Notes <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
             <input value={form.notes} onChange={e => setField('notes', e.target.value)} placeholder="Design direction, specific angle, etc." />
+          </div>
+        </div>
+
+        {/* Title Style A/B toggle */}
+        <div style={{ marginTop: 12 }}>
+          <label className="form-label">
+            Title Style <span style={{ fontWeight: 400, opacity: 0.5 }}>— saved with the listing so you can compare Shop Stats later</span>
+          </label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+            {[
+              { key: 'keyword_rich', label: 'Keyword-Rich (130–140 chars)' },
+              { key: 'short_clean', label: "Short & Clean (Etsy's current guidance)" },
+            ].map(opt => {
+              const active = (form.titleStyle || 'keyword_rich') === opt.key;
+              return (
+                <button key={opt.key} type="button"
+                  onClick={() => setField('titleStyle', opt.key)}
+                  style={{
+                    fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                    background: active ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.12)',
+                    color: active ? '#fff' : '#2d6b3c',
+                    border: `1px solid rgba(124,175,138,${active ? '0.9' : '0.3'})`,
+                    fontWeight: active ? 600 : 400,
+                  }}>
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
