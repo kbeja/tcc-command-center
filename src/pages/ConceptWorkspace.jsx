@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { resizeImageForUpload } from '../lib/image';
 import {
   useConcept,
+  useCollections,
   updateConcept,
   archiveConcept,
   createConceptOutput,
@@ -40,15 +42,49 @@ Seasonal Flag: ${concept.seasonal_flag || 'evergreen'}
 Emotional Trigger: ${concept.emotional_trigger || ''}`;
 }
 
-async function generateOutput(concept, functionType) {
+async function generateOutput(concept, functionType, extraContext) {
+  const brief = extraContext ? `${buildConceptBrief(concept)}\n\n${extraContext}` : buildConceptBrief(concept);
   const res = await fetch(FUNCTION_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: functionType, payload: buildConceptBrief(concept) }),
+    body: JSON.stringify({ type: functionType, payload: brief }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || `Generation failed (${res.status})`);
   return data.parsed || data;
+}
+
+// Real B1/B2/B3 keywords from existing research for the given collections —
+// used to ground the Listing Draft's suggested tags in actual search data
+// instead of Claude guessing plausible-sounding phrases. Confirmed ("use")
+// keywords only, so an early/unreviewed CSV import can't leak in as if vetted.
+async function fetchCollectionKeywords(collectionNames) {
+  if (!collectionNames?.length) return [];
+  const { data: sessions } = await supabase
+    .from('research_sessions')
+    .select('id')
+    .in('collection', collectionNames);
+  if (!sessions?.length) return [];
+  const { data: keywords } = await supabase
+    .from('keywords')
+    .select('keyword, bucket, volume, score')
+    .in('research_session_id', sessions.map(s => s.id))
+    .eq('tag_type', 'use')
+    .eq('tags_only', false)
+    .not('bucket', 'is', null);
+  return keywords || [];
+}
+
+function formatKeywordContext(keywords) {
+  if (!keywords.length) return '';
+  const byBucket = n => keywords.filter(k => k.bucket === n).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 8);
+  const fmt = k => `"${k.keyword}"${k.volume != null ? ` (vol: ${k.volume})` : ''}`;
+  const section = (label, arr) => arr.length ? `${label}:\n${arr.map(fmt).join('\n')}` : '';
+  return `REAL RESEARCHED KEYWORDS (from existing TCC research — use these for suggested tags, don't invent phrases when these fit):\n\n${[
+    section('Bucket 1', byBucket(1)),
+    section('Bucket 2', byBucket(2)),
+    section('Bucket 3', byBucket(3)),
+  ].filter(Boolean).join('\n\n')}`;
 }
 
 // ── Upload asset to design-vault ──────────────────────────────────────────────
@@ -329,6 +365,8 @@ export default function ConceptWorkspace() {
           refetch={refetch}
           conceptId={id}
           config={activeOutputTab}
+          navigate={navigate}
+          otherAssets={otherAssets}
         />
       )}
 
@@ -416,32 +454,81 @@ function FieldRow({ label, saved, children, inline }) {
 // by Kittl Prompt, Mockup Prompt, Listing Draft, and Pinterest Copy. Each tab
 // instance owns its own generate/edit state so switching tabs doesn't bleed
 // state between output types.
-function GeneratedOutputTab({ concept, refetch, conceptId, config }) {
+function GeneratedOutputTab({ concept, refetch, conceptId, config, navigate, otherAssets }) {
   const { outputType, functionType, label, resultField, notesField, extraField } = config;
+  const isListingTab = config.key === 'listing';
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState(null);
   const [genError, setGenError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingOutput, setEditingOutput] = useState(null);
   const [editBody, setEditBody] = useState('');
+  const [selectedCollections, setSelectedCollections] = useState([]);
+  const [pushing, setPushing] = useState(false);
+  const { collections } = useCollections();
 
   const current = concept.concept_outputs?.find(o => o.output_type === outputType && o.is_current);
   const allVersions = (concept.concept_outputs || [])
     .filter(o => o.output_type === outputType)
     .sort((a, b) => b.version - a.version);
 
+  function toggleCollection(name) {
+    setSelectedCollections(sel => sel.includes(name) ? sel.filter(c => c !== name) : [...sel, name]);
+  }
+
   async function handleGenerate() {
     setGenerating(true);
     setGenError('');
     setGenResult(null);
     try {
-      const result = await generateOutput(concept, functionType);
+      let extraContext = '';
+      if (isListingTab && selectedCollections.length) {
+        const keywords = await fetchCollectionKeywords(selectedCollections);
+        extraContext = formatKeywordContext(keywords);
+      }
+      const result = await generateOutput(concept, functionType, extraContext);
       if (!result?.[resultField]) throw new Error('No result returned');
       setGenResult(result);
     } catch (err) {
       setGenError('Generation failed: ' + err.message);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  // Push this concept into a fresh Listing Builder draft. Only Product Type
+  // (a factual description of the blank) and the design image carry over —
+  // Product Name is a plain working label, never the concept's own guessed
+  // title, because the real title is supposed to come from whatever B1/B2/B3
+  // keywords she selects in Listing Builder itself, not from here.
+  async function handlePushToListingBuilder() {
+    setPushing(true);
+    try {
+      let imageBase64 = null;
+      let imageMediaType = null;
+      const asset = (otherAssets || [])[0];
+      if (asset) {
+        const url = await getAssetUrl(asset.storage_path);
+        if (url) {
+          const res = await fetch(url);
+          const blob = await res.blob();
+          const resized = await resizeImageForUpload(blob);
+          imageBase64 = resized.base64;
+          imageMediaType = resized.mediaType;
+        }
+      }
+      const productType = (concept.product_types || []).join(', ');
+      sessionStorage.setItem('tcc_concept_push', JSON.stringify({
+        productName: concept.name,
+        productType,
+        imageBase64,
+        imageMediaType,
+      }));
+      navigate('/listing-builder?fromConcept=' + conceptId);
+    } catch (err) {
+      setGenError('Push failed: ' + err.message);
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -495,12 +582,24 @@ function GeneratedOutputTab({ concept, refetch, conceptId, config }) {
             <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
               Current · v{current.version} · {current.output_source === 'imported' ? 'imported' : 'generated'}
             </div>
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => { setEditingOutput(current); setEditBody(current.body); }}
-            >
-              Edit
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {isListingTab && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handlePushToListingBuilder}
+                  disabled={pushing}
+                  title="Opens a fresh Listing Builder draft with product type and design image carried over — you still pick the collection and build the real title from actual keyword research there."
+                >
+                  {pushing ? 'Pushing…' : '→ Push to Listing Builder'}
+                </button>
+              )}
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setEditingOutput(current); setEditBody(current.body); }}
+              >
+                Edit
+              </button>
+            </div>
           </div>
 
           {editingOutput?.id === current.id ? (
@@ -536,6 +635,27 @@ function GeneratedOutputTab({ concept, refetch, conceptId, config }) {
 
       {/* Generate new */}
       <div style={{ marginBottom: 24 }}>
+        {isListingTab && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>
+              Pull real keywords from research (optional) — picks suggested tags from actual search data instead of guessing. Leave blank for a rough pre-research draft.
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {collections.map(name => (
+                <button key={name} type="button" onClick={() => toggleCollection(name)}
+                  style={{
+                    fontSize: '0.7rem', padding: '3px 10px', borderRadius: 20, cursor: 'pointer',
+                    border: '1px solid rgba(43,41,38,0.2)',
+                    background: selectedCollections.includes(name) ? 'var(--dusty-rose)' : 'transparent',
+                    color: selectedCollections.includes(name) ? 'white' : 'var(--charcoal-soft)',
+                    fontWeight: selectedCollections.includes(name) ? 600 : 400,
+                  }}>
+                  {name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
           Generate a new {label.toLowerCase()} from this concept's brief using Claude.
         </div>

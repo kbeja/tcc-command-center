@@ -335,10 +335,13 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
   const upTrend = keywords.filter(k => k.trend === 'up').length;
 
   async function handleSave() {
+    // Empty targetColl is a deliberate choice — save this group's research without
+    // committing to a collection yet. Only block on a genuinely incomplete "new
+    // collection" entry (name field left blank).
+    if (targetColl === '__new__' && !newCollName.trim()) return;
     setSaving(true);
     const collName = targetColl === '__new__' ? newCollName.trim() : targetColl;
-    if (!collName) { setSaving(false); return; }
-    await onStartCollection(group, keywords, collName, targetColl === '__new__', newChapter.trim() || null);
+    await onStartCollection(group, keywords, collName || null, targetColl === '__new__', newChapter.trim() || null);
     setSaving(false);
     setDone(true);
     setConverting(false);
@@ -387,11 +390,12 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
       </div>
 
       {done ? (
-        <div style={{ fontSize: '0.75rem', color: '#2d6b3c', fontWeight: 500 }}>✓ Added to collection</div>
+        <div style={{ fontSize: '0.75rem', color: '#2d6b3c', fontWeight: 500 }}>✓ Saved to Research</div>
       ) : converting ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <select value={targetColl} onChange={e => setTargetColl(e.target.value)}
             style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
+            <option value="">— Save uncategorized (not ready to decide) —</option>
             <option value="__new__">+ Create new collection</option>
             {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -415,7 +419,7 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
           </div>
         </div>
       ) : (
-        <button className="btn btn-ghost btn-sm" onClick={() => setConverting(true)}>→ Start Collection</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setConverting(true)}>→ Save Group</button>
       )}
     </div>
   );
@@ -582,6 +586,11 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
         tags_only:   false,
       }));
       await supabase.from('keywords').insert(rows);
+    }
+    // Same last_verified touch createResearchSession does for its callers — this
+    // path inserts directly and would otherwise miss it.
+    if (collName) {
+      await supabase.from('collections').update({ last_verified: new Date().toISOString().slice(0, 10) }).eq('name', collName);
     }
     if (isNew) onCollectionCreated?.();
   }

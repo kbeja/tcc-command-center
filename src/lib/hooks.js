@@ -251,6 +251,15 @@ export async function createResearchSession(session, keywords) {
         return { error: insErr };
       }
     }
+    // Touch the collection's last_verified date here so every ingestion path
+    // (manual form, Everbee CSV import, pasted session summary, …) marks
+    // keywords as freshly confirmed — not just whichever caller remembers to
+    // do it themselves. Previously only the manual research form did this,
+    // so collections researched via CSV import or session-summary paste
+    // always showed "never verified" regardless of how current the data was.
+    if (session.collection) {
+      await supabase.from('collections').update({ last_verified: now.split('T')[0] }).eq('name', session.collection);
+    }
   }
   return { data: s };
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
 
-const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', 'Summer', 'Spring', 'Fall'];
+const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
 // ── Parse --- TCC CONCEPT --- paste block ────────────────────────────────────
 

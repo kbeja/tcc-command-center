@@ -218,8 +218,11 @@ export default function EverbeeCSVImport({ products, onImported }) {
 
     try {
       if (shape === 'keyword') {
-        // Route directly to Research → research_sessions + keywords (never through Claude/Inbox)
-        const collection = nicheTag.trim() || 'General';
+        // Route directly to Research → research_sessions + keywords (never through Claude/Inbox).
+        // Blank niche tag means uncategorized/exploratory — leave collection null rather than
+        // defaulting into "General", which has a specific different meaning (universal
+        // cross-collection keywords, auto-pooled into every listing).
+        const collection = nicheTag.trim() || null;
         const rawRows = [
           ...preview.keep.map(k => ({
             keyword: k.keyword,
@@ -258,7 +261,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           import_type: 'everbee_keywords',
           imported_at: now,
           records_updated: kwRows.length,
-          notes: `${preview.discard.length} discarded, ${preview.misspellings.length} misspellings, niche: ${collection}, parent: ${parentNiche || 'none'}`,
+          notes: `${preview.discard.length} discarded, ${preview.misspellings.length} misspellings, niche: ${collection || 'uncategorized'}, parent: ${parentNiche || 'none'}`,
         });
 
         setResult({
@@ -375,7 +378,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           <div style={{ fontSize: '0.82rem', fontWeight: 500, marginBottom: 6 }}>Import complete</div>
           {result.type === 'keyword' ? (
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div>✓ {result.added} keywords saved to Research → {result.collection}</div>
+              <div>✓ {result.added} keywords saved to Research → {result.collection || 'Uncategorized'}</div>
               <div>✗ {result.discarded} garbage rows discarded</div>
               {result.misspellings > 0 && <div>⚑ {result.misspellings} misspellings included as Watch (tags-only)</div>}
             </div>
@@ -431,11 +434,11 @@ export default function EverbeeCSVImport({ products, onImported }) {
               </select>
             </div>
             <div>
-              <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Sub-Niche / Collection</div>
+              <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Sub-Niche / Collection <span style={{ fontWeight: 400, opacity: 0.6, textTransform: 'none' }}>(optional — leave blank for broad/exploratory research)</span></div>
               <input
                 value={nicheTag}
                 onChange={e => setNicheTag(e.target.value)}
-                placeholder="e.g. 'Mom Chapter mugs' or 'Elder Millennial Reader'"
+                placeholder="e.g. 'Mom Chapter mugs' — or leave blank to save as uncategorized"
                 style={{ width: '100%', fontSize: '0.8rem' }}
               />
             </div>

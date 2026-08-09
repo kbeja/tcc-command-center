@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, createProduct, updateProduct, createCollection } from '../lib/hooks';
+import { resizeImageForUpload } from '../lib/image';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
 
@@ -253,24 +254,86 @@ function computeBucketWarnings(keywords, sessions) {
   return warnings;
 }
 
-function buildContext({ form, keywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames }) {
-  const usable    = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
-  const watchKws  = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
+function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames }) {
+  // Misspelling variants are excluded from every title-bound pool (usable + watch) —
+  // per SEO standards they're tags-only, never title or description, regardless of volume.
+  const usable    = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard' && !k.is_misspelling_variant);
   const tagsKws   = keywords.filter(k => k.tags_only || k.is_misspelling_variant);
 
-  const b1 = usable.filter(k => k.bucket === 1 && k.tag_type !== 'watch');
+  const b1All = usable.filter(k => k.bucket === 1 && k.tag_type !== 'watch');
   const b2 = usable.filter(k => k.bucket === 2 && k.tag_type !== 'watch');
   const b3 = usable.filter(k => k.bucket === 3 && k.tag_type !== 'watch');
   const unclassified = usable.filter(k => !k.bucket && k.tag_type !== 'watch');
+  // B1 leads the title, so it's the one slot where a pooled/generic term (shared
+  // across every listing that touches this collection) actively hurts relevance —
+  // a Halloween listing shouldn't lead with a generic "gifted mama" just because
+  // it's the highest-volume B1 available somewhere in the pool. Prefer this
+  // listing's own collection; only fall back to pooled B1s if it has none of its own,
+  // and say so explicitly so a fallback pick doesn't look like a confident choice.
+  const b1Primary = b1All.filter(k => k._fromPrimaryCollection);
+  const b1 = b1Primary.length ? b1Primary : b1All;
+  const b1IsPooledFallback = !b1Primary.length && b1All.length > 0;
+
+  // Watch-status keywords (promising, not yet fully vetted) are real research —
+  // demoting them below confirmed ("use") keywords is right, but they still belong
+  // to a bucket and can be exactly what a listing needs (e.g. an apparel-specific
+  // B3 term). Keep them grouped by bucket instead of one flat list sorted only by
+  // score, or a well-bucketed but low-scored keyword silently never surfaces.
+  const watchAll = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only && !k.is_misspelling_variant);
+  const watchB1 = watchAll.filter(k => k.bucket === 1);
+  const watchB2 = watchAll.filter(k => k.bucket === 2);
+  const watchB3 = watchAll.filter(k => k.bucket === 3);
+  const watchUnclassified = watchAll.filter(k => !k.bucket);
 
   const byScore = arr => [...arr].sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  // Nothing today cross-checks a keyword's own text against this listing's actual
+  // product format — a "comfort colors tee" keyword reads as generically fine to
+  // the model even when the product is a crewneck, and it has no way to know that
+  // conflicts. Flag it inline instead of silently letting a mismatched format slip
+  // into a title verbatim. Longest terms first so "tote bag"/"tank top" match before
+  // the shorter "tote"/"tank" would.
+  const FORMAT_TERMS = [
+    'crewneck sweatshirt', 'crewneck', 'sweatshirt', 'hoodie', 'sweater',
+    'tank top', 'tank', 't-shirt', 'tshirt', 'tee shirt', 'tee', 'shirt',
+    'tote bag', 'tote', 'mug', 'sticker', 'ornament', 'blanket',
+    'beanie', 'hat', 'phone case', 'notebook', 'journal', 'poster', 'print',
+  ].sort((a, b) => b.length - a.length);
+  // Blank/garment brands TCC actually sources from. Unlike format, a brand not
+  // being named in Product Type is NOT evidence against a keyword that mentions
+  // one — she just may not have typed it — so this only ever flags a conflict
+  // when she's named a DIFFERENT brand than the keyword does, never on silence.
+  const BRAND_TERMS = ['comfort colors', 'gildan', 'bella+canvas', 'bella canvas', 'next level'];
+  const matchTerms = (text, termList) => {
+    const lower = (text || '').toLowerCase();
+    const found = [];
+    for (const term of termList) {
+      if (lower.includes(term) && !found.some(f => f.includes(term))) found.push(term);
+    }
+    return found;
+  };
+  // Full explanation lives once in the KEYWORDS header below — keep the
+  // per-keyword tag terse since it repeats on every flagged line and output
+  // length is what actually costs generation time.
+  const productFormatTerms = matchTerms(form.productType, FORMAT_TERMS);
+  const productBrandTerms = matchTerms(form.productType, BRAND_TERMS);
+  const typeConflictNote = keyword => {
+    const formatConflicts = matchTerms(keyword, FORMAT_TERMS)
+      .filter(t => !productFormatTerms.some(p => p.includes(t) || t.includes(p)));
+    const brandConflicts = productBrandTerms.length
+      ? matchTerms(keyword, BRAND_TERMS).filter(t => !productBrandTerms.includes(t))
+      : [];
+    const all = [...formatConflicts, ...brandConflicts];
+    return all.length ? ` [format: ${all.join(', ')}]` : '';
+  };
 
   const fmtKw = k =>
     `  "${k.keyword}"` +
     (k.volume      != null ? ` (vol: ${Number(k.volume).toLocaleString()}` : '') +
     (k.competition != null ? `, comp: ${Number(k.competition).toLocaleString()}` : '') +
     (k.score       != null ? `, score: ${Number(k.score).toLocaleString()}` : '') +
-    (k.volume      != null ? ')' : '');
+    (k.volume      != null ? ')' : '') +
+    typeConflictNote(k.keyword);
 
   return `Generate a complete Etsy listing for TCC (The Current Chapter).
 
@@ -305,15 +368,17 @@ BALANCE REQUIREMENT: all three buckets must have real representation in both tit
 PRODUCT:
 Name: ${form.productName || 'Untitled product'}
 Product Type: ${form.productType || 'print-on-demand item'}
-Collection: ${(allCollectionNames && allCollectionNames.length > 1) ? allCollectionNames.join(' + ') : (form.collection || '—')}${(allCollectionNames && allCollectionNames.length > 1) ? '\nNote: Keywords are pooled from multiple collections — pick only the ones relevant to this specific product.' : ''}
+${productBrandTerms.length ? `Blank/Brand: ${productBrandTerms.join(', ')} — state in product_details; treat brand-matching keywords below as real B2/B3 candidates.\n` : ''}Collection: ${(allCollectionNames && allCollectionNames.length > 1) ? allCollectionNames.join(' + ') : (form.collection || '—')}${(allCollectionNames && allCollectionNames.length > 1) ? '\nNote: Keywords are pooled from multiple collections — pick only the ones relevant to this specific product.' : ''}
 Sub-niche: ${form.niche || '—'}
-${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first tag): "${form.anchorKeyword}"` : 'ANCHOR KEYWORD: not set — choose the strongest B1 from the list below'}
+${season ? `Occasion/Season: ${season} — this is a seasonal product, not evergreen` : 'Occasion/Season: evergreen (no season tagged)'}
+${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first tag): "${form.anchorKeyword}"` : b1IsPooledFallback ? 'ANCHOR KEYWORD: not set — no B1 of its own; Bucket 1 below is pooled/generic. Only lead with one if it fits the Product Type; otherwise flag the gap in research_flags rather than force a generic lead term.' : 'ANCHOR KEYWORD: not set — choose the strongest B1 from the list below'}
 ${form.notes ? `Notes: ${form.notes}` : ''}
 
 ${imageAnalysis ? `DESIGN IMAGE ANALYSIS:\n${imageAnalysis}\n` : ''}
-KEYWORDS — ONLY USE KEYWORDS FROM THIS LIST. DO NOT invent, substitute, or add any keyword not shown here:
+KEYWORDS — ONLY USE KEYWORDS FROM THIS LIST. DO NOT invent, substitute, or add any keyword not shown here.
+[format: X] = names a product format that may not match this listing's Product Type ("${form.productType || 'unset'}") — prefer an unmarked/matching variant for the title; a conflicting one is tags-only, never stated as fact in the description.
 
-Bucket 1 — Visibility (high vol, low comp — your unicorn):
+Bucket 1 — Visibility (high vol, low comp — your unicorn)${b1IsPooledFallback ? ' — POOLED, not specific to this collection' : ''}:
 ${byScore(b1).map(fmtKw).join('\n') || '  [none — do not invent B1 keywords; leave B1 slot empty or flag it]'}
 
 Bucket 2 — Reach (high-med vol, med-low comp — supporting keywords):
@@ -322,14 +387,18 @@ ${byScore(b2).map(fmtKw).join('\n') || '  [none]'}
 Bucket 3 — Bestseller (high vol, high comp — broad + seasonal + buyer-intent):
 ${byScore(b3).map(fmtKw).join('\n') || '  [none — do not invent B3 keywords]'}
 
-${unclassified.length ? `Unclassified (assign to the bucket that best fits their metrics, then use them):\n${byScore(unclassified).map(fmtKw).join('\n')}` : ''}
-${watchKws.length ? `\nWatch keywords (lower confidence — use only if needed for coverage):\n${byScore(watchKws).slice(0, 6).map(fmtKw).join('\n')}` : ''}
+${unclassified.length ? `Unclassified (assign to the bucket that best fits their metrics, then use them):\n${byScore(unclassified).map(fmtKw).join('\n')}\n` : ''}
+Watch keywords — lower confidence, grouped by bucket. Use one only if it's a genuinely better fit than the confirmed list above, not just to pad coverage.
+${watchB1.length ? `  Bucket 1:\n${byScore(watchB1).map(fmtKw).join('\n')}\n` : ''}${watchB2.length ? `  Bucket 2:\n${byScore(watchB2).map(fmtKw).join('\n')}\n` : ''}${watchB3.length ? `  Bucket 3:\n${byScore(watchB3).map(fmtKw).join('\n')}\n` : ''}${watchUnclassified.length ? `  Unclassified:\n${byScore(watchUnclassified).map(fmtKw).join('\n')}\n` : ''}${!watchAll.length ? '  [none]' : ''}
 
 Misspelling variants (tags only — NEVER in title or description):
 ${tagsKws.map(k => `  "${k.keyword}"`).join('\n') || '  [none]'}
 
 STYLE GUIDE:
-${styleGuide || '— No style guide. Infer aesthetic from design image and niche.'}
+${[
+  brandStyleGuide ? `Brand-wide (always applies):\n${brandStyleGuide}` : '',
+  styleGuide ? `Collection-specific:\n${styleGuide}` : '',
+].filter(Boolean).join('\n\n') || '— No style guide. Infer aesthetic from design image and niche.'}
 
 SEO STANDARDS:
 ${seoStandards}
@@ -355,14 +424,10 @@ Generate now. Return ONLY this JSON — no markdown, no text outside the object:
   "image_prompts": [
     {"slot": 1, "type": "Main product shot", "prompt": "string — detailed ChatGPT image prompt"},
     {"slot": 2, "type": "Lifestyle — worn/in use", "prompt": "string"},
-    {"slot": 3, "type": "Lifestyle — environment", "prompt": "string"},
+    {"slot": 3, "type": "Flat lay", "prompt": "string"},
     {"slot": 4, "type": "Detail / closeup", "prompt": "string"},
-    {"slot": 5, "type": "Flat lay", "prompt": "string"},
-    {"slot": 6, "type": "Gift context", "prompt": "string"},
-    {"slot": 7, "type": "Color or style variant", "prompt": "string"},
-    {"slot": 8, "type": "Size reference", "prompt": "string"},
-    {"slot": 9, "type": "Social / UGC style", "prompt": "string"},
-    {"slot": 10, "type": "Brand aesthetic / mood", "prompt": "string"}
+    {"slot": 5, "type": "Gift context", "prompt": "string"},
+    {"slot": 6, "type": "Brand aesthetic / mood", "prompt": "string"}
   ],
   "bucket_assignment": {"b1": "string — the bucket 1 keyword used", "b2": ["strings"], "b3": ["strings"]},
   "research_flags": ["string — missing bucket coverage, balance issues, overlap candidates, or anything that needs more research"]
@@ -373,15 +438,15 @@ REQUIREMENTS:
 - Tags: exactly 13, each max 20 chars, B1 repeats intentionally, B2–3 reinforce not duplicate
 - Balance: all three buckets represented in both title and tags
 - Misspellings/tags-only keywords: tags only, never title or description
-- Each description section distinct — not one paragraph split arbitrarily
+- Each description section distinct — not one paragraph split arbitrarily${productBrandTerms.length ? `\n- Blank/Brand (${productBrandTerms.join(', ')}) MUST appear as a factual statement in product_details` : ''}
 - brand_voice_closer MUST end with the exact phrase: "The Current Chapter- for the current chapter and every chapter in between."
-- Image prompts: specific enough for ChatGPT — include product type, colors, setting, lighting, demographic, angle
+- Image prompts: specific enough for ChatGPT — include product type, colors, setting, lighting, demographic, angle${season ? `. This is a ${season} product — work ${season}-appropriate props, setting, and color accents into the lifestyle, gift-context, and brand-aesthetic slots specifically (not the main product shot or size reference) without covering or altering the core design graphic itself` : ''}
 - research_flags: flag any missing bucket, balance gap, overlap to combine, or keywords needing validation`;
 }
 
 // ─── Collection picker with inline add ───────────────────────────────────────
 
-const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', 'Summer', 'Spring', 'Fall'];
+const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
 function CollectionPicker({ collections, collectionObjects, chapters, value, onChange, extraValues, onExtraChange, onCreated }) {
   const [adding, setAdding]     = useState(false);
@@ -439,11 +504,12 @@ function CollectionPicker({ collections, collectionObjects, chapters, value, onC
             onExtraChange?.(extras);
           }
 
+          const liveObjects = (collectionObjects || []).filter(c => c.status !== 'archived');
           const groups = chapters.map(ch => {
-            const inCh = (collectionObjects || []).filter(c => c.chapter === ch);
+            const inCh = liveObjects.filter(c => c.chapter === ch);
             return inCh.length ? { label: ch, items: inCh } : null;
           }).filter(Boolean);
-          const uncat = (collectionObjects || []).filter(c => !c.chapter);
+          const uncat = liveObjects.filter(c => !c.chapter);
           if (uncat.length) groups.push({ label: 'Other', items: uncat });
 
           return groups.map(({ label, items }) => (
@@ -526,6 +592,19 @@ function InlineKeywordAdd({ collection, sessions, onSaved }) {
   const [targetSession, setTargetSession] = useState('');
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
+
+  // Default to the most recent existing session for this collection, once per
+  // collection, so leaving the dropdown untouched doesn't silently spawn a new
+  // "Inline add" session every time — same auto-pick-once-then-respect-the-user
+  // pattern as the anchor keyword auto-select above.
+  const autoSessionTriedRef = useRef(new Set());
+  useEffect(() => {
+    if (autoSessionTriedRef.current.has(collection)) return;
+    if (!sessions.length) return;
+    autoSessionTriedRef.current.add(collection);
+    const mostRecent = [...sessions].sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0))[0];
+    if (mostRecent) setTargetSession(mostRecent.id);
+  }, [collection, sessions]);
 
   function updateRow(i, field, val) {
     setRows(prev => prev.map((r, idx) => idx === i ? { ...r, [field]: val } : r));
@@ -647,6 +726,7 @@ export default function ListingBuilder() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const productId = searchParams.get('product');
+  const conceptId = searchParams.get('fromConcept');
 
   const { product, loading: productLoading } = useProduct(productId);
   const { collections, refetch: refetchCollections } = useCollections();
@@ -654,9 +734,29 @@ export default function ListingBuilder() {
   const { chapters } = useChapters();
   const { playbooks } = usePlaybooks();
 
+  // One-time hand-off from a Concept's "Push to Listing Builder" — resolved
+  // synchronously in a lazy useState initializer (not a useEffect) so it's
+  // settled before first paint and can't race the draft-restore/auto-save
+  // effects below. It genuinely did race them as a useEffect: React 18
+  // StrictMode's double-invocation let auto-save persist the pre-update
+  // (still-empty) form to localStorage between the two passes, and
+  // draft-restore's second pass then re-read that and clobbered this data.
+  const [conceptPushData] = useState(() => {
+    if (!conceptId) return null;
+    try {
+      const raw = sessionStorage.getItem('tcc_concept_push');
+      if (!raw) return null;
+      sessionStorage.removeItem('tcc_concept_push');
+      return JSON.parse(raw);
+    } catch { return null; }
+  });
+
   // Form
   const [form, setForm] = useState({
-    productName: '', collection: '', niche: '', productType: '', emotionalTrigger: '', notes: '', anchorKeyword: '',
+    productName: conceptPushData?.productName || '',
+    collection: '', niche: '',
+    productType: conceptPushData?.productType || '',
+    emotionalTrigger: '', notes: '', anchorKeyword: '',
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -702,9 +802,13 @@ export default function ListingBuilder() {
   const DRAFT_KEY = 'tcc_listing_draft';
   const [draftRestored, setDraftRestored] = useState(false);
 
-  // Restore draft on first load (only for new listings)
+  // Restore draft on first load (only for new listings). Skipped entirely
+  // when arriving via a concept push — that's a deliberate "start fresh for
+  // this concept" action, and an old in-progress draft (already correctly
+  // applied via conceptPushData in form's initial state above) shouldn't
+  // silently override it.
   useEffect(() => {
-    if (productId) return;
+    if (productId || conceptPushData) return;
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
@@ -720,6 +824,23 @@ export default function ListingBuilder() {
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Design image half of the concept-push hand-off — the text fields
+  // (productName/productType) are already in form's initial state above;
+  // this only needs an effect because analysis requires an async call.
+  // Deliberately does NOT set anchorKeyword or collection — those stay
+  // blank, so the real title still gets built from whatever B1/B2/B3
+  // keywords she picks here, not the concept's own guess.
+  const conceptPushImageAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!conceptPushData?.imageBase64 || conceptPushImageAppliedRef.current) return;
+    conceptPushImageAppliedRef.current = true;
+    setImageBase64(conceptPushData.imageBase64);
+    setImageMediaType(conceptPushData.imageMediaType || 'image/jpeg');
+    setImagePreview(`data:${conceptPushData.imageMediaType || 'image/jpeg'};base64,${conceptPushData.imageBase64}`);
+    analyzeImage(conceptPushData.imageBase64, conceptPushData.imageMediaType || 'image/jpeg');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conceptPushData]);
 
   // Auto-save draft whenever key state changes (new listings only)
   useEffect(() => {
@@ -802,10 +923,17 @@ export default function ListingBuilder() {
   const allKeywords = (() => {
     const map = new Map();
     for (const s of activeSessions) {
+      // Tag each keyword with whether it came from this listing's own
+      // collection(s), vs. a globally-pooled session (General/Global
+      // Keywords/Seasonal). Bucket coverage and tags should draw from
+      // everything, but the anchor — the phrase that leads the title —
+      // should prefer something specific to this listing over a
+      // high-volume term that's identical on every other listing too.
+      const fromPrimaryCollection = allCollectionNames.includes(s.collection);
       for (const k of (s.keywords || [])) {
         const key = `${k.keyword?.toLowerCase()}|${k.tags_only ? 'tags' : k.tag_type}`;
         const ex = map.get(key);
-        if (!ex || (k.score || 0) > (ex.score || 0)) map.set(key, k);
+        if (!ex || (k.score || 0) > (ex.score || 0)) map.set(key, { ...k, _fromPrimaryCollection: fromPrimaryCollection });
       }
     }
     return [...map.values()];
@@ -815,14 +943,29 @@ export default function ListingBuilder() {
   const watchKws = allKeywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
   const totalUsable = useKws.length + watchKws.length;
 
-  // Bucket coverage — used both for readiness and as a generation gate
-  const usableForBuckets = allKeywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
+  // Bucket coverage — used both for readiness and as a generation gate.
+  // Misspelling variants are excluded here (not just from the generation prompt) —
+  // they must never anchor a title per SEO standards, even if high-volume, so they
+  // can't be auto-picked, can't appear as a manual B1 chip, and don't count toward
+  // bucket coverage. They're still valid, usable keywords — just tags-only ones.
+  const usableForBuckets = allKeywords.filter(k => !k.tags_only && k.tag_type !== 'discard' && !k.is_misspelling_variant);
   const b1Keywords = usableForBuckets.filter(k => k.bucket === 1);
   const b2Keywords = usableForBuckets.filter(k => k.bucket === 2);
   const b3Keywords = usableForBuckets.filter(k => k.bucket === 3);
+  // B1 keywords specific to this listing's own collection(s) — the only ones
+  // eligible to auto-lead the title. Bucket *coverage* still counts pooled
+  // keywords, and the manual picker below still shows pooled B1s as options,
+  // but a pooled term (e.g. "gifted mama" from General) is generic by
+  // definition — it can be a fine anchor if this listing's own research is
+  // thin, but that's a deliberate human call, never a silent auto-pick.
+  const primaryB1Keywords = b1Keywords.filter(k => k._fromPrimaryCollection);
   // Unbucketed with vol+comp provisionally satisfy coverage gates
   const provisionalKws = usableForBuckets.filter(k => !k.bucket && k.volume && k.competition);
   const hasProvisionalCoverage = provisionalKws.length >= 3;
+  // True classification, as opposed to the provisional vol/comp fallback above —
+  // anchor auto-select and the generation prompt's B1/B2/B3 sections both need
+  // real bucket tags, not just "enough scored keywords to probably cover all three."
+  const bucketsFullyClassified = !!(b1Keywords.length && b2Keywords.length && b3Keywords.length);
 
   const missingBuckets = [
     ...(!b1Keywords.length && !hasProvisionalCoverage ? ['Bucket 1 (Visibility — high vol, low comp)'] : []),
@@ -835,29 +978,46 @@ export default function ListingBuilder() {
   // candidate is already showing right above it. User can still override by
   // clicking another chip, or clear it — once tried for a collection, it's
   // never re-imposed (respects a deliberate clear).
+  //
+  // Only ever auto-picks from this collection's OWN B1s — never a pooled/
+  // global one. A pooled B1 can be high-volume and low-competition while
+  // being totally generic ("gifted mama" fits every Mom-adjacent listing,
+  // Halloween included) — good SEO metrics, wrong product. If this
+  // collection has no B1 of its own, that's a real research gap; auto-
+  // selecting a pooled term would paper over it instead of surfacing it.
+  // She can still pick one manually from the picker below if she judges
+  // it genuinely fits.
   const autoAnchorTriedRef = useRef(new Set());
   useEffect(() => {
     if (!form.collection || form.anchorKeyword) return;
     if (autoAnchorTriedRef.current.has(form.collection)) return;
-    const topB1 = b1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
+    const topB1 = primaryB1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
     if (topB1) {
       autoAnchorTriedRef.current.add(form.collection);
       setField('anchorKeyword', topB1.keyword);
     }
-  }, [form.collection, form.anchorKeyword, b1Keywords]);
+  }, [form.collection, form.anchorKeyword, primaryB1Keywords]);
 
   // Playbooks
   const photoPlaybook      = playbooks.find(p => p.slug === 'listing-photos');
   const seoPlaybook        = playbooks.find(p => p.slug === 'seo-standards');
   const brandVoicePlaybook = playbooks.find(p => p.slug === 'brand-voice');
+  const designPlaybook     = playbooks.find(p => p.slug === 'design-standards');
 
-  const seoStandards  = seoPlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || SEO_STANDARDS_FALLBACK;
-  const brandVoice    = brandVoicePlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || BRAND_VOICE_FALLBACK;
+  const seoStandards   = seoPlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || SEO_STANDARDS_FALLBACK;
+  const brandVoice     = brandVoicePlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || BRAND_VOICE_FALLBACK;
   const photoStandards = photoPlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || '';
+  // Brand-wide style guide (Knowledge → Playbooks → Design Standards) — applies
+  // to every listing regardless of collection. Layered with, not replaced by,
+  // the collection-specific style guide below.
+  const brandStyleGuide = designPlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || '';
 
   const collectionObj = collectionObjs.find(c => c.name === form.collection);
   const nicheKey = (form.niche || '').toLowerCase();
   const styleGuide = nicheStyleGuides[nicheKey] || collectionObj?.style_guide || '';
+  // Occasion/season tag captured on the collection (Halloween, Back to School, …) —
+  // exists in the data already but wasn't reaching the generation prompt.
+  const season = collectionObj?.season || '';
 
   // Design image
   const analyzeImage = useCallback(async (base64, mediaType) => {
@@ -889,17 +1049,16 @@ export default function ListingBuilder() {
 
   const handleImage = useCallback(async (file) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result;
-      setImagePreview(dataUrl);
-      const base64 = dataUrl.split(',')[1];
-      const mediaType = file.type || 'image/png';
+    try {
+      const { base64, mediaType } = await resizeImageForUpload(file);
+      setImagePreview(`data:${mediaType};base64,${base64}`);
       setImageBase64(base64);
       setImageMediaType(mediaType);
       await analyzeImage(base64, mediaType);
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Image resize failed:', err);
+      setImageAnalysisError('Could not read that image — try a different file');
+    }
   }, [analyzeImage]);
 
   // Ctrl+V paste listener for design image
@@ -922,7 +1081,15 @@ export default function ListingBuilder() {
 
   // Readiness checks
   const readiness = [
-    { label: `${totalUsable} usable keyword${totalUsable !== 1 ? 's' : ''}`, ok: totalUsable >= 5, warn: totalUsable < 5 },
+    {
+      label: bucketsFullyClassified
+        ? `${totalUsable} usable keywords — B1/B2/B3 classified`
+        : hasProvisionalCoverage
+          ? `${totalUsable} usable keywords — buckets not yet classified (provisional)`
+          : `${totalUsable} usable keyword${totalUsable !== 1 ? 's' : ''}`,
+      ok: bucketsFullyClassified,
+      warn: !bucketsFullyClassified,
+    },
     {
       label: keywordsStale
         ? `Keywords last verified ${keywordAgedays}d ago — recheck recommended`
@@ -932,8 +1099,23 @@ export default function ListingBuilder() {
       ok: collectionLastVerified !== null && !keywordsStale,
       warn: keywordsStale || collectionLastVerified === null,
     },
-    { label: styleGuide ? 'Style guide' : 'Style guide missing', ok: !!styleGuide, warn: !styleGuide },
-    { label: form.anchorKeyword ? `Anchor: "${form.anchorKeyword}"` : 'No anchor keyword set', ok: !!form.anchorKeyword, warn: !form.anchorKeyword },
+    {
+      // Checks the brand-wide guide (Design Standards playbook), not the
+      // collection-specific one — collection-level style guides are deliberately
+      // not used, so warning on their absence would fire on every listing forever.
+      label: brandStyleGuide ? 'Brand style guide' : 'Brand style guide missing',
+      ok: !!brandStyleGuide,
+      warn: !brandStyleGuide,
+    },
+    {
+      label: form.anchorKeyword
+        ? `Anchor: "${form.anchorKeyword}"`
+        : hasProvisionalCoverage && !b1Keywords.length
+          ? 'No anchor set — no keyword classified as Bucket 1 yet'
+          : 'No anchor keyword set',
+      ok: !!form.anchorKeyword,
+      warn: !form.anchorKeyword,
+    },
     {
       label: analyzing
         ? 'Analyzing image…'
@@ -957,7 +1139,7 @@ export default function ListingBuilder() {
     setGenError('');
     setOutput(null);
     try {
-      const context = buildContext({ form, keywords: allKeywords, styleGuide, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions, allCollectionNames });
+      const context = buildContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions, allCollectionNames });
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1135,7 +1317,10 @@ export default function ListingBuilder() {
                       border: `1px solid ${isGlobal ? 'rgba(120,140,200,0.25)' : isSelected ? 'rgba(124,175,138,0.3)' : 'transparent'}`,
                     }}>
                     {isGlobal
-                      ? <span style={{ fontSize: '0.6rem', color: '#1e306b', background: 'rgba(120,140,200,0.2)', padding: '1px 5px', borderRadius: 8, fontWeight: 600, flexShrink: 0 }}>GLOBAL</span>
+                      ? <span
+                          title={`Always included — "${s.collection}" is a pooled collection whose keywords apply to every listing, not just this one. No checkbox because it can't be turned off here.`}
+                          style={{ fontSize: '0.6rem', color: '#1e306b', background: 'rgba(120,140,200,0.2)', padding: '1px 5px', borderRadius: 8, fontWeight: 600, flexShrink: 0, cursor: 'help' }}
+                        >GLOBAL</span>
                       : <input type="checkbox" checked={isSelected} readOnly style={{ width: 'auto', margin: 0, flexShrink: 0, pointerEvents: 'none' }} />
                     }
                     <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>{s.niche || s.collection}</span>
@@ -1150,32 +1335,40 @@ export default function ListingBuilder() {
           </div>
         )}
 
-        {/* B1 anchor picker */}
+        {/* B1 anchor picker — only this collection's own B1s are offered as
+            clickable anchors. A pooled/generic term (shared with every other
+            listing that touches this collection) isn't a real anchor candidate
+            even if it's technically B1-bucketed and high-volume — it's not
+            specific to this product. */}
         {(() => {
           if (!b1Keywords.length) return null;
           return (
             <div style={{ marginBottom: 12 }}>
               <label className="form-label">Anchor Keyword (B1) <span style={{ fontWeight: 400, opacity: 0.5 }}>— leads the title</span></label>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                {b1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
-                  <button key={k.id} type="button"
-                    onClick={() => setField('anchorKeyword', form.anchorKeyword === k.keyword ? '' : k.keyword)}
-                    style={{
-                      fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                      background: form.anchorKeyword === k.keyword ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.12)',
-                      color: form.anchorKeyword === k.keyword ? '#fff' : '#2d6b3c',
-                      border: `1px solid rgba(124,175,138,${form.anchorKeyword === k.keyword ? '0.9' : '0.3'})`,
-                      fontWeight: form.anchorKeyword === k.keyword ? 600 : 400,
-                    }}>
-                    {k.keyword}
-                    {k.volume && <span style={{ opacity: 0.7, marginLeft: 4 }}>· {Number(k.volume).toLocaleString()}</span>}
-                  </button>
-                ))}
-              </div>
-              {form.anchorKeyword && (
-                <input value={form.anchorKeyword} onChange={e => setField('anchorKeyword', e.target.value)}
-                  style={{ marginTop: 6, fontSize: '0.78rem' }} placeholder="Or type a custom anchor…" />
+              {primaryB1Keywords.length ? (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                  {primaryB1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
+                    <button key={k.id} type="button"
+                      onClick={() => setField('anchorKeyword', form.anchorKeyword === k.keyword ? '' : k.keyword)}
+                      style={{
+                        fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                        background: form.anchorKeyword === k.keyword ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.12)',
+                        color: form.anchorKeyword === k.keyword ? '#fff' : '#2d6b3c',
+                        border: `1px solid rgba(124,175,138,${form.anchorKeyword === k.keyword ? '0.9' : '0.3'})`,
+                        fontWeight: form.anchorKeyword === k.keyword ? 600 : 400,
+                      }}>
+                      {k.keyword}
+                      {k.volume && <span style={{ opacity: 0.7, marginLeft: 4 }}>· {Number(k.volume).toLocaleString()}</span>}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginTop: 4, lineHeight: 1.5 }}>
+                  No B1 keyword specific to this collection — {b1Keywords.length} pooled B1{b1Keywords.length !== 1 ? 's' : ''} exist (shared with other listings) but are intentionally left out here, since a generic term isn't a real anchor for this product. Add collection-specific research, or type one below if you're confident it fits.
+                </div>
               )}
+              <input value={form.anchorKeyword} onChange={e => setField('anchorKeyword', e.target.value)}
+                style={{ marginTop: 6, fontSize: '0.78rem' }} placeholder="Or type a custom anchor…" />
             </div>
           );
         })()}
@@ -1276,7 +1469,7 @@ export default function ListingBuilder() {
         )}
         {form.collection && (
           <div style={{ marginTop: 12, borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 10 }}>
-            <div style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: missingBuckets.length ? '#8b3a3a' : '#2d6b3c', marginBottom: 6 }}>
+            <div style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: missingBuckets.length ? '#8b3a3a' : bucketsFullyClassified ? '#2d6b3c' : '#7a4a1e', marginBottom: 6 }}>
               Bucket Coverage
             </div>
             {missingBuckets.length > 0 ? (
@@ -1304,9 +1497,13 @@ export default function ListingBuilder() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : bucketsFullyClassified ? (
               <div style={{ fontSize: '0.75rem', color: '#2d6b3c', padding: '5px 10px', borderRadius: 4, background: 'rgba(124,175,138,0.1)', border: '1px solid rgba(124,175,138,0.25)' }}>
-                ✓ All three buckets have keywords — ready to generate
+                ✓ All three buckets classified — ready to generate
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.75rem', color: '#7a4a1e', padding: '5px 10px', borderRadius: 4, background: 'rgba(232,168,124,0.15)', border: '1px solid rgba(232,168,124,0.3)' }}>
+                ⚠ No keywords explicitly bucket-classified yet — generating from {provisionalKws.length} unclassified keyword{provisionalKws.length !== 1 ? 's' : ''} with volume/competition data. The AI will assign buckets at generation time; classify B1/B2/B3 in Research first for a stronger anchor keyword and more reliable results.
               </div>
             )}
           </div>

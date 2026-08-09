@@ -7,7 +7,7 @@ import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
 import { assignBucket, BucketBadge, BUCKET_STYLE, isLowQualityKeyword } from '../lib/keywords';
 
-const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', 'Summer', 'Spring', 'Fall'];
+const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
 function CollectionsManager({ refetch: refetchNames }) {
   const { collections: collObjs, refetch } = useCollectionObjects();
@@ -19,6 +19,7 @@ function CollectionsManager({ refetch: refetchNames }) {
   const [saving, setSaving]             = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [error, setError]               = useState('');
+  const [adding, setAdding]             = useState(false);
 
   async function handleAdd() {
     const name = newName.trim();
@@ -34,6 +35,7 @@ function CollectionsManager({ refetch: refetchNames }) {
       setError(error.message?.includes('unique') ? 'A collection with that name already exists.' : 'Could not save.');
     } else {
       setNewName(''); setNewChapter(''); setNewSeason(''); setNewLaunch('');
+      setAdding(false);
       refetch(); refetchNames?.();
     }
     setSaving(false);
@@ -56,40 +58,50 @@ function CollectionsManager({ refetch: refetchNames }) {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="section-label" style={{ marginBottom: 12 }}>Add Collection</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Name</label>
-            <input value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder="e.g. Dark Academia" onKeyDown={e => e.key === 'Enter' && handleAdd()} />
-          </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Chapter</label>
-            <select value={newChapter} onChange={e => setNewChapter(e.target.value)}>
-              <option value="">— None —</option>
-              {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-            </select>
-          </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Season <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
-            <select value={newSeason} onChange={e => setNewSeason(e.target.value)}>
-              <option value="">— Evergreen —</option>
-              {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Target launch <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
-            <input type="date" value={newLaunch} onChange={e => setNewLaunch(e.target.value)} />
-          </div>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={!newName.trim() || saving}>
-          {saving ? 'Saving…' : 'Add Collection'}
-        </button>
-        {error && <div style={{ fontSize: '0.75rem', color: 'var(--alert)', marginTop: 6 }}>{error}</div>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: adding ? 12 : 20 }}>
+        <div className="section-label" style={{ margin: 0 }}>Your Collections</div>
+        {!adding && (
+          <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>+ Add</button>
+        )}
       </div>
 
-      <div className="section-label" style={{ marginBottom: 10 }}>Your Collections</div>
+      {adding && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="section-label" style={{ marginBottom: 12 }}>Add Collection</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Name</label>
+              <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+                placeholder="e.g. Dark Academia" onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Chapter</label>
+              <select value={newChapter} onChange={e => setNewChapter(e.target.value)}>
+                <option value="">— None —</option>
+                {chapters.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Season <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
+              <select value={newSeason} onChange={e => setNewSeason(e.target.value)}>
+                <option value="">— Evergreen —</option>
+                {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Target launch <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional)</span></label>
+              <input type="date" value={newLaunch} onChange={e => setNewLaunch(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={!newName.trim() || saving}>
+              {saving ? 'Saving…' : 'Add Collection'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setNewName(''); setNewChapter(''); setNewSeason(''); setNewLaunch(''); setError(''); }}>Cancel</button>
+          </div>
+          {error && <div style={{ fontSize: '0.75rem', color: 'var(--alert)', marginTop: 6 }}>{error}</div>}
+        </div>
+      )}
       {sortedChapters.map(ch => {
         const items = byChapter[ch];
         if (!items?.length) return null;
@@ -263,7 +275,7 @@ function SourceCompare() {
 
 const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
 
-function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '', initialSearch = '' }) {
+function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '', initialSearch = '', refreshKey }) {
   const { products } = useProducts();
   const liveListingWords = new Set(
     products.filter(p => p.stage === 'Live' && (p.live_title || p.live_tags)).flatMap(p => {
@@ -301,14 +313,14 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     setLoading(true);
     const { data } = await supabase
       .from('keywords')
-      .select('*, research_sessions(id, collection, source, date)')
+      .select('*, research_sessions(id, collection, source, date, notes, seasonal)')
       .not('research_session_id', 'is', null)
       .order('keyword', { ascending: true });
     setKeywords(data || []);
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   // All unique collections from actual keyword data (includes General, Global Keywords, etc.)
   const allCollectionsFromData = [...new Set(
@@ -320,11 +332,13 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     ? allCollectionsFromData.filter(col => colChapterMap[col] === filterChapter)
     : allCollectionsFromData;
 
+  const uncategorizedCount = keywords.filter(k => !k.research_sessions?.collection).length;
+
   const filtered = keywords.filter(k => {
     const col = k.research_sessions?.collection || '';
     const ch  = colChapterMap[col] || '';
     if (filterChapter && ch !== filterChapter) return false;
-    if (filterCollection && col !== filterCollection) return false;
+    if (filterCollection === '__uncategorized__' ? col !== '' : (filterCollection && col !== filterCollection)) return false;
     if (filterBucket !== '') {
       const bucketNum = Number(filterBucket);
       if (bucketNum === 0 ? !!k.bucket : k.bucket !== bucketNum) return false;
@@ -456,6 +470,9 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
         <select value={filterCollection} onChange={e => setFilterCollection(e.target.value)}
           style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
           <option value="">All collections</option>
+          {uncategorizedCount > 0 && !filterChapter && (
+            <option value="__uncategorized__">— Uncategorized ({uncategorizedCount}) —</option>
+          )}
           {visibleCollections.map(col => <option key={col} value={col}>{col}</option>)}
         </select>
         <select value={filterBucket} onChange={e => setFilterBucket(e.target.value)}
@@ -519,9 +536,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
       )}
 
       {!loading && filtered.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ overflowX: 'auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 830 }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
             <span>Keyword</span>
             {[['bucket','Bucket'],['vol','Vol'],['comp','Comp'],['kd','KD']].map(([col, lbl]) => (
               <span key={col} onClick={() => toggleSort(col)} style={{ cursor: 'pointer', userSelect: 'none', color: sortCol === col ? 'var(--dusty-rose)' : undefined }}>
@@ -548,6 +566,15 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
             }
             return [...dedupMap.values()].map(({ primary: k, sources }) => {
               const col = k.research_sessions?.collection || '—';
+              // Score direction is opposite between sources: eRank's KD is 0-100,
+              // higher = harder to rank (bad). Everbee's score is unbounded and
+              // higher = better opportunity (lower competition). Same field, opposite
+              // meaning depending on which tool produced it.
+              const isERank = (k.research_sessions?.source || '').toLowerCase() === 'erank';
+              const scoreColor = !k.score ? 'var(--charcoal-soft)'
+                : isERank
+                  ? (k.score >= 70 ? '#7a2b2b' : k.score >= 40 ? '#6b4a10' : '#2d6b3c')
+                  : (k.score >= 1000 ? '#2d6b3c' : k.score >= 100 ? '#6b4a10' : '#7a2b2b');
               const isEditing = editId === k.id;
               const hasVol = k.volume != null;
               const hasComp = k.competition != null;
@@ -615,11 +642,20 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
             }
 
               return (
-                <div key={k.id} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center' }}>
+                <div key={k.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
                     {k.keyword}
                     {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
                     {inLiveListing && <span style={{ fontSize: '0.55rem', marginLeft: 5, padding: '1px 5px', borderRadius: 8, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', fontWeight: 600 }}>live</span>}
+                    {k.research_sessions?.notes && (
+                      <span
+                        title={k.research_sessions.notes}
+                        style={{ fontSize: '0.6rem', marginLeft: 5, color: 'var(--dusty-rose)', cursor: 'help', textDecoration: 'underline dotted' }}
+                      >note</span>
+                    )}
+                    {k.research_sessions?.seasonal && (
+                      <span style={{ fontSize: '0.55rem', marginLeft: 5, padding: '1px 5px', borderRadius: 8, background: 'rgba(232,168,124,0.2)', color: '#7a4a1e', fontWeight: 600 }}>seasonal</span>
+                    )}
                   </span>
                   <span>
                     {k.bucket ? <BucketBadge bucket={k.bucket} /> : bucketMissingReason ? (
@@ -631,7 +667,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                   </span>
                   <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
                   <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.competition?.toLocaleString() ?? '—'}</span>
-                  <span style={{ fontSize: '0.72rem', color: k.score >= 70 ? '#7a2b2b' : k.score >= 40 ? '#6b4a10' : k.score ? '#2d6b3c' : 'var(--charcoal-soft)' }}>{k.score ?? '—'}</span>
+                  <span style={{ fontSize: '0.72rem', color: scoreColor }}>{k.score ?? '—'}</span>
                   <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
                   <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                     {sources.map(s => (
@@ -648,6 +684,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
           })()}
 
         </div>
+        </div>
       )}
     </div>
   );
@@ -663,6 +700,11 @@ export default function Research() {
   const { collections: collectionObjects } = useCollectionObjects();
   const { chapters } = useChapters();
   const [adding, setAdding] = useState(false);
+  // KeywordList fetches its own keyword data independently (not from `sessions`
+  // above), so saving a session from the Keywords tab left its list stale —
+  // refetch() only refreshed the Sessions tab's data. Bumping this forces
+  // KeywordList's effect to re-run.
+  const [kwRefreshKey, setKwRefreshKey] = useState(0);
 
   // Build a map of collection name → chapter
   const colChapterMap = {};
@@ -671,16 +713,18 @@ export default function Research() {
   }
 
   // Filter by chapter (derived from collection's chapter, not session's parent_niche)
-  const visibleSessions = filterChapter === '__other'
-    ? sessions.filter(s => !colChapterMap[s.collection])
+  const visibleSessions = filterChapter === '__uncategorized__'
+    ? sessions.filter(s => !s.collection)
+    : filterChapter === '__other'
+    ? sessions.filter(s => s.collection && !colChapterMap[s.collection])
     : filterChapter
     ? sessions.filter(s => colChapterMap[s.collection] === filterChapter)
     : sessions;
 
   // Group by chapter → collection (using the collections table, not parent_niche)
   const hierarchy = visibleSessions.reduce((acc, s) => {
-    const chapter = colChapterMap[s.collection] || 'Other';
-    const col = s.collection || 'Other';
+    const chapter = s.collection ? (colChapterMap[s.collection] || 'Other') : 'Uncategorized';
+    const col = s.collection || 'Uncategorized — broad/exploratory research';
     if (!acc[chapter]) acc[chapter] = {};
     if (!acc[chapter][col]) acc[chapter][col] = [];
     acc[chapter][col].push(s);
@@ -722,7 +766,7 @@ export default function Research() {
             <div className="card" style={{ marginBottom: 20 }}>
               <ResearchSessionForm
                 defaultCollection={collections[0] || ''}
-                onSaved={() => { setAdding(false); refetch(); }}
+                onSaved={() => { setAdding(false); refetch(); setKwRefreshKey(k => k + 1); }}
                 onCancel={() => setAdding(false)}
               />
             </div>
@@ -733,6 +777,7 @@ export default function Research() {
             onAddSession={() => setAdding(a => !a)}
             initialCollection={searchParams.get('collection') || ''}
             initialSearch={searchParams.get('keyword') || ''}
+            refreshKey={kwRefreshKey}
           />
         </>
       )}
@@ -783,12 +828,20 @@ export default function Research() {
                 </button>
               );
             })}
-            {sessions.some(s => !colChapterMap[s.collection]) && (
+            {sessions.some(s => s.collection && !colChapterMap[s.collection]) && (
               <button
                 className={`btn btn-sm ${filterChapter === '__other' ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setFilterChapter(filterChapter === '__other' ? '' : '__other')}
               >
-                Other ({sessions.filter(s => !colChapterMap[s.collection]).length})
+                Other ({sessions.filter(s => s.collection && !colChapterMap[s.collection]).length})
+              </button>
+            )}
+            {sessions.some(s => !s.collection) && (
+              <button
+                className={`btn btn-sm ${filterChapter === '__uncategorized__' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setFilterChapter(filterChapter === '__uncategorized__' ? '' : '__uncategorized__')}
+              >
+                Uncategorized ({sessions.filter(s => !s.collection).length})
               </button>
             )}
           </div>

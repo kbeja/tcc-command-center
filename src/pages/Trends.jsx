@@ -70,7 +70,15 @@ function SignalCard({ signal, products, collections, onAction }) {
 
   async function handleSave() {
     setSaving(true);
-    const totalScore = SCORE_DIALS.reduce((s, d) => s + (parseInt(form.score_breakdown?.[d.key]) || 0), 0);
+    // Some signals (imported/seeded before this rubric existed) carry a raw
+    // score with no breakdown. Recomputing from an empty/untouched breakdown
+    // would silently zero out that score on any unrelated edit (e.g. just
+    // fixing a typo in notes) — only overwrite the score once she's actually
+    // filled in at least one dial.
+    const breakdownTouched = form.score_breakdown && Object.values(form.score_breakdown).some(v => v !== '' && v != null);
+    const totalScore = breakdownTouched
+      ? SCORE_DIALS.reduce((s, d) => s + (parseInt(form.score_breakdown?.[d.key]) || 0), 0)
+      : (signal.score ?? 0);
     await supabase.from('trend_signals').update({
       name: form.name,
       collection: form.collection,
@@ -153,6 +161,12 @@ function SignalCard({ signal, products, collections, onAction }) {
               {st.label}
             </span>
             <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>Score: {signal.score}/25</span>
+            {!!signal.score && !(signal.score_breakdown && Object.values(signal.score_breakdown).some(v => v !== '' && v != null)) && (
+              <span title="This score predates the dial rubric below — no breakdown was ever recorded to back it up. Fill in the dials to confirm or correct it."
+                style={{ fontSize: '0.65rem', color: '#7a4a1e', cursor: 'help' }}>
+                ⚠ unscored breakdown
+              </span>
+            )}
             {signal.parent_niche && (
               <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: 20, background: 'rgba(43,41,38,0.08)', color: 'var(--charcoal-soft)' }}>
                 {signal.parent_niche}

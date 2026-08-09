@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { createResearchSession, useCollections, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
-import { supabase } from '../lib/supabase';
 
 const SOURCES = ['Everbee', 'eRank', 'Etsy Search', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
@@ -20,6 +19,11 @@ function autoColor(score, competition, statusText) {
   const t = (statusText || '').toLowerCase().trim();
   if (t === 'use' || t === 'yes' || t === 'keep') return 'use';
   if (t === 'discard' || t === 'no' || t === 'skip') return 'discard';
+  // 'watch' wasn't recognized as an explicit override — an explicitly-typed
+  // "Watch" with score 0 or high competition fell through to the numeric rule
+  // below and got silently flipped to 'discard' instead of respecting the
+  // typed value.
+  if (t === 'watch' || t === 'hold') return 'watch';
   if (s >= 1000 && c <= 500) return 'use';
   if (s === 0 || c >= 50000) return 'discard';
   return 'watch';
@@ -201,8 +205,11 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   }
 
   async function handleSave() {
-    const effectiveCollection = collection === '__new__' ? newCollectionName.trim() : collection;
-    if (!effectiveCollection) return;
+    // Blank collection is a real, intentional choice (broad/exploratory research
+    // with no home yet) — only block if they're mid-"new collection" entry with
+    // no name typed, since that's an incomplete action, not a deliberate skip.
+    if (collection === '__new__' && !newCollectionName.trim()) return;
+    const effectiveCollection = collection === '__new__' ? newCollectionName.trim() : (collection || null);
     setSaving(true);
     if (collection === '__new__' && effectiveCollection) {
       await createCollection(effectiveCollection, {
@@ -229,10 +236,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
       { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
       kwList
     );
-    // Update the collection's last_verified date — bucket assignments are current as of today
-    await supabase.from('collections')
-      .update({ last_verified: new Date().toISOString().slice(0, 10) })
-      .eq('name', effectiveCollection);
+    // last_verified is now touched inside createResearchSession itself, for every caller
     setSaving(false);
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);
@@ -284,9 +288,9 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
               if (e.target.value === '__new__') { setCollection('__new__'); setNewCollectionName(''); }
               else setCollection(e.target.value);
             }}>
-              <option value="">— Select —</option>
+              <option value="">— Uncategorized (broad/exploratory, no home yet) —</option>
               {chapters.map(ch => {
-                const inChapter = collectionObjects.filter(c => c.chapter === ch);
+                const inChapter = collectionObjects.filter(c => c.status !== 'archived' && c.chapter === ch);
                 if (!inChapter.length) return null;
                 return (
                   <optgroup key={ch} label={ch}>
@@ -294,6 +298,19 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
                   </optgroup>
                 );
               })}
+              {(() => {
+                // Collections with no chapter (e.g. cross-chapter occasion collections
+                // like Halloween) were previously dropped from this list entirely —
+                // only chaptered collections got an optgroup. Same archived-filter
+                // fix as the Listing Builder collection picker.
+                const noChapter = collectionObjects.filter(c => c.status !== 'archived' && !c.chapter);
+                if (!noChapter.length) return null;
+                return (
+                  <optgroup label="— No chapter —">
+                    {noChapter.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </optgroup>
+                );
+              })()}
               <option value="__new__">+ New collection…</option>
             </select>
           )}
@@ -399,7 +416,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
       </div>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={!(collection === '__new__' ? newCollectionName.trim() : collection) || saving}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={(collection === '__new__' && !newCollectionName.trim()) || saving}>
           {saving ? 'Saving…' : 'Save Session →'}
         </button>
         {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>}

@@ -69,7 +69,11 @@ Return ONLY this JSON — no markdown, no explanation:
 
   generate_listing_draft: `You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop focused on the Mom Chapter and Reader Chapter niches.
 
-You will receive a structured TCC design concept — this is an EARLY-STAGE draft written before real keyword research has happened, meant as a starting reference point for the concept, not a final SEO-optimized listing. Do not invent keyword volumes or bucket structure.
+You will receive a structured TCC design concept. This is normally an EARLY-STAGE draft written before real keyword research has happened, meant as a starting reference point — do not invent keyword volumes or bucket structure.
+
+IF the input includes a "REAL RESEARCHED KEYWORDS" section: those are actual keywords from TCC's research, not invented — pull suggested tags from that list (verbatim phrases) rather than guessing, and prefer them in the title too where they fit naturally. Still fine to add a few concept-derived phrases alongside them if the researched list is thin.
+
+IF no such section is present: generate plausible tag phrases as before, clearly flagged as unresearched in the notes field.
 
 Generate:
 - A working title (under 140 characters) that reads naturally and names the product, style, and audience
@@ -80,7 +84,7 @@ Return ONLY this JSON — no markdown, no explanation:
 {
   "body": "string — formatted as: the title on the first line, a blank line, then the description",
   "tags": ["tag phrase 1", "tag phrase 2"],
-  "notes": "reminder that this is a pre-keyword-research draft and should be re-optimized in Listing Builder once real keyword data exists"
+  "notes": "if REAL RESEARCHED KEYWORDS were provided and used, say so plainly; otherwise, the existing reminder that this is a pre-keyword-research draft and should be re-optimized in Listing Builder once real keyword data exists"
 }`,
 
   generate_pinterest_copy: `You are a Pinterest marketing specialist for TCC (The Current Chapter), a print-on-demand Etsy shop focused on the Mom Chapter and Reader Chapter niches. Pinterest drives Etsy traffic here, not standalone engagement.
@@ -127,13 +131,23 @@ const LIMITS = {
   keywords: 20_000,
   currentTitle: 200,
   notes: 5_000,
-  body: 500_000,
+  // Whole-request-body ceiling — must clear imageBase64 plus its JSON/text
+  // overhead, or every image upload gets rejected here before the
+  // type-specific (and more informative) imageBase64 check ever runs.
+  body: 8_000_000,
   content: 50_000,
 };
 
 function safeError(err, label) {
   console.error(`[claude-process] ${label}:`, err);
   return { statusCode: 500, body: JSON.stringify({ error: 'Processing failed. Please try again.' }) };
+}
+
+// Claude is told to return raw JSON, but on longer generations it
+// occasionally leaves a trailing comma before a closing } or ] — strip
+// those defensively rather than letting one stray comma fail the parse.
+function stripTrailingCommas(jsonText) {
+  return jsonText.replace(/,(\s*[}\]])/g, '$1');
 }
 
 exports.handler = async (event) => {
@@ -204,7 +218,7 @@ exports.handler = async (event) => {
       const data = await response.json();
       const text = data.content?.[0]?.text || '[]';
       const match = text.match(/\[[\s\S]*\]/);
-      const keywords = match ? JSON.parse(match[0]) : [];
+      const keywords = match ? JSON.parse(stripTrailingCommas(match[0])) : [];
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -265,6 +279,8 @@ exports.handler = async (event) => {
     if (imageBase64 && imageBase64.length > LIMITS.imageBase64) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Image too large (max 6MB)' }) };
     }
+    console.log(`[claude-process] generate_listing: context.length=${context.length} chars, hasImage=${!!imageBase64}`);
+    const t0 = Date.now();
     try {
       const userContent = [
         ...(imageBase64 ? [{ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/png', data: imageBase64 } }] : []),
@@ -288,6 +304,7 @@ exports.handler = async (event) => {
         }),
       });
 
+      console.log(`[claude-process] generate_listing: response headers at +${Date.now() - t0}ms, status=${response.status}`);
       if (!response.ok) {
         const errText = await response.text();
         console.error('[claude-process] generate_listing upstream error:', response.status, errText);
@@ -296,11 +313,13 @@ exports.handler = async (event) => {
 
       // Collect the full streamed text
       let fullText = '';
+      let chunkCount = 0;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        chunkCount++;
         const chunk = decoder.decode(value, { stream: true });
         for (const line of chunk.split('\n')) {
           if (!line.startsWith('data: ')) continue;
@@ -314,11 +333,17 @@ exports.handler = async (event) => {
           } catch { /* skip malformed lines */ }
         }
       }
+      console.log(`[claude-process] generate_listing: stream done at +${Date.now() - t0}ms, chunks=${chunkCount}, fullText.length=${fullText.length}`);
 
       const match = fullText.match(/\{[\s\S]*\}/);
       if (!match) return { statusCode: 200, body: JSON.stringify({ raw: fullText, parsed: null }) };
-      const parsed = JSON.parse(match[0]);
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
+      try {
+        const parsed = JSON.parse(stripTrailingCommas(match[0]));
+        return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
+      } catch (parseErr) {
+        console.error('[claude-process] generate_listing JSON parse failed:', parseErr.message);
+        return { statusCode: 200, body: JSON.stringify({ raw: fullText, parsed: null }) };
+      }
     } catch (err) {
       return safeError(err, 'generate_listing');
     }
