@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, createProduct, updateProduct, createCollection } from '../lib/hooks';
+import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts, createProduct, updateProduct, createCollection } from '../lib/hooks';
 import { resizeImageForUpload } from '../lib/image';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
@@ -253,7 +253,7 @@ function computeBucketWarnings(keywords, sessions) {
   return warnings;
 }
 
-function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames }) {
+function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept }) {
   // Misspelling variants are excluded everywhere now — title, description, AND tags.
   // Etsy's search normalizes misspellings to the correct spelling itself, so a tag
   // slot (1 of only 13) spent on a misspelled variant is redundant, not helpful.
@@ -387,6 +387,8 @@ ${season ? `Occasion/Season: ${season} — this is a seasonal product, not everg
 ${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first tag): "${form.anchorKeyword}"` : b1IsPooledFallback ? 'ANCHOR KEYWORD: not set — no B1 of its own; Bucket 1 below is pooled/generic. Only lead with one if it fits the Product Type; otherwise flag the gap in research_flags rather than force a generic lead term.' : 'ANCHOR KEYWORD: not set — choose the strongest B1 from the list below'}
 ${form.notes ? `Notes: ${form.notes}` : ''}
 
+${linkedConcept ? `CONCEPT BRIEF (from linked concept "${linkedConcept.name}") — creative direction only, to inform tone, target customer framing, and word choice in the description. NOT additional SEO keywords — title and tags still come only from the KEYWORDS list below.
+${linkedConcept.design_direction ? `Design Direction: ${linkedConcept.design_direction}\n` : ''}${linkedConcept.visual_style ? `Visual Style: ${linkedConcept.visual_style}\n` : ''}${linkedConcept.color_palette ? `Color Palette: ${linkedConcept.color_palette}\n` : ''}${linkedConcept.target_customer ? `Target Customer: ${linkedConcept.target_customer}\n` : ''}${(linkedConcept.mood_keywords || []).length ? `Mood Keywords: ${linkedConcept.mood_keywords.join(', ')}\n` : ''}${linkedConcept.emotional_trigger ? `Emotional Trigger: ${linkedConcept.emotional_trigger}\n` : ''}` : ''}
 ${imageAnalysis ? `DESIGN IMAGE ANALYSIS:\n${imageAnalysis}\n` : ''}
 KEYWORDS — ONLY USE KEYWORDS FROM THIS LIST. DO NOT invent, substitute, or add any keyword not shown here.
 [format: X] = names a product format that may not match this listing's Product Type ("${form.productType || 'unset'}") — prefer an unmarked/matching variant for the title; a conflicting one is tags-only, never stated as fact in the description.
@@ -743,6 +745,15 @@ export default function ListingBuilder() {
   const { chapters } = useChapters();
   const { playbooks } = usePlaybooks();
 
+  // Linked Concept (Phase 10) — set automatically when arriving via a fresh
+  // push (conceptId from the URL) or when an existing product already has
+  // one saved; otherwise pickable manually below. useConcept re-fetches
+  // whenever the id changes, which covers picker changes; handleGenerate
+  // additionally re-fetches live right before building context so an edit
+  // made to the concept after linking is never stale at generation time.
+  const [linkedConceptId, setLinkedConceptId] = useState(conceptId || null);
+  const { concept: linkedConcept } = useConcept(linkedConceptId);
+
   // One-time hand-off from a Concept's "Push to Listing Builder" — resolved
   // synchronously in a lazy useState initializer (not a useEffect) so it's
   // settled before first paint and can't race the draft-restore/auto-save
@@ -770,6 +781,11 @@ export default function ListingBuilder() {
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  // Candidates for the manual concept-link picker — scoped to the selected
+  // collection so the list stays short and relevant; shows everything if no
+  // collection is picked yet.
+  const { concepts: pickableConcepts } = useConcepts(form.collection || undefined);
+
   // Populate from product when loaded
   const [existingListing, setExistingListing] = useState(false);
   useEffect(() => {
@@ -782,6 +798,7 @@ export default function ListingBuilder() {
       emotionalTrigger: product.emotional_trigger || '',
       titleStyle:       product.title_style || 'keyword_rich',
     }));
+    if (product.concept_id) setLinkedConceptId(product.concept_id);
     if (product.live_title) {
       setEditTitle(product.live_title);
       setExistingListing(true);
@@ -1150,7 +1167,15 @@ export default function ListingBuilder() {
     setGenError('');
     setOutput(null);
     try {
-      const context = buildContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions, allCollectionNames });
+      // Live re-fetch, not the useConcept() hook's state — guarantees this
+      // generation sees any edit made to the concept since it was linked,
+      // rather than whatever the hook last happened to have mounted.
+      let freshLinkedConcept = null;
+      if (linkedConceptId) {
+        const { data } = await supabase.from('concepts').select('*').eq('id', linkedConceptId).single();
+        freshLinkedConcept = data || null;
+      }
+      const context = buildContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions, allCollectionNames, linkedConcept: freshLinkedConcept });
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1185,6 +1210,7 @@ export default function ListingBuilder() {
       live_title: editTitle || null,
       live_tags: editTags.filter(Boolean).join(', ') || null,
       title_style: form.titleStyle || 'keyword_rich',
+      concept_id: linkedConceptId || null,
     };
     if (Object.keys(editDesc).length > 0) {
       updates.generated_description = editDesc;
@@ -1209,6 +1235,7 @@ export default function ListingBuilder() {
       live_title:        editTitle || null,
       live_tags:         editTags.filter(Boolean).join(', ') || null,
       title_style:       form.titleStyle || 'keyword_rich',
+      concept_id:        linkedConceptId || null,
       stage_updated_at:  new Date().toISOString(),
       ...(Object.keys(editDesc).length > 0 ? { generated_description: editDesc } : {}),
       ...(editPrompts.length > 0 ? { generated_image_prompts: editPrompts } : {}),
@@ -1424,6 +1451,40 @@ export default function ListingBuilder() {
               );
             })}
           </div>
+        </div>
+
+        {/* Linked Concept (Phase 10) */}
+        <div style={{ marginTop: 12 }}>
+          <label className="form-label">
+            Linked Concept <span style={{ fontWeight: 400, opacity: 0.5 }}>— design direction, visual style, and mood get pulled into generation</span>
+          </label>
+          {linkedConcept ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20,
+                background: 'rgba(124,175,138,0.12)', color: '#2d6b3c',
+                border: '1px solid rgba(124,175,138,0.3)',
+              }}>
+                🔗 {linkedConcept.name}
+              </span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLinkedConceptId(null)}>
+                Unlink
+              </button>
+            </div>
+          ) : pickableConcepts.length > 0 ? (
+            <select
+              value=""
+              onChange={e => { if (e.target.value) setLinkedConceptId(e.target.value); }}
+              style={{ marginTop: 4, fontSize: '0.78rem' }}
+            >
+              <option value="">— None —</option>
+              {pickableConcepts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>
+              {form.collection ? 'No concepts found for this collection.' : 'Select a collection to see linkable concepts.'}
+            </div>
+          )}
         </div>
       </div>
 

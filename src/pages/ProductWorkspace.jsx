@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession, useConcept, useConcepts } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
@@ -302,7 +302,7 @@ She's not surviving motherhood as a brand. She just lives it.
 NOTE: Customer recognition is one input within the Product Validation Framework
 (alongside market evidence, human truth, and authentic expression) — not a standalone gate.`;
 
-function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoicePlaybook, collectionObj, validationNotes }) {
+function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoicePlaybook, collectionObj, validationNotes, linkedConcept }) {
   const [copied, setCopied] = useState(null);
 
   function buildBundle() {
@@ -409,7 +409,9 @@ Stage: ${product.stage}
 Confidence: ${product.confidence || 'Not set'}
 Ecosystem: ${product.ecosystem_primary || '—'}
 ${triggerLine}
-
+${linkedConcept ? `
+CONCEPT BRIEF (from linked concept "${linkedConcept.name}")
+${linkedConcept.design_direction ? `Design Direction: ${linkedConcept.design_direction}\n` : ''}${linkedConcept.visual_style ? `Visual Style: ${linkedConcept.visual_style}\n` : ''}${linkedConcept.color_palette ? `Color Palette: ${linkedConcept.color_palette}\n` : ''}${linkedConcept.target_customer ? `Target Customer: ${linkedConcept.target_customer}\n` : ''}${(linkedConcept.mood_keywords || []).length ? `Mood Keywords: ${linkedConcept.mood_keywords.join(', ')}\n` : ''}` : ''}
 PRODUCT VALIDATION STATUS
 ${validationBlock}
 
@@ -884,6 +886,15 @@ export default function ProductWorkspace() {
   const { collections: allCollections } = useCollectionObjects();
   const collectionObj = allCollections.find(c => c.name === product?.collection);
 
+  // Linked Concept (Phase 10) — manual picker only here (no push bridge lands
+  // on this page); Listing Builder is where the auto-link-on-push happens.
+  const { concept: linkedConcept } = useConcept(product?.concept_id || null);
+  const { concepts: pickableConcepts } = useConcepts(product?.collection || undefined);
+  async function handleConceptLink(conceptId) {
+    await updateProduct(id, { concept_id: conceptId || null });
+    refetch();
+  }
+
   useEffect(() => {
     if (product) {
       setNotes(product.notes || '');
@@ -1093,6 +1104,34 @@ export default function ProductWorkspace() {
           </div>
           <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
             <label className="form-label">
+              Linked Concept <span style={{ fontWeight: 400, opacity: 0.6 }}>— feeds design direction, visual style, and mood into the context bundle below</span>
+            </label>
+            {linkedConcept ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20,
+                  background: 'rgba(124,175,138,0.12)', color: '#2d6b3c',
+                  border: '1px solid rgba(124,175,138,0.3)',
+                }}>
+                  🔗 {linkedConcept.name}
+                </span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleConceptLink(null)}>
+                  Unlink
+                </button>
+              </div>
+            ) : pickableConcepts.length > 0 ? (
+              <select value="" onChange={e => { if (e.target.value) handleConceptLink(e.target.value); }}>
+                <option value="">— None —</option>
+                {pickableConcepts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+                No concepts found for this collection.
+              </div>
+            )}
+          </div>
+          <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+            <label className="form-label">
               Live Etsy Title {fieldSaved === 'live_title' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
             </label>
             <input
@@ -1180,6 +1219,7 @@ export default function ProductWorkspace() {
           brandVoicePlaybook={brandVoicePlaybook}
           collectionObj={collectionObj}
           validationNotes={validationNotes}
+          linkedConcept={linkedConcept}
         />
       </div>
 
