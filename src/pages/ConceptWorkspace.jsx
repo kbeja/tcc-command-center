@@ -11,6 +11,8 @@ import {
   updateConceptOutput,
   setCurrentOutput,
   nextOutputVersion,
+  useSpark,
+  useSparks,
 } from '../lib/hooks';
 
 const FUNCTION_URL = '/.netlify/functions/claude-process';
@@ -173,6 +175,11 @@ export default function ConceptWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { concept, loading, refetch } = useConcept(id);
+  // Called unconditionally (before the loading/not-found early return below)
+  // to satisfy the Rules of Hooks — useSpark(undefined) no-ops safely while
+  // concept is still null.
+  const { spark: sourceSpark } = useSpark(concept?.spark_id);
+  const { sparks: pickableSparks } = useSparks();
 
   const [activeTab, setActiveTab] = useState('overview');
   const [fieldSaved, setFieldSaved] = useState('');
@@ -189,6 +196,11 @@ export default function ConceptWorkspace() {
     setFieldSaved(field);
     refetch();
     setTimeout(() => setFieldSaved(''), 1500);
+  }
+
+  async function handleLinkSpark(sparkId) {
+    await updateConcept(id, { spark_id: sparkId || null });
+    refetch();
   }
 
   async function handleArrayBlur(field, value) {
@@ -288,6 +300,33 @@ export default function ConceptWorkspace() {
       {/* ── Overview tab ── */}
       {activeTab === 'overview' && (
         <div>
+          <FieldRow label="Source Spark">
+            {sourceSpark ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{
+                  fontSize: '0.78rem', padding: '4px 10px', borderRadius: 20,
+                  background: 'rgba(124,175,138,0.12)', color: '#2d6b3c',
+                  border: '1px solid rgba(124,175,138,0.3)',
+                }}>
+                  🔗 {sourceSpark.content.length > 80 ? sourceSpark.content.slice(0, 80) + '…' : sourceSpark.content}
+                </span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleLinkSpark(null)}>
+                  Unlink
+                </button>
+              </div>
+            ) : pickableSparks.length > 0 ? (
+              <select value="" onChange={e => { if (e.target.value) handleLinkSpark(e.target.value); }} style={{ fontSize: '0.82rem' }}>
+                <option value="">— None —</option>
+                {pickableSparks.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.content.length > 60 ? s.content.slice(0, 60) + '…' : s.content}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>No sparks available to link.</div>
+            )}
+          </FieldRow>
           <FieldRow label="Design Direction" saved={saved('design_direction')}>
             <textarea
               defaultValue={concept.design_direction || ''}

@@ -11,7 +11,7 @@ const TYPE_STYLES = {
   'Tool/Resource':  { background: 'rgba(232,168,124,0.2)',  color: '#7a4a1e' },
 };
 
-export default function SparkCard({ spark, onAction }) {
+export default function SparkCard({ spark, onAction, linkedConcepts = [], onCreateConcept }) {
   const navigate = useNavigate();
   const { collections } = useCollections();
   const [confirm, setConfirm] = useState(null);
@@ -181,6 +181,24 @@ export default function SparkCard({ spark, onAction }) {
             </button>
           )}
         </div>
+
+        {linkedConcepts.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            {linkedConcepts.map(c => (
+              <button
+                key={c.id}
+                onClick={() => navigate(`/concepts/${c.id}`)}
+                style={{
+                  fontSize: '0.68rem', padding: '2px 9px', borderRadius: 20, cursor: 'pointer',
+                  background: 'rgba(124,175,138,0.12)', color: '#2d6b3c',
+                  border: '1px solid rgba(124,175,138,0.3)',
+                }}
+              >
+                🔗 {c.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Evaluate panel for cold sparks */}
@@ -265,6 +283,9 @@ export default function SparkCard({ spark, onAction }) {
             </>
           ) : (
             <button className="btn btn-ghost btn-sm" onClick={() => setEvaluating(true)}>Evaluate →</button>
+          )}
+          {onCreateConcept && (
+            <button className="btn btn-ghost btn-sm" onClick={() => onCreateConcept(spark)}>+ Concept</button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>Archive</button>
           <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }} title="Delete spark">🗑</button>

@@ -34,7 +34,7 @@ export function useProduct(id) {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    if (!id) { setLoading(false); return; }
+    if (!id) { setProduct(null); setLoading(false); return; }
     try {
       const { data } = await supabase.from('products').select('*').eq('id', id).single();
       setProduct(data || null);
@@ -315,6 +315,21 @@ export async function updateSpark(id, updates) {
 
 export async function archiveSpark(id) {
   return updateSpark(id, { archived_at: new Date().toISOString() });
+}
+
+export function useSpark(id) {
+  const [spark, setSpark] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!id) { setSpark(null); setLoading(false); return; }
+    const { data } = await supabase.from('sparks').select('*').eq('id', id).single();
+    setSpark(data || null);
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { spark, loading, refetch: fetch };
 }
 
 // ─── Collections ─────────────────────────────────────────────────────────────
@@ -714,7 +729,7 @@ export async function updateExperiment(id, updates) {
 
 export async function closeExperiment(id, result, resultNotes) {
   return supabase.from('experiments').update({
-    status: result === 'proven' ? 'proven' : 'closed',
+    status: result,
     result,
     result_notes: resultNotes,
     closed_at: new Date().toISOString(),
@@ -802,7 +817,7 @@ export function useConcept(id) {
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    if (!id) { setLoading(false); return; }
+    if (!id) { setConcept(null); setLoading(false); return; }
     const { data } = await supabase
       .from('concepts')
       .select('*, concept_outputs(*), concept_assets(*)')
@@ -815,6 +830,37 @@ export function useConcept(id) {
   useEffect(() => { fetch(); }, [fetch]);
 
   return { concept, loading, refetch: fetch };
+}
+
+// Concepts grouped by their source spark — used on the Idea Vault page to
+// show which Concepts grew out of each Spark, without an N+1 query per card.
+// A spark with none simply has no entry in the map.
+export function useConceptsBySpark() {
+  const [conceptsBySparkId, setConceptsBySparkId] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('concepts')
+      .select('id, name, spark_id')
+      .eq('status', 'active')
+      .not('spark_id', 'is', null);
+    const grouped = {};
+    (data || []).forEach(c => { (grouped[c.spark_id] ||= []).push(c); });
+    setConceptsBySparkId(grouped);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('concepts-by-spark-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'concepts' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  return { conceptsBySparkId, loading, refetch: fetch };
 }
 
 export async function createConcept(fields) {

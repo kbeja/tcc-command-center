@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
 
 const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
@@ -52,9 +52,14 @@ function parsePasteBlock(raw) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function ConceptChatImport({ onSaved, onClose }) {
+export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
   const { collections: collectionObjects } = useCollectionObjects();
   const { chapters } = useChapters();
+  // When opened from a Spark, ask upfront whether to quick-create from the
+  // spark's own text or paste a fuller ChatGPT-drafted block — either way
+  // spark_id ends up on the saved concept. With no source spark this is
+  // moot, so it defaults straight to 'paste' and behaves exactly as before.
+  const [sparkChoice, setSparkChoice] = useState(sourceSpark ? null : 'paste');
   const [paste, setPaste] = useState('');
   const [parsed, setParsed] = useState(null);
   const [parseError, setParseError] = useState('');
@@ -91,8 +96,12 @@ export default function ConceptChatImport({ onSaved, onClose }) {
       setParseError('Missing "Collection:" field. Which collection does this concept belong to?');
       return;
     }
-    setParsed(result);
-    setEditedConcept({ ...result });
+    // Even in the full-paste path, still attach the source spark if this
+    // modal was opened from one — she may have started with a quick capture
+    // and then fleshed the idea out in ChatGPT before coming back to paste it.
+    const withSpark = sourceSpark ? { ...result, spark_id: sourceSpark.id } : result;
+    setParsed(withSpark);
+    setEditedConcept({ ...withSpark });
 
     // Seed the collection picker from whatever text was in the paste — if it
     // matches a real collection, select it; otherwise default to creating a
@@ -110,6 +119,39 @@ export default function ConceptChatImport({ onSaved, onClose }) {
     setNewCollectionSeason('');
     setNewCollectionLaunch('');
   }
+
+  // Quick-create path: seed a blank concept straight from the spark's own
+  // text and jump directly to the editable preview — no paste block needed.
+  function seedFromSpark() {
+    const seed = {
+      name: sourceSpark.content,
+      collection_name: sourceSpark.collection_tag || '',
+      design_direction: '', target_customer: '', visual_style: '', color_palette: '',
+      typography_notes: '', mood_keywords: [], product_types: [], seasonal_flag: '',
+      emotional_trigger: '', kittl_prompt: '', raw_import: '',
+      spark_id: sourceSpark.id,
+    };
+    setParsed(seed);
+    setEditedConcept({ ...seed });
+    setSparkChoice('quick');
+  }
+
+  // Collection auto-match for the quick-create path, split out from
+  // seedFromSpark() into its own effect: useCollectionObjects() loads async,
+  // so matching synchronously at click time could still see an empty list
+  // and wrongly fall into "create new collection" even when a real match
+  // exists. Re-running this once collectionObjects finishes loading fixes it.
+  useEffect(() => {
+    if (sparkChoice !== 'quick' || !sourceSpark?.collection_tag) return;
+    const matched = collectionObjects.find(c => c.name.toLowerCase() === sourceSpark.collection_tag.toLowerCase());
+    if (matched) {
+      setCollectionChoice(matched.name);
+      setNewCollectionName('');
+    } else {
+      setCollectionChoice('__new__');
+      setNewCollectionName(sourceSpark.collection_tag);
+    }
+  }, [collectionObjects, sparkChoice, sourceSpark]);
 
   function handleFieldChange(field, value) {
     setEditedConcept(prev => ({ ...prev, [field]: value }));
@@ -210,11 +252,39 @@ export default function ConceptChatImport({ onSaved, onClose }) {
   return (
     <div style={{ padding: '20px', maxWidth: 680, width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 16 }}>Import Concept from ChatGPT</h3>
+        <h3 style={{ margin: 0, fontSize: 16 }}>{sourceSpark ? 'Create Concept from Spark' : 'Import Concept from ChatGPT'}</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888' }}>×</button>
       </div>
 
-      {!parsed && (
+      {!parsed && sourceSpark && sparkChoice === null && (
+        <>
+          <p style={{ fontSize: 13, color: '#888', marginBottom: 8 }}>Creating a Concept from this Spark:</p>
+          <div style={{ padding: '10px 12px', background: '#1a1a1a', border: '1px solid #333', borderRadius: 6, fontSize: 13, color: '#e5e5e5', fontStyle: 'italic', marginBottom: 16 }}>
+            "{sourceSpark.content}"
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              onClick={seedFromSpark}
+              style={{ padding: '10px 16px', borderRadius: 6, background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}
+            >
+              Quick-create from this spark →
+            </button>
+            <button
+              onClick={() => setSparkChoice('paste')}
+              style={{ padding: '10px 16px', borderRadius: 6, background: 'none', border: '1px solid #333', color: '#e5e5e5', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}
+            >
+              I already fleshed this out in ChatGPT — paste it instead
+            </button>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 6, background: 'none', border: '1px solid #333', color: '#888', cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+
+      {!parsed && (!sourceSpark || sparkChoice === 'paste') && (
         <>
           <p style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
             Paste the full <code>--- TCC CONCEPT ---</code> block from ChatGPT below.
@@ -268,6 +338,7 @@ export default function ConceptChatImport({ onSaved, onClose }) {
             onChange={handleFieldChange}
             collectionObjects={collectionObjects}
             chapters={chapters}
+            sourceSpark={sourceSpark}
             collectionChoice={collectionChoice}
             setCollectionChoice={setCollectionChoice}
             newCollectionName={newCollectionName}
@@ -335,7 +406,7 @@ function Field({ label, value, onChange, multiline }) {
 }
 
 function ConceptPreview({
-  concept, onChange, collectionObjects, chapters,
+  concept, onChange, collectionObjects, chapters, sourceSpark,
   collectionChoice, setCollectionChoice,
   newCollectionName, setNewCollectionName,
   newCollectionChapter, setNewCollectionChapter,
@@ -349,6 +420,11 @@ function ConceptPreview({
 
   return (
     <div>
+      {sourceSpark && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(124,175,138,0.12)', border: '1px solid rgba(124,175,138,0.3)', borderRadius: 6, fontSize: 13, color: '#2d6b3c' }}>
+          🔗 Linked to Spark: "{sourceSpark.content.length > 80 ? sourceSpark.content.slice(0, 80) + '…' : sourceSpark.content}"
+        </div>
+      )}
       <div style={{ marginBottom: 12, padding: '8px 12px', background: '#1e2a1e', border: '1px solid #2d4a2d', borderRadius: 6, fontSize: 13, color: '#86efac' }}>
         {hasKittlPrompt
           ? '✓ Kittl prompt detected — will be saved as imported output (v1)'

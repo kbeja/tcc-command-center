@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObjects, useChapters } from '../lib/hooks';
+import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObjects, useChapters, useConceptsBySpark } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
+import ConceptChatImport from '../components/ConceptChatImport';
 
 export default function Sparks() {
   const [searchParams] = useSearchParams();
@@ -11,6 +12,8 @@ export default function Sparks() {
   const { collections } = useCollections();
   const { collections: collectionObjects } = useCollectionObjects();
   const { chapters } = useChapters();
+  const { conceptsBySparkId } = useConceptsBySpark();
+  const [conceptSourceSpark, setConceptSourceSpark] = useState(null);
   const [search, setSearch] = useState('');
   const [chapterFilter, setChapterFilter] = useState('');
   const [collectionFilter, setCollectionFilter] = useState(searchParams.get('collection') || '');
@@ -170,7 +173,15 @@ export default function Sparks() {
               ⚑ {hot.filter(s => !s.collection_tag).length} hot spark{hot.filter(s => !s.collection_tag).length !== 1 ? 's have' : ' has'} no collection — tap the badge on the card to assign one so they appear in research and listing workflows.
             </div>
           )}
-          {hot.map(s => <SparkCard key={s.id} spark={s} onAction={refetch} />)}
+          {hot.map(s => (
+            <SparkCard
+              key={s.id}
+              spark={s}
+              onAction={refetch}
+              linkedConcepts={conceptsBySparkId[s.id] || []}
+              onCreateConcept={setConceptSourceSpark}
+            />
+          ))}
         </div>
       )}
 
@@ -262,11 +273,31 @@ export default function Sparks() {
               </div>
             )}
             <div style={{ flex: 1 }}>
-              <SparkCard spark={s} onAction={refetch} />
+              <SparkCard
+                spark={s}
+                onAction={refetch}
+                linkedConcepts={conceptsBySparkId[s.id] || []}
+                onCreateConcept={setConceptSourceSpark}
+              />
             </div>
           </div>
         ))}
       </div>
+
+      {conceptSourceSpark && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{ background: 'var(--warm-white)', borderRadius: 10, maxWidth: 700, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <ConceptChatImport
+              sourceSpark={conceptSourceSpark}
+              onSaved={() => setConceptSourceSpark(null)}
+              onClose={() => setConceptSourceSpark(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
