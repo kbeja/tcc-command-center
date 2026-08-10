@@ -3,13 +3,20 @@ import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCo
 
 const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
-// ── Parse --- TCC CONCEPT --- paste block ────────────────────────────────────
-
-function parsePasteBlock(raw) {
-  const text = raw.trim();
-  if (!text.includes('--- TCC CONCEPT ---')) return null;
-
-  const lines = text.split('\n').map(l => l.trim());
+// ── Parse concept fields from a text block ──────────────────────────────────
+// Shared with src/components/SessionSummaryParser.jsx's CONCEPTS section, so
+// there's exactly one definition of the field vocabulary (Concept Name,
+// Design Direction, Mood Keywords, etc.) instead of two copies to keep in
+// sync by hand. Operates on any text block containing "Label: value" lines —
+// no longer requires the "--- TCC CONCEPT ---" marker itself (that check
+// stays local to parsePasteBlock() below, since it's specific to this
+// standalone modal's own paste flow).
+export function parseConceptFields(raw) {
+  // Strip a leading "- "/"* " bullet if present (the session-summary CONCEPTS
+  // section follows the same bulleted-line convention as its other sections)
+  // — a no-op for the standalone modal's own unbulleted paste format, so this
+  // is strictly additive, not a behavior change for existing callers.
+  const lines = raw.trim().split('\n').map(l => l.trim().replace(/^[\*\-]\s+/, ''));
   const get = (label) => {
     const line = lines.find(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
     return line ? line.slice(label.length + 1).trim() : '';
@@ -48,6 +55,14 @@ function parsePasteBlock(raw) {
     kittl_prompt: kittlPrompt,
     raw_import: raw,
   };
+}
+
+// ── Parse --- TCC CONCEPT --- paste block ────────────────────────────────────
+
+function parsePasteBlock(raw) {
+  const text = raw.trim();
+  if (!text.includes('--- TCC CONCEPT ---')) return null;
+  return parseConceptFields(text);
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, updateProduct, createResearchSession } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects } from '../lib/hooks';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
+import { STAGES } from '../data/stages';
+import { parseConceptFields } from './ConceptChatImport';
 
 function autoColor(score, competition) {
   const s = parseFloat(score) || 0;
@@ -19,14 +21,15 @@ function cleanLine(line) {
     .trim();
 }
 
-function parseSummary(text, products) {
+function parseSummary(text, products, collectionObjects) {
   const result = {
     sparks: [],
     stageUpdates: [],
     research: [],
     decisions: [],
     notes: [],
-    unparseable: [],
+    concepts: [],
+    filed: [],
   };
 
   // Normalize: strip ** from section headers so regex can find them
@@ -41,7 +44,7 @@ function parseSummary(text, products) {
   }
 
   const SECTION_HEADERS = new Set([
-    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes'
+    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts'
   ]);
 
   const bulletLines = (block) =>
@@ -51,31 +54,44 @@ function parseSummary(text, products) {
       .filter(l => !SECTION_HEADERS.has(l.toLowerCase()))
       .filter(l => !/^(Collection|Niche|Source|Keywords?):/i.test(l));
 
+  let filedId = 0;
+  const pushFiled = (section, line) => {
+    result.filed.push({ id: `filed-${filedId++}`, section, line });
+  };
+
   // SPARKS
   const sparksBlock = extractBlock('SPARKS');
-  for (const line of bulletLines(sparksBlock)) {
-    result.sparks.push(line);
-  }
+  bulletLines(sparksBlock).forEach((line, i) => {
+    result.sparks.push({ id: `spark-${i}`, content: line });
+  });
 
   // STAGE UPDATES
   const stageBlock = extractBlock('STAGE UPDATES');
-  for (const rawLine of stageBlock.split('\n').map(cleanLine).filter(Boolean)) {
+  stageBlock.split('\n').map(cleanLine).filter(Boolean).forEach((rawLine, i) => {
     const m = rawLine.match(/(.+?)\s*[→>]\s*(.+)/);
     if (m) {
       const productName = m[1].trim();
-      const stage = m[2].trim();
-      const match = products?.find(p =>
-        p.name.toLowerCase().includes(productName.toLowerCase())
-      );
-      result.stageUpdates.push({ raw: rawLine, productName, stage, productId: match?.id || null, matched: !!match });
+      const stageRaw = m[2].trim();
+      const match = products?.find(p => p.name.toLowerCase().includes(productName.toLowerCase()));
+      const canonicalStage = STAGES.find(s => s.toLowerCase() === stageRaw.toLowerCase());
+      result.stageUpdates.push({
+        id: `stage-${i}`,
+        raw: rawLine,
+        productName,
+        stage: canonicalStage || stageRaw,
+        stageRecognized: !!canonicalStage,
+        productId: match?.id || null,
+        matched: !!match,
+      });
     } else {
-      result.unparseable.push({ section: 'STAGE UPDATES', line: rawLine });
+      pushFiled('STAGE UPDATES', rawLine);
     }
-  }
+  });
 
   // RESEARCH — each item starts with "Collection:"
   const researchBlock = extractBlock('RESEARCH');
   const researchItems = researchBlock.split(/\n(?=[\*\-]?\s*Collection:)/i).filter(Boolean);
+  let researchIdx = 0;
   for (const item of researchItems) {
     const colMatch = item.match(/Collection:\s*(.+)/i);
     const nicheMatch = item.match(/Niche:\s*(.+)/i);
@@ -84,7 +100,7 @@ function parseSummary(text, products) {
     const kwPart = kwLine.replace(/Keywords?:\s*/i, '').trim();
 
     if (!colMatch) {
-      result.unparseable.push({ section: 'RESEARCH', line: item.trim().slice(0, 80) });
+      pushFiled('RESEARCH', item.trim().slice(0, 80));
       continue;
     }
 
@@ -109,16 +125,14 @@ function parseSummary(text, products) {
     const isInternalIdeation = /internal|ideation|no.*keyword|no.*etsy/i.test(source);
 
     if (keywords.length === 0 || isInternalIdeation) {
-      // No real keyword data — send to Triage so user can decide where it goes
+      // No real keyword data — file for triage so user can decide where it goes
       const label = colMatch[1].trim() + (nicheMatch ? ` / ${nicheMatch[1].trim()}` : '');
-      result.unparseable.push({
-        section: 'RESEARCH (no keywords)',
-        line: `${label} — ${source}`,
-      });
+      pushFiled('RESEARCH (no keywords)', `${label} — ${source}`);
       continue;
     }
 
     result.research.push({
+      id: `research-${researchIdx++}`,
       collection: colMatch[1].trim(),
       niche: nicheMatch?.[1]?.trim() || null,
       source,
@@ -126,61 +140,136 @@ function parseSummary(text, products) {
     });
   }
 
-  // DECISIONS — go to Triage
+  // DECISIONS
   const decisionsBlock = extractBlock('DECISIONS');
-  for (const line of bulletLines(decisionsBlock)) {
-    result.decisions.push(line);
+  bulletLines(decisionsBlock).forEach((line, i) => {
+    result.decisions.push({ id: `decision-${i}`, content: line });
+  });
+
+  // NOTES
+  const notesBlock = extractBlock('NOTES');
+  bulletLines(notesBlock).forEach((line, i) => {
+    result.notes.push({ id: `note-${i}`, content: line });
+  });
+
+  // CONCEPTS — each item starts with "Concept Name:" or "Name:", same field
+  // vocabulary as the standalone "Import Concept from ChatGPT" modal (shared
+  // via parseConceptFields so there's one definition, not two to keep in sync).
+  const conceptsBlock = extractBlock('CONCEPTS');
+  const conceptItems = conceptsBlock.split(/\n(?=[\*\-]?\s*(?:Concept Name|Name):)/i).filter(Boolean);
+  let conceptIdx = 0;
+  for (const item of conceptItems) {
+    const fields = parseConceptFields(item);
+    if (!fields.name || !fields.collection_name) {
+      pushFiled('CONCEPTS', `Missing name/collection — "${item.trim().slice(0, 60)}"`);
+      continue;
+    }
+    const collectionMatch = collectionObjects?.find(
+      c => c.name.toLowerCase() === fields.collection_name.toLowerCase()
+    );
+    if (!collectionMatch) {
+      pushFiled('CONCEPTS', `"${fields.name}" — collection "${fields.collection_name}" not found. Use Design Vault → Import Concept from ChatGPT to add it with the right collection.`);
+      continue;
+    }
+    result.concepts.push({ id: `concept-${conceptIdx++}`, ...fields });
   }
 
-  // NOTES — captured but NOT sent to Triage
-  const notesBlock = extractBlock('NOTES');
-  for (const line of bulletLines(notesBlock)) {
-    result.notes.push(line);
+  // Any other all-caps section header — file its content for manual triage
+  // rather than silently dropping or swallowing it into a neighboring
+  // section. This is how object types with no schema yet (Trends, Visual
+  // Language, SEO Opportunities, Timing Intelligence, Learnings, Open
+  // Questions, Trend Signals, and anything else a future summary uses) get
+  // captured without hardcoding a header list that will inevitably go stale.
+  const seenHeadings = new Set();
+  for (const rawLine of normalized.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || !/^[A-Z][A-Z \(\)]*$/.test(line)) continue;
+    const key = line.toLowerCase();
+    if (seenHeadings.has(key) || SECTION_HEADERS.has(key)) continue;
+    seenHeadings.add(key);
+    const block = extractBlock(line);
+    bulletLines(block).forEach(l => pushFiled(line, l));
   }
 
   return result;
 }
 
+// Shared note-target resolution rule — used identically for the live preview
+// prediction and the actual save-time resolution, just fed different-shaped
+// inputs (predicted preview items vs real post-insert rows), so the two
+// never disagree about where notes will land.
+function pickNoteTarget({ matchedProduct, sparksInPriorityOrder, notesTexts }) {
+  if (matchedProduct) return { type: 'product', target: matchedProduct };
+  const textMatch = sparksInPriorityOrder.find(s =>
+    notesTexts.some(n => n.toLowerCase().includes((s.content || '').toLowerCase().slice(0, 20)))
+  );
+  const target = textMatch || sparksInPriorityOrder[0];
+  if (target) return { type: 'spark', target };
+  return { type: 'workshop', target: null };
+}
+
 export default function SessionSummaryParser({ products, onDone }) {
+  const { collections: collectionObjects } = useCollectionObjects();
   const [text, setText] = useState('');
-  const [parsing, setParsing] = useState(false);
-  const [result, setResult] = useState(null);
+  const [parsed, setParsed] = useState(null);
+  const [checked, setChecked] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState(null);
 
-  async function handleParse() {
+  function handleParse() {
     if (!text.trim()) return;
-    setParsing(true);
+    const result = parseSummary(text, products, collectionObjects);
+    setParsed(result);
+    const nextChecked = {};
+    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'filed']) {
+      for (const item of result[key]) nextChecked[item.id] = true;
+    }
+    setChecked(nextChecked);
+  }
 
-    const parsed = parseSummary(text, products);
+  function toggle(id) {
+    setChecked(prev => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  async function handleSaveApproved() {
+    setSaving(true);
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
-    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, notes: 0 };
+    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, filed: 0 };
+    const errors = [];
     const stageDetails = [];
 
     const createdSparks = [];
-    for (const content of parsed.sparks) {
-      if (content) {
-        const { data } = await createSpark(content);
-        if (data) createdSparks.push(data);
-        counts.sparks++;
-      }
+    for (const spark of parsed.sparks) {
+      if (!checked[spark.id]) continue;
+      const { data, error } = await createSpark(spark.content);
+      if (error) errors.push(`Spark "${spark.content.slice(0, 40)}": ${error.message}`);
+      else { if (data) createdSparks.push(data); counts.sparks++; }
     }
 
     for (const update of parsed.stageUpdates) {
+      if (!checked[update.id]) continue;
       if (update.productId) {
-        await supabase.from('products').update({
+        const { error } = await supabase.from('products').update({
           stage: update.stage,
           stage_updated_at: now,
           updated_at: now,
         }).eq('id', update.productId);
-        counts.stages++;
-        stageDetails.push(update);
+        if (error) errors.push(`Stage update "${update.productName}": ${error.message}`);
+        else { counts.stages++; stageDetails.push(update); }
       } else {
-        parsed.unparseable.push({ section: 'STAGE UPDATES', line: `"${update.productName}" not found in products` });
+        const { error } = await createWorkshopItem({
+          type: 'unparseable',
+          content: `[STAGE UPDATES] "${update.productName}" not found in products`,
+          source: 'Session Import',
+        });
+        if (!error) counts.filed++;
       }
     }
 
     for (const session of parsed.research) {
-      await createResearchSession(
+      if (!checked[session.id]) continue;
+      const { error } = await createResearchSession(
         {
           collection: session.collection,
           niche: session.niche,
@@ -191,141 +280,170 @@ export default function SessionSummaryParser({ products, onDone }) {
         },
         session.keywords
       );
-      counts.research++;
+      if (error) errors.push(`Research "${session.collection}": ${error.message}`);
+      else counts.research++;
     }
 
     for (const d of parsed.decisions) {
-      if (d) { await createWorkshopItem({ type: 'decision', content: d, source: 'Session Import' }); counts.decisions++; }
+      if (!checked[d.id]) continue;
+      const { error } = await createWorkshopItem({ type: 'decision', content: d.content, source: 'Session Import' });
+      if (error) errors.push(`Decision "${d.content.slice(0, 40)}": ${error.message}`);
+      else counts.decisions++;
     }
 
-    // Save unparseable items to Triage so they're never lost
-    for (const u of parsed.unparseable) {
-      await createWorkshopItem({
-        type: 'unparseable',
-        content: `[${u.section}] ${u.line}`,
-        source: 'Session Import',
-      });
-    }
-
-    // Notes: append to matched product → matched spark → Workshop fallback
-    if (parsed.notes.length > 0) {
-      const noteText = `\n[Session notes ${today}]\n` + parsed.notes.map(n => `• ${n}`).join('\n');
-
-      // 1. Try existing product (via stage updates or name match in notes)
-      const mentionedProduct = stageDetails[0]
-        ? products?.find(p => p.id === stageDetails[0].productId)
-        : products?.find(p =>
-            parsed.notes.some(n => n.toLowerCase().includes(p.name.toLowerCase()))
-          );
-
-      if (mentionedProduct) {
-        const existing = mentionedProduct.notes || '';
-        await supabase.from('products')
-          .update({ notes: existing + noteText, updated_at: now })
-          .eq('id', mentionedProduct.id);
-        counts.notes = parsed.notes.length;
-        counts.notesTarget = mentionedProduct.name;
-        counts.notesType = 'product';
-      } else {
-        // 2. Try a spark created in this same import whose name appears in the notes
-        const matchedSpark = createdSparks.find(s =>
-          parsed.notes.some(n => n.toLowerCase().includes(s.content.toLowerCase().slice(0, 20)))
-          || parsed.sparks.some(sp => parsed.notes.some(n => n.toLowerCase().includes(sp.toLowerCase().slice(0, 20))))
-        ) || createdSparks[0]; // fall back to first spark created if any
-
-        if (matchedSpark) {
-          const existing = matchedSpark.notes || '';
-          await supabase.from('sparks')
-            .update({ notes: (existing ? existing + '\n' : '') + noteText.trim(), updated_at: now })
-            .eq('id', matchedSpark.id);
-          counts.notes = parsed.notes.length;
-          counts.notesTarget = matchedSpark.content.slice(0, 40);
-          counts.notesType = 'spark';
-        } else {
-          // 3. No match anywhere — save to Workshop so nothing is lost
-          const combined = parsed.notes.join('\n• ');
-          await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import' });
-          counts.notes = parsed.notes.length;
-          counts.notesTarget = null;
-          counts.notesType = 'workshop';
-        }
+    // Concepts save sequentially (not Promise.all) — generateConceptCode()
+    // counts existing concepts per collection at call time, so concurrent
+    // writes for the same collection in one batch could collide on the
+    // same generated code.
+    for (const concept of parsed.concepts) {
+      if (!checked[concept.id]) continue;
+      const { kittl_prompt, id, ...fields } = concept;
+      const concept_code = await generateConceptCode(fields.collection_name);
+      const { data, error } = await createConcept({ ...fields, concept_code });
+      if (error || !data) {
+        errors.push(`Concept "${fields.name}": ${error?.message || 'unknown error'}`);
+        continue;
+      }
+      counts.concepts++;
+      if (kittl_prompt) {
+        const { data: output, error: outputError } = await createConceptOutput({
+          concept_id: data.id,
+          output_type: 'kittl_prompt',
+          version: 1,
+          is_current: true,
+          body: kittl_prompt,
+          output_source: 'imported',
+        });
+        if (!outputError && output) await setCurrentOutput(data.id, 'kittl_prompt', output.id);
       }
     }
 
-    setResult({ ...counts, stageDetails, unparseable: parsed.unparseable });
-    setParsing(false);
+    for (const item of parsed.filed) {
+      if (!checked[item.id]) continue;
+      const { error } = await createWorkshopItem({
+        type: 'unparseable',
+        content: `[${item.section}] ${item.line}`,
+        source: 'Session Import',
+      });
+      if (error) errors.push(`Filed item: ${error.message}`);
+      else counts.filed++;
+    }
+
+    // Notes: combine whichever are still checked, resolve target with the
+    // identical rule the preview used to predict it, against real data.
+    let notesResult = null;
+    const checkedNoteTexts = parsed.notes.filter(n => checked[n.id]).map(n => n.content);
+    if (checkedNoteTexts.length > 0) {
+      const matchedStageUpdate = stageDetails.find(u => u.matched);
+      const matchedProduct = matchedStageUpdate ? products?.find(p => p.id === matchedStageUpdate.productId) : null;
+      const resolution = pickNoteTarget({ matchedProduct, sparksInPriorityOrder: createdSparks, notesTexts: checkedNoteTexts });
+      const noteText = `\n[Session notes ${today}]\n` + checkedNoteTexts.map(n => `• ${n}`).join('\n');
+
+      if (resolution.type === 'product') {
+        const existing = resolution.target.notes || '';
+        const { error } = await supabase.from('products')
+          .update({ notes: existing + noteText, updated_at: now })
+          .eq('id', resolution.target.id);
+        if (error) errors.push(`Notes: ${error.message}`);
+        else notesResult = { count: checkedNoteTexts.length, target: resolution.target.name, type: 'product' };
+      } else if (resolution.type === 'spark') {
+        const existing = resolution.target.notes || '';
+        const { error } = await supabase.from('sparks')
+          .update({ notes: (existing ? existing + '\n' : '') + noteText.trim(), updated_at: now })
+          .eq('id', resolution.target.id);
+        if (error) errors.push(`Notes: ${error.message}`);
+        else notesResult = { count: checkedNoteTexts.length, target: resolution.target.content.slice(0, 40), type: 'spark' };
+      } else {
+        const combined = checkedNoteTexts.join('\n• ');
+        const { error } = await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import' });
+        if (error) errors.push(`Notes: ${error.message}`);
+        else notesResult = { count: checkedNoteTexts.length, target: null, type: 'workshop' };
+      }
+    }
+
+    setSaveResult({ ...counts, stageDetails, notesResult, errors });
+    setSaving(false);
   }
 
-  if (result) {
-    const total = result.sparks + result.stages + result.research + result.decisions + (result.notes || 0);
+  if (saveResult) {
+    const total = saveResult.sparks + saveResult.stages + saveResult.research + saveResult.decisions
+      + saveResult.concepts + saveResult.filed + (saveResult.notesResult?.count || 0);
     return (
       <div>
-        <div className="section-label" style={{ marginBottom: 12 }}>Imported</div>
+        <div className="section-label" style={{ marginBottom: 12 }}>Saved</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-          {result.sparks > 0 && (
-            <div style={{ fontSize: '0.85rem' }}>✓ {result.sparks} new Spark{result.sparks !== 1 ? 's' : ''} added</div>
+          {saveResult.sparks > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.sparks} new Spark{saveResult.sparks !== 1 ? 's' : ''} added</div>
           )}
-          {result.stages > 0 && (
+          {saveResult.stages > 0 && (
             <div style={{ fontSize: '0.85rem' }}>
-              ✓ {result.stages} product stage{result.stages !== 1 ? 's' : ''} updated
-              {result.stageDetails.map((u, i) => (
+              ✓ {saveResult.stages} product stage{saveResult.stages !== 1 ? 's' : ''} updated
+              {saveResult.stageDetails.map((u, i) => (
                 <div key={i} style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginLeft: 16 }}>
                   {u.productName} → {u.stage}
                 </div>
               ))}
             </div>
           )}
-          {result.research > 0 && (
-            <div style={{ fontSize: '0.85rem' }}>✓ {result.research} research session{result.research !== 1 ? 's' : ''} created</div>
+          {saveResult.research > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.research} research session{saveResult.research !== 1 ? 's' : ''} created</div>
           )}
-          {result.decisions > 0 && (
-            <div style={{ fontSize: '0.85rem' }}>✓ {result.decisions} decision{result.decisions !== 1 ? 's' : ''} flagged for Codex review</div>
+          {saveResult.concepts > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.concepts} Concept{saveResult.concepts !== 1 ? 's' : ''} created</div>
           )}
-          {result.notes > 0 && (
+          {saveResult.decisions > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.decisions} decision{saveResult.decisions !== 1 ? 's' : ''} flagged for Codex review</div>
+          )}
+          {saveResult.notesResult && (
             <div style={{ fontSize: '0.85rem' }}>
-              ✓ {result.notes} note{result.notes !== 1 ? 's' : ''} {
-                result.notesType === 'product' ? `appended to product: ${result.notesTarget}` :
-                result.notesType === 'spark' ? `appended to spark: ${result.notesTarget}…` :
+              ✓ {saveResult.notesResult.count} note{saveResult.notesResult.count !== 1 ? 's' : ''} {
+                saveResult.notesResult.type === 'product' ? `appended to product: ${saveResult.notesResult.target}` :
+                saveResult.notesResult.type === 'spark' ? `appended to spark: ${saveResult.notesResult.target}…` :
                 'saved to Workshop'
               }
             </div>
           )}
+          {saveResult.filed > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.filed} item{saveResult.filed !== 1 ? 's' : ''} filed to Workshop for review</div>
+          )}
           {total === 0 && (
-            <div style={{ fontSize: '0.85rem', color: 'var(--charcoal-soft)' }}>No structured data found. Check the summary format.</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--charcoal-soft)' }}>Nothing was checked — nothing saved.</div>
           )}
         </div>
 
-        {result.notes?.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Notes (not stored)</div>
-            {result.notes.map((n, i) => (
-              <div key={i} style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 4, paddingLeft: 8, borderLeft: '2px solid rgba(43,41,38,0.1)' }}>
-                {n}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {result.unparseable?.length > 0 && (
+        {saveResult.errors.length > 0 && (
           <div style={{
-            background: 'rgba(232,168,124,0.12)',
-            border: '1px solid var(--warning)',
+            background: 'rgba(201,123,123,0.12)', border: '1px solid var(--alert)',
             borderRadius: 2, padding: '12px 14px', marginBottom: 16,
           }}>
-            <div className="eyebrow" style={{ marginBottom: 8 }}>Could not parse</div>
-            {result.unparseable.map((u, i) => (
-              <div key={i} style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>
-                <span style={{ fontWeight: 500 }}>{u.section}:</span> {u.line}
-              </div>
+            <div className="eyebrow" style={{ marginBottom: 8 }}>Some items didn't save</div>
+            {saveResult.errors.map((e, i) => (
+              <div key={i} style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 4 }}>{e}</div>
             ))}
           </div>
         )}
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-primary btn-sm" onClick={onDone}>View imported items →</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => { setText(''); setResult(null); }}>Parse another</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setText(''); setParsed(null); setChecked({}); setSaveResult(null); }}>
+            Parse another
+          </button>
         </div>
       </div>
+    );
+  }
+
+  if (parsed) {
+    return (
+      <PreviewChecklist
+        parsed={parsed}
+        checked={checked}
+        toggle={toggle}
+        products={products}
+        saving={saving}
+        onSave={handleSaveApproved}
+        onBack={() => setParsed(null)}
+      />
     );
   }
 
@@ -333,7 +451,7 @@ export default function SessionSummaryParser({ products, onDone }) {
     <div>
       <div className="section-label" style={{ marginBottom: 8 }}>Paste Session Summary</div>
       <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 12, lineHeight: 1.6 }}>
-        Paste a structured summary from Claude or ChatGPT. Items will be routed automatically — sparks to Sparks, stage changes to products, research to Research, decisions to Workshop.
+        Paste a structured summary from Claude or ChatGPT. You'll get a preview before anything saves — sparks, stage changes, research, decisions, and concepts each route to the right place, and anything that doesn't parse cleanly (or uses a section type not modeled yet) gets filed to Workshop instead of lost.
       </div>
       <textarea
         value={text}
@@ -354,6 +472,11 @@ RESEARCH
   Source: Everbee
   Keywords: mom shirt | 4368 | 5 | 873750
 
+CONCEPTS
+- Concept Name: ...
+  Collection: Mom Chapter
+  Design Direction: ...
+
 DECISIONS (for Codex)
 - Decision that needs to go into TCC OS
 
@@ -363,9 +486,163 @@ NOTES
         rows={16}
         style={{ marginBottom: 12, fontFamily: 'monospace', fontSize: '0.75rem' }}
       />
-      <button className="btn btn-primary" onClick={handleParse} disabled={!text.trim() || parsing}>
-        {parsing ? 'Parsing…' : 'Parse and Import →'}
+      <button className="btn btn-primary" onClick={handleParse} disabled={!text.trim()}>
+        Preview →
       </button>
     </div>
+  );
+}
+
+function PreviewChecklist({ parsed, checked, toggle, products, saving, onSave, onBack }) {
+  const checkedMatchedStageUpdate = parsed.stageUpdates.find(u => u.matched && checked[u.id]);
+  const matchedProduct = checkedMatchedStageUpdate
+    ? products?.find(p => p.id === checkedMatchedStageUpdate.productId)
+    : null;
+  const checkedSparks = parsed.sparks.filter(s => checked[s.id]);
+  const checkedNoteTexts = parsed.notes.filter(n => checked[n.id]).map(n => n.content);
+  const notePrediction = checkedNoteTexts.length > 0
+    ? pickNoteTarget({ matchedProduct, sparksInPriorityOrder: checkedSparks, notesTexts: checkedNoteTexts })
+    : null;
+
+  const totalChecked = Object.values(checked).filter(Boolean).length;
+
+  return (
+    <div>
+      <div className="section-label" style={{ marginBottom: 4 }}>Review before saving</div>
+      <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 16 }}>
+        Nothing below is saved yet. Uncheck anything you don't want, then save the rest.
+      </div>
+
+      {parsed.sparks.length > 0 && (
+        <PreviewSection title={`Sparks (${parsed.sparks.length})`}>
+          {parsed.sparks.map(s => (
+            <PreviewRow key={s.id} checked={!!checked[s.id]} onToggle={() => toggle(s.id)}>
+              {s.content}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.stageUpdates.length > 0 && (
+        <PreviewSection title={`Stage Updates (${parsed.stageUpdates.length})`}>
+          {parsed.stageUpdates.map(u => (
+            <PreviewRow
+              key={u.id}
+              checked={!!checked[u.id]}
+              onToggle={() => toggle(u.id)}
+              annotation={
+                <>
+                  {u.matched ? (
+                    <span style={{ color: '#2d6b3c' }}>→ matched: "{products?.find(p => p.id === u.productId)?.name}"</span>
+                  ) : (
+                    <span style={{ color: '#7a4a1e' }}>no product match — will file to Workshop instead</span>
+                  )}
+                  {!u.stageRecognized && (
+                    <span style={{ color: '#7a4a1e', marginLeft: 8 }}>⚠ "{u.stage}" isn't a recognized stage — check the wording</span>
+                  )}
+                </>
+              }
+            >
+              {u.productName} → {u.stage}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.research.length > 0 && (
+        <PreviewSection title={`Research (${parsed.research.length})`}>
+          {parsed.research.map(r => (
+            <PreviewRow key={r.id} checked={!!checked[r.id]} onToggle={() => toggle(r.id)}>
+              {r.collection}{r.niche ? ` / ${r.niche}` : ''} — {r.keywords.length} keyword{r.keywords.length !== 1 ? 's' : ''} ({r.source})
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.concepts.length > 0 && (
+        <PreviewSection title={`Concepts (${parsed.concepts.length})`}>
+          {parsed.concepts.map(c => (
+            <PreviewRow
+              key={c.id}
+              checked={!!checked[c.id]}
+              onToggle={() => toggle(c.id)}
+              annotation={<span style={{ color: '#2d6b3c' }}>→ collection: "{c.collection_name}"</span>}
+            >
+              {c.name}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.decisions.length > 0 && (
+        <PreviewSection title={`Decisions (${parsed.decisions.length})`}>
+          {parsed.decisions.map(d => (
+            <PreviewRow key={d.id} checked={!!checked[d.id]} onToggle={() => toggle(d.id)}>
+              {d.content}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.notes.length > 0 && (
+        <PreviewSection
+          title={`Notes (${parsed.notes.length})`}
+          hint={
+            !notePrediction ? 'Uncheck all to skip' :
+            notePrediction.type === 'product' ? `Will attach to product: "${notePrediction.target.name}"` :
+            notePrediction.type === 'spark' ? `Will attach to spark: "${(notePrediction.target.content || '').slice(0, 40)}"` :
+            'No product or spark match — will file to Workshop'
+          }
+        >
+          {parsed.notes.map(n => (
+            <PreviewRow key={n.id} checked={!!checked[n.id]} onToggle={() => toggle(n.id)}>
+              {n.content}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.filed.length > 0 && (
+        <PreviewSection
+          title={`Filed for review (${parsed.filed.length})`}
+          hint="Didn't parse cleanly, or the section type isn't modeled yet — goes to Workshop Triage either way, nothing is lost."
+        >
+          {parsed.filed.map(f => (
+            <PreviewRow key={f.id} checked={!!checked[f.id]} onToggle={() => toggle(f.id)}>
+              <span style={{ fontWeight: 500 }}>{f.section}:</span> {f.line}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button className="btn btn-primary" onClick={onSave} disabled={saving || totalChecked === 0}>
+          {saving ? 'Saving…' : `Save approved (${totalChecked}) →`}
+        </button>
+        <button className="btn btn-ghost" onClick={onBack} disabled={saving}>← Edit paste</button>
+      </div>
+    </div>
+  );
+}
+
+function PreviewSection({ title, hint, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>{title}</div>
+      {hint && <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>{hint}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{children}</div>
+    </div>
+  );
+}
+
+function PreviewRow({ checked, onToggle, annotation, children }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: '0.82rem', cursor: 'pointer' }}>
+      <input type="checkbox" checked={checked} onChange={onToggle} style={{ width: 'auto', margin: '3px 0 0', flexShrink: 0 }} />
+      <span>
+        {children}
+        {annotation && <div style={{ fontSize: '0.72rem', marginTop: 2 }}>{annotation}</div>}
+      </span>
+    </label>
   );
 }
