@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions } from '../lib/hooks';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 import { STAGES } from '../data/stages';
@@ -30,10 +30,39 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     notes: [],
     concepts: [],
     filed: [],
+    session: null,
   };
 
   // Normalize: strip ** from section headers so regex can find them
   const normalized = text.replace(/\*\*([A-Z][A-Z\s\(\)]+)\*\*/g, '$1');
+
+  // PREAMBLE — optional "DATE:"/"SOURCE:" header between "--- SESSION SUMMARY ---"
+  // and the first section header (see the placeholder text below the textarea).
+  // Scoped strictly to the preamble — everything before the first real
+  // section-header line — using the identical header-detection test the
+  // catch-all filing loop uses further down, so the two can never disagree
+  // about where the preamble ends. This scoping is what keeps this from ever
+  // accidentally matching RESEARCH's own per-item "Source: Everbee" line or
+  // CONCEPTS' "Source Spark:" line elsewhere in the same paste — a global
+  // search for "SOURCE:" would collide with those; this doesn't, because it
+  // never looks past the first section header.
+  // Best-effort throughout: a missing or unparseable header just leaves
+  // result.session's fields null, exactly like today's behavior — nothing
+  // throws, nothing blocks the rest of the parse.
+  const headerLineRe = /^[A-Z][A-Z \(\)]*$/;
+  const normalizedLines = normalized.split('\n');
+  const firstHeaderLineIdx = normalizedLines.findIndex(l => headerLineRe.test(l.trim()));
+  const preamble = firstHeaderLineIdx === -1 ? normalized : normalizedLines.slice(0, firstHeaderLineIdx).join('\n');
+  const dateLine = preamble.match(/DATE:\s*(.+)/i);
+  const sourceLine = preamble.match(/SOURCE:\s*(.+)/i);
+  const dateRaw = dateLine?.[1]?.trim() || null;
+  const sourceRaw = sourceLine?.[1]?.trim() || null;
+  const parsedDate = dateRaw ? new Date(dateRaw) : null;
+  result.session = {
+    date: parsedDate && !isNaN(parsedDate) ? parsedDate.toISOString().split('T')[0] : null,
+    dateRaw,     // kept only so the preview can say *what* failed to parse; never sent to the DB
+    source: sourceRaw,
+  };
 
   // Extract section blocks — handles both "- bullet" and "* bullet" lines
   function extractBlock(label) {
@@ -279,10 +308,26 @@ export default function SessionSummaryParser({ products, onDone }) {
     const errors = [];
     const stageDetails = [];
 
+    // Import session — one row per paste, created only when the header
+    // actually yielded a date or source (never a junk all-null row). Every
+    // create call below threads this id through as session_id; when null,
+    // every record's session_id just stays null, exactly like before this
+    // phase existed.
+    let sessionId = null;
+    if (parsed.session?.date || parsed.session?.source) {
+      const { data: importSession, error: sessionError } = await createImportSession({
+        date: parsed.session.date,
+        source: parsed.session.source,
+        raw_text: text,
+      });
+      if (sessionError) errors.push(`Session metadata: ${sessionError.message}`);
+      else sessionId = importSession?.id || null;
+    }
+
     const createdSparks = [];
     for (const spark of parsed.sparks) {
       if (!checked[spark.id]) continue;
-      const { data, error } = await createSpark(spark.content);
+      const { data, error } = await createSpark(spark.content, { session_id: sessionId });
       if (error) errors.push(`Spark "${spark.content.slice(0, 40)}": ${error.message}`);
       else { if (data) createdSparks.push(data); counts.sparks++; }
     }
@@ -302,6 +347,7 @@ export default function SessionSummaryParser({ products, onDone }) {
           type: 'unparseable',
           content: `[STAGE UPDATES] "${update.productName}" not found in products`,
           source: 'Session Import',
+          session_id: sessionId,
         });
         if (!error) counts.filed++;
       }
@@ -317,6 +363,7 @@ export default function SessionSummaryParser({ products, onDone }) {
           source: session.source,
           status: 'Complete',
           notes: '',
+          session_id: sessionId,
         },
         session.keywords
       );
@@ -326,7 +373,7 @@ export default function SessionSummaryParser({ products, onDone }) {
 
     for (const d of parsed.decisions) {
       if (!checked[d.id]) continue;
-      const { error } = await createWorkshopItem({ type: 'decision', content: d.content, source: 'Session Import' });
+      const { error } = await createWorkshopItem({ type: 'decision', content: d.content, source: 'Session Import', session_id: sessionId });
       if (error) errors.push(`Decision "${d.content.slice(0, 40)}": ${error.message}`);
       else counts.decisions++;
     }
@@ -347,7 +394,7 @@ export default function SessionSummaryParser({ products, onDone }) {
         if (batchMatch) fields.spark_id = batchMatch.id;
       }
       const concept_code = await generateConceptCode(fields.collection_name);
-      const { data, error } = await createConcept({ ...fields, concept_code });
+      const { data, error } = await createConcept({ ...fields, concept_code, session_id: sessionId });
       if (error || !data) {
         errors.push(`Concept "${fields.name}": ${error?.message || 'unknown error'}`);
         continue;
@@ -372,6 +419,7 @@ export default function SessionSummaryParser({ products, onDone }) {
         type: 'unparseable',
         content: `[${item.section}] ${item.line}`,
         source: 'Session Import',
+        session_id: sessionId,
       });
       if (error) errors.push(`Filed item: ${error.message}`);
       else counts.filed++;
@@ -403,7 +451,7 @@ export default function SessionSummaryParser({ products, onDone }) {
         else notesResult = { count: checkedNoteTexts.length, target: resolution.target.content.slice(0, 40), type: 'spark' };
       } else {
         const combined = checkedNoteTexts.join('\n• ');
-        const { error } = await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import' });
+        const { error } = await createWorkshopItem({ type: 'note', content: `• ${combined}`, source: 'Session Import', session_id: sessionId });
         if (error) errors.push(`Notes: ${error.message}`);
         else notesResult = { count: checkedNoteTexts.length, target: null, type: 'workshop' };
       }
@@ -563,6 +611,8 @@ function PreviewChecklist({ parsed, checked, toggle, products, saving, onSave, o
         Nothing below is saved yet. Uncheck anything you don't want, then save the rest.
       </div>
 
+      <SessionBanner session={parsed.session} />
+
       {parsed.sparks.length > 0 && (
         <PreviewSection title={`Sparks (${parsed.sparks.length})`}>
           {parsed.sparks.map(s => (
@@ -712,5 +762,42 @@ function PreviewRow({ checked, onToggle, annotation, children }) {
         {annotation && <div style={{ fontSize: '0.72rem', marginTop: 2 }}>{annotation}</div>}
       </span>
     </label>
+  );
+}
+
+// Session provenance banner — mirrors the matched/unmatched color language
+// already used for Stage Updates / Source Spark / Related Research above
+// (green = confirmed, amber = warn-not-block), just at document level
+// instead of per-row since there's nothing here to individually check/
+// uncheck — it's metadata for everything below, not an item of its own.
+function SessionBanner({ session }) {
+  if (!session) return null;
+  const { date, dateRaw, source } = session;
+  const willAttach = !!(date || source);
+  const dateFoundButUnparseable = !!dateRaw && !date;
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>Session</div>
+      {willAttach ? (
+        <>
+          <div style={{ fontSize: '0.82rem', color: '#2d6b3c' }}>
+            ✓ Will attach to everything saved below: {date || 'no date'}{source ? ` — ${source}` : ''}
+          </div>
+          {dateFoundButUnparseable && (
+            <div style={{ fontSize: '0.72rem', color: '#7a4a1e', marginTop: 2 }}>
+              ⚠ Found a DATE line ("{dateRaw}") but couldn't parse it as a date — saving without a session date.
+            </div>
+          )}
+        </>
+      ) : (
+        <div style={{ fontSize: '0.78rem', color: '#7a4a1e' }}>
+          ⚠ {dateFoundButUnparseable
+            ? `Found a DATE line ("${dateRaw}") but couldn't parse it, and no SOURCE line — `
+            : 'No DATE:/SOURCE: header found — '}
+          items below will save without session provenance.
+        </div>
+      )}
+    </div>
   );
 }

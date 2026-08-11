@@ -966,3 +966,35 @@ export async function generateConceptCode(collectionName) {
   const seq = String((count || 0) + 1).padStart(3, '0');
   return `${prefix}-${seq}`;
 }
+
+// ─── Import Sessions — provenance metadata for pasted imports ──────────────
+// One row per paste/import event (not per-item) -- every object type
+// SessionSummaryParser.jsx and ConceptChatImport.jsx create gets a nullable
+// session_id FK back to this row. Callers only create a row when at least
+// one of date/source was actually captured -- see SessionSummaryParser.jsx's
+// handleSaveApproved and ConceptChatImport.jsx's handleSave for the
+// "only when warranted" gate that keeps this table free of junk all-null rows.
+
+export async function createImportSession(fields) {
+  const { data, error } = await supabase
+    .from('import_sessions')
+    .insert({ ...fields, created_at: new Date().toISOString() })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export function useImportSession(id) {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!id) { setSession(null); setLoading(false); return; }
+    const { data } = await supabase.from('import_sessions').select('*').eq('id', id).single();
+    setSession(data || null);
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { session, loading, refetch: fetch };
+}

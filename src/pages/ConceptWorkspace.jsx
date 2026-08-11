@@ -15,6 +15,7 @@ import {
   useSparks,
   useResearchSession,
   useResearchSessions,
+  useImportSession,
 } from '../lib/hooks';
 
 const FUNCTION_URL = '/.netlify/functions/claude-process';
@@ -188,6 +189,9 @@ export default function ConceptWorkspace() {
   // collection is always set, so scoping here is unambiguous and keeps the
   // list relevant.
   const { sessions: pickableResearchSessions } = useResearchSessions(concept?.collection_name);
+  // Same unconditional-call rationale as useSpark/useResearchSession above —
+  // useImportSession(undefined) no-ops safely while concept is still null.
+  const { session: importSession } = useImportSession(concept?.session_id);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [fieldSaved, setFieldSaved] = useState('');
@@ -420,18 +424,25 @@ export default function ConceptWorkspace() {
           </FieldRow>
 
           {concept.raw_import && (
-            <details style={{ marginTop: 20 }}>
-              <summary style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
-                View original paste
-              </summary>
-              <pre style={{
-                marginTop: 8, padding: '10px 12px', fontSize: '0.72rem', lineHeight: 1.6,
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit',
-                background: 'var(--charcoal-faint)', borderRadius: 4, maxHeight: 300, overflowY: 'auto',
-              }}>
-                {concept.raw_import}
-              </pre>
-            </details>
+            <div style={{ marginTop: 20 }}>
+              {importSession && (importSession.date || importSession.source) && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>
+                  📅 Imported{importSession.date ? ` ${importSession.date}` : ''}{importSession.source ? ` · ${importSession.source}` : ''}
+                </div>
+              )}
+              <details>
+                <summary style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
+                  View original paste
+                </summary>
+                <pre style={{
+                  marginTop: 8, padding: '10px 12px', fontSize: '0.72rem', lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit',
+                  background: 'var(--charcoal-faint)', borderRadius: 4, maxHeight: 300, overflowY: 'auto',
+                }}>
+                  {concept.raw_import}
+                </pre>
+              </details>
+            </div>
           )}
 
           <hr className="rule" style={{ marginTop: 24 }} />

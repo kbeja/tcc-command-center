@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection, useSparks, useResearchSessions } from '../lib/hooks';
+import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection, useSparks, useResearchSessions, createImportSession } from '../lib/hooks';
 
 // Bidirectional case-insensitive substring match — same rule used for
 // Source Spark / Related Research matching everywhere this concept-import
@@ -115,6 +115,15 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
   const [newCollectionSeason, setNewCollectionSeason] = useState('');
   const [newCollectionLaunch, setNewCollectionLaunch] = useState('');
 
+  // Manual Date/Source — this paste format has no DATE:/SOURCE: header to
+  // auto-parse (unlike SessionSummaryParser.jsx's summary format), so this
+  // is Phase 14's parity input for the standalone modal. Scoped to the
+  // paste flow only (see showSessionFields below) — the quick-create-from-
+  // spark path has no paste text to keep as raw_text, so a session row
+  // wouldn't have anything real to point at.
+  const [sessionDate, setSessionDate] = useState('');
+  const [sessionSource, setSessionSource] = useState('');
+
   function handleParse() {
     setParseError('');
     setParsed(null);
@@ -177,6 +186,8 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
     setNewCollectionStyleGuide('');
     setNewCollectionSeason('');
     setNewCollectionLaunch('');
+    setSessionDate('');
+    setSessionSource('');
   }
 
   // Quick-create path: seed a blank concept straight from the spark's own
@@ -256,9 +267,26 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
       // text/flags used only to resolve spark_id/research_session_id above.
       const { kittl_prompt, source_spark_text, related_research_text, sourceSparkMatched, relatedResearchMatched, ...conceptFields } = concept;
 
+      // Session provenance — paste flow only (quick-create from a Spark has
+      // no paste text to keep as raw_text), and only when a date or source
+      // was actually filled in. Errors here degrade silently to
+      // session_id: null rather than blocking the concept save — same
+      // "warn/degrade, never block" treatment SessionSummaryParser.jsx uses
+      // for its own session row.
+      let session_id = null;
+      if (sparkChoice !== 'quick' && (sessionDate || sessionSource.trim())) {
+        const { data: importSession } = await createImportSession({
+          date: sessionDate || null,
+          source: sessionSource.trim() || null,
+          raw_text: paste,
+        });
+        session_id = importSession?.id || null;
+      }
+
       const { data: savedConcept, error: conceptError } = await createConcept({
         ...conceptFields,
         concept_code,
+        session_id,
       });
 
       if (conceptError || !savedConcept) {
@@ -413,6 +441,11 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
             setNewCollectionSeason={setNewCollectionSeason}
             newCollectionLaunch={newCollectionLaunch}
             setNewCollectionLaunch={setNewCollectionLaunch}
+            showSessionFields={sparkChoice !== 'quick'}
+            sessionDate={sessionDate}
+            setSessionDate={setSessionDate}
+            sessionSource={sessionSource}
+            setSessionSource={setSessionSource}
           />
 
           {saveError && (
@@ -475,6 +508,7 @@ function ConceptPreview({
   newCollectionStyleGuide, setNewCollectionStyleGuide,
   newCollectionSeason, setNewCollectionSeason,
   newCollectionLaunch, setNewCollectionLaunch,
+  showSessionFields, sessionDate, setSessionDate, sessionSource, setSessionSource,
 }) {
   const hasKittlPrompt = !!concept.kittl_prompt;
   const fieldStyle = { width: '100%', padding: '6px 10px', borderRadius: 5, border: '1px solid #333', background: '#111', color: '#e5e5e5', fontSize: 13, boxSizing: 'border-box' };
@@ -516,6 +550,24 @@ function ConceptPreview({
           ? '✓ Kittl prompt detected — will be saved as imported output (v1)'
           : 'No Kittl Prompt section found — concept-only import. You can generate a Kittl prompt after saving.'}
       </div>
+
+      {showSessionFields && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <div>
+              <div style={labelStyle}>Session Date</div>
+              <input type="date" value={sessionDate} onChange={e => setSessionDate(e.target.value)} style={fieldStyle} />
+            </div>
+            <div>
+              <div style={labelStyle}>Session Source</div>
+              <input value={sessionSource} onChange={e => setSessionSource(e.target.value)} placeholder="e.g. ChatGPT, Claude" style={fieldStyle} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+            Optional — when/where this concept came from. Leave both blank to skip.
+          </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: 10 }}>
         <div style={labelStyle}>Collection</div>
