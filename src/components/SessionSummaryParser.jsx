@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions } from '../lib/hooks';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 import { STAGES } from '../data/stages';
-import { parseConceptFields } from './ConceptChatImport';
+import { parseConceptFields, looseTextMatch } from './ConceptChatImport';
 
 function autoColor(score, competition) {
   const s = parseFloat(score) || 0;
@@ -21,7 +21,7 @@ function cleanLine(line) {
     .trim();
 }
 
-function parseSummary(text, products, collectionObjects) {
+function parseSummary(text, products, collectionObjects, sparks, researchSessions) {
   const result = {
     sparks: [],
     stageUpdates: [],
@@ -171,7 +171,43 @@ function parseSummary(text, products, collectionObjects) {
       pushFiled('CONCEPTS', `"${fields.name}" — collection "${fields.collection_name}" not found. Use Design Vault → Import Concept from ChatGPT to add it with the right collection.`);
       continue;
     }
-    result.concepts.push({ id: `concept-${conceptIdx++}`, ...fields });
+
+    // Optional "Source Spark:" — matched against every existing spark here
+    // (for the live preview annotation); also re-matched at save time against
+    // sparks created in this same batch, mirroring how Notes already resolves
+    // against createdSparks. Unmatched doesn't block the concept, just leaves
+    // spark_id unset — same warn-don't-block treatment as an unmatched stage
+    // update.
+    let spark_id = null;
+    let sourceSparkMatched = false;
+    if (fields.source_spark_text) {
+      const matchedSpark = sparks?.find(s => looseTextMatch(s.content, fields.source_spark_text));
+      if (matchedSpark) { spark_id = matchedSpark.id; sourceSparkMatched = true; }
+    }
+
+    // Optional "Related Research:" — matched against research sessions for
+    // this concept's own collection only (unlike sparks, a concept's
+    // collection is always set, so scoping here is unambiguous).
+    let research_session_id = null;
+    let relatedResearchMatched = false;
+    if (fields.related_research_text) {
+      const collectionSessions = (researchSessions || []).filter(
+        rs => rs.collection?.toLowerCase() === fields.collection_name.toLowerCase()
+      );
+      const matchedSession = collectionSessions.find(rs =>
+        looseTextMatch(rs.niche || '', fields.related_research_text) || looseTextMatch(rs.source || '', fields.related_research_text)
+      );
+      if (matchedSession) { research_session_id = matchedSession.id; relatedResearchMatched = true; }
+    }
+
+    result.concepts.push({
+      id: `concept-${conceptIdx++}`,
+      ...fields,
+      spark_id,
+      sourceSparkMatched,
+      research_session_id,
+      relatedResearchMatched,
+    });
   }
 
   // Any other all-caps section header — file its content for manual triage
@@ -210,6 +246,10 @@ function pickNoteTarget({ matchedProduct, sparksInPriorityOrder, notesTexts }) {
 
 export default function SessionSummaryParser({ products, onDone }) {
   const { collections: collectionObjects } = useCollectionObjects();
+  const { sparks: allSparks } = useSparks();
+  // Unscoped — concepts within one paste can span different collections, so
+  // this can't be pre-filtered the way a single-collection page would.
+  const { sessions: allResearchSessions } = useResearchSessions();
   const [text, setText] = useState('');
   const [parsed, setParsed] = useState(null);
   const [checked, setChecked] = useState({});
@@ -218,7 +258,7 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   function handleParse() {
     if (!text.trim()) return;
-    const result = parseSummary(text, products, collectionObjects);
+    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions);
     setParsed(result);
     const nextChecked = {};
     for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'filed']) {
@@ -297,7 +337,15 @@ export default function SessionSummaryParser({ products, onDone }) {
     // same generated code.
     for (const concept of parsed.concepts) {
       if (!checked[concept.id]) continue;
-      const { kittl_prompt, id, ...fields } = concept;
+      const { kittl_prompt, id, source_spark_text, related_research_text, sourceSparkMatched, relatedResearchMatched, ...fields } = concept;
+      // Re-try Source Spark matching against sparks created earlier in this
+      // same save (not just pre-existing ones) — a "Source Spark:" line can
+      // legitimately reference a spark from this same paste's SPARKS section,
+      // which didn't exist yet when parseSummary() ran its first match.
+      if (!fields.spark_id && source_spark_text) {
+        const batchMatch = createdSparks.find(s => looseTextMatch(s.content, source_spark_text));
+        if (batchMatch) fields.spark_id = batchMatch.id;
+      }
       const concept_code = await generateConceptCode(fields.collection_name);
       const { data, error } = await createConcept({ ...fields, concept_code });
       if (error || !data) {
@@ -476,6 +524,8 @@ CONCEPTS
 - Concept Name: ...
   Collection: Mom Chapter
   Design Direction: ...
+  Source Spark: ... (optional)
+  Related Research: ... (optional)
 
 DECISIONS (for Codex)
 - Decision that needs to go into TCC OS
@@ -566,7 +616,25 @@ function PreviewChecklist({ parsed, checked, toggle, products, saving, onSave, o
               key={c.id}
               checked={!!checked[c.id]}
               onToggle={() => toggle(c.id)}
-              annotation={<span style={{ color: '#2d6b3c' }}>→ collection: "{c.collection_name}"</span>}
+              annotation={
+                <>
+                  <span style={{ color: '#2d6b3c' }}>→ collection: "{c.collection_name}"</span>
+                  {c.source_spark_text && (
+                    <div style={{ color: c.sourceSparkMatched ? '#2d6b3c' : '#7a4a1e' }}>
+                      {c.sourceSparkMatched
+                        ? `🔗 Source Spark matched: "${c.source_spark_text}"`
+                        : `⚠ Source Spark "${c.source_spark_text}" not found yet — re-checked against this batch's sparks at save time`}
+                    </div>
+                  )}
+                  {c.related_research_text && (
+                    <div style={{ color: c.relatedResearchMatched ? '#2d6b3c' : '#7a4a1e' }}>
+                      {c.relatedResearchMatched
+                        ? `📊 Related Research matched: "${c.related_research_text}"`
+                        : `⚠ Related Research "${c.related_research_text}" not found for "${c.collection_name}" — will save without a research link`}
+                    </div>
+                  )}
+                </>
+              }
             >
               {c.name}
             </PreviewRow>

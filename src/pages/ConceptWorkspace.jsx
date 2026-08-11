@@ -13,6 +13,8 @@ import {
   nextOutputVersion,
   useSpark,
   useSparks,
+  useResearchSession,
+  useResearchSessions,
 } from '../lib/hooks';
 
 const FUNCTION_URL = '/.netlify/functions/claude-process';
@@ -180,6 +182,12 @@ export default function ConceptWorkspace() {
   // concept is still null.
   const { spark: sourceSpark } = useSpark(concept?.spark_id);
   const { sparks: pickableSparks } = useSparks();
+  const { session: relatedResearch } = useResearchSession(concept?.research_session_id);
+  // Scoped to this concept's own collection (unlike the spark picker, which
+  // stays unscoped since spark.collection_tag is often empty) — a concept's
+  // collection is always set, so scoping here is unambiguous and keeps the
+  // list relevant.
+  const { sessions: pickableResearchSessions } = useResearchSessions(concept?.collection_name);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [fieldSaved, setFieldSaved] = useState('');
@@ -200,6 +208,11 @@ export default function ConceptWorkspace() {
 
   async function handleLinkSpark(sparkId) {
     await updateConcept(id, { spark_id: sparkId || null });
+    refetch();
+  }
+
+  async function handleLinkResearch(sessionId) {
+    await updateConcept(id, { research_session_id: sessionId || null });
     refetch();
   }
 
@@ -327,6 +340,33 @@ export default function ConceptWorkspace() {
               <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>No sparks available to link.</div>
             )}
           </FieldRow>
+          <FieldRow label="Related Research">
+            {relatedResearch ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{
+                  fontSize: '0.78rem', padding: '4px 10px', borderRadius: 20,
+                  background: 'rgba(107,130,168,0.12)', color: '#2d4270',
+                  border: '1px solid rgba(107,130,168,0.3)',
+                }}>
+                  📊 {relatedResearch.collection}{relatedResearch.niche ? ` / ${relatedResearch.niche}` : ''} — {relatedResearch.date}
+                </span>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleLinkResearch(null)}>
+                  Unlink
+                </button>
+              </div>
+            ) : pickableResearchSessions.length > 0 ? (
+              <select value="" onChange={e => { if (e.target.value) handleLinkResearch(e.target.value); }} style={{ fontSize: '0.82rem' }}>
+                <option value="">— None —</option>
+                {pickableResearchSessions.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.collection}{s.niche ? ` / ${s.niche}` : ''} — {s.date}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>No research sessions yet for this collection.</div>
+            )}
+          </FieldRow>
           <FieldRow label="Design Direction" saved={saved('design_direction')}>
             <textarea
               defaultValue={concept.design_direction || ''}
@@ -378,6 +418,21 @@ export default function ConceptWorkspace() {
               style={{ fontSize: '0.82rem' }}
             />
           </FieldRow>
+
+          {concept.raw_import && (
+            <details style={{ marginTop: 20 }}>
+              <summary style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
+                View original paste
+              </summary>
+              <pre style={{
+                marginTop: 8, padding: '10px 12px', fontSize: '0.72rem', lineHeight: 1.6,
+                whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit',
+                background: 'var(--charcoal-faint)', borderRadius: 4, maxHeight: 300, overflowY: 'auto',
+              }}>
+                {concept.raw_import}
+              </pre>
+            </details>
+          )}
 
           <hr className="rule" style={{ marginTop: 24 }} />
           <div style={{ marginTop: 16 }}>

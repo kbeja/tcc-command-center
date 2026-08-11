@@ -1,5 +1,17 @@
 import { useState, useEffect } from 'react';
-import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
+import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection, useSparks, useResearchSessions } from '../lib/hooks';
+
+// Bidirectional case-insensitive substring match — same rule used for
+// Source Spark / Related Research matching everywhere this concept-import
+// logic runs (this modal and SessionSummaryParser.jsx's CONCEPTS section),
+// so a reference and its target match regardless of which one is more
+// specific/truncated.
+export function looseTextMatch(a, b) {
+  if (!a || !b) return false;
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  return x.includes(y) || y.includes(x);
+}
 
 const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
@@ -54,6 +66,13 @@ export function parseConceptFields(raw) {
     emotional_trigger: get('Emotional Trigger'),
     kittl_prompt: kittlPrompt,
     raw_import: raw,
+    // Raw text only — not real concepts columns. Each caller resolves these
+    // against its own sparks/research-sessions lists (mirrors how collection
+    // matching already works: the shared parser extracts the text, the
+    // caller does the matching) and must strip them before calling
+    // createConcept(), same as kittl_prompt already gets stripped.
+    source_spark_text: get('Source Spark'),
+    related_research_text: get('Related Research'),
   };
 }
 
@@ -70,6 +89,8 @@ function parsePasteBlock(raw) {
 export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
   const { collections: collectionObjects } = useCollectionObjects();
   const { chapters } = useChapters();
+  const { sparks: allSparks } = useSparks();
+  const { sessions: allResearchSessions } = useResearchSessions();
   // When opened from a Spark, ask upfront whether to quick-create from the
   // spark's own text or paste a fuller ChatGPT-drafted block — either way
   // spark_id ends up on the saved concept. With no source spark this is
@@ -114,9 +135,32 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
     // Even in the full-paste path, still attach the source spark if this
     // modal was opened from one — she may have started with a quick capture
     // and then fleshed the idea out in ChatGPT before coming back to paste it.
-    const withSpark = sourceSpark ? { ...result, spark_id: sourceSpark.id } : result;
-    setParsed(withSpark);
-    setEditedConcept({ ...withSpark });
+    // Otherwise, an explicit "Source Spark:" line in the paste itself gets
+    // matched against every spark — warn if unmatched, don't block the save
+    // on it, same treatment SessionSummaryParser gives an unmatched match.
+    let withSpark;
+    if (sourceSpark) {
+      withSpark = { ...result, spark_id: sourceSpark.id, sourceSparkMatched: true };
+    } else if (result.source_spark_text) {
+      const matchedSpark = allSparks.find(s => looseTextMatch(s.content, result.source_spark_text));
+      withSpark = { ...result, spark_id: matchedSpark?.id || null, sourceSparkMatched: !!matchedSpark };
+    } else {
+      withSpark = result;
+    }
+
+    let withResearch = withSpark;
+    if (result.related_research_text) {
+      const collectionSessions = allResearchSessions.filter(
+        rs => rs.collection?.toLowerCase() === result.collection_name.toLowerCase()
+      );
+      const matchedSession = collectionSessions.find(rs =>
+        looseTextMatch(rs.niche || '', result.related_research_text) || looseTextMatch(rs.source || '', result.related_research_text)
+      );
+      withResearch = { ...withSpark, research_session_id: matchedSession?.id || null, relatedResearchMatched: !!matchedSession };
+    }
+
+    setParsed(withResearch);
+    setEditedConcept({ ...withResearch });
 
     // Seed the collection picker from whatever text was in the paste — if it
     // matches a real collection, select it; otherwise default to creating a
@@ -207,7 +251,10 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
       const concept = { ...(editedConcept || parsed), collection_name: effectiveCollectionName };
       const concept_code = await generateConceptCode(concept.collection_name);
 
-      const { kittl_prompt, ...conceptFields } = concept;
+      // Strip fields that aren't real concepts columns: kittl_prompt gets
+      // saved separately as a concept_output; the rest are intermediate
+      // text/flags used only to resolve spark_id/research_session_id above.
+      const { kittl_prompt, source_spark_text, related_research_text, sourceSparkMatched, relatedResearchMatched, ...conceptFields } = concept;
 
       const { data: savedConcept, error: conceptError } = await createConcept({
         ...conceptFields,
@@ -308,7 +355,7 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
           <textarea
             value={paste}
             onChange={e => setPaste(e.target.value)}
-            placeholder={'--- TCC CONCEPT ---\nConcept Name: ...\nCollection: ...\nDesign Direction: ...\n...'}
+            placeholder={'--- TCC CONCEPT ---\nConcept Name: ...\nCollection: ...\nDesign Direction: ...\nSource Spark: ... (optional)\nRelated Research: ... (optional)\n...'}
             style={{
               width: '100%',
               minHeight: 200,
@@ -438,6 +485,30 @@ function ConceptPreview({
       {sourceSpark && (
         <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(124,175,138,0.12)', border: '1px solid rgba(124,175,138,0.3)', borderRadius: 6, fontSize: 13, color: '#2d6b3c' }}>
           🔗 Linked to Spark: "{sourceSpark.content.length > 80 ? sourceSpark.content.slice(0, 80) + '…' : sourceSpark.content}"
+        </div>
+      )}
+      {!sourceSpark && concept.source_spark_text && (
+        <div style={{
+          marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 13,
+          ...(concept.sourceSparkMatched
+            ? { background: 'rgba(124,175,138,0.12)', border: '1px solid rgba(124,175,138,0.3)', color: '#2d6b3c' }
+            : { background: '#3f2f1f', border: '1px solid #7a4a1e', color: '#f0b87a' }),
+        }}>
+          {concept.sourceSparkMatched
+            ? `🔗 Source Spark matched: "${concept.source_spark_text}"`
+            : `⚠ Source Spark "${concept.source_spark_text}" not found — will save without a spark link`}
+        </div>
+      )}
+      {concept.related_research_text && (
+        <div style={{
+          marginBottom: 12, padding: '8px 12px', borderRadius: 6, fontSize: 13,
+          ...(concept.relatedResearchMatched
+            ? { background: 'rgba(124,175,138,0.12)', border: '1px solid rgba(124,175,138,0.3)', color: '#2d6b3c' }
+            : { background: '#3f2f1f', border: '1px solid #7a4a1e', color: '#f0b87a' }),
+        }}>
+          {concept.relatedResearchMatched
+            ? `📊 Related Research matched: "${concept.related_research_text}"`
+            : `⚠ Related Research "${concept.related_research_text}" not found for this collection — will save without a research link`}
         </div>
       )}
       <div style={{ marginBottom: 12, padding: '8px 12px', background: '#1e2a1e', border: '1px solid #2d4a2d', borderRadius: 6, fontSize: 13, color: '#86efac' }}>

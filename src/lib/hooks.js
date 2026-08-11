@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
 import { daysBetween, today } from '../data/seasons';
 
@@ -110,20 +110,38 @@ export function getPickUpProducts(products, n = 3) {
 export function useResearchSessions(collection) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const requestIdRef = useRef(0);
 
   const fetch = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     let query = supabase
       .from('research_sessions')
       .select('*, keywords(*)')
       .order('date', { ascending: false });
     if (collection) query = query.eq('collection', collection);
     const { data } = await query;
+    if (requestId !== requestIdRef.current) return; // a newer request superseded this one
     if (data) setSessions(data);
     setLoading(false);
   }, [collection]);
 
   useEffect(() => { fetch(); }, [fetch]);
   return { sessions, loading, refetch: fetch };
+}
+
+export function useResearchSession(id) {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!id) { setSession(null); setLoading(false); return; }
+    const { data } = await supabase.from('research_sessions').select('*, keywords(*)').eq('id', id).single();
+    setSession(data || null);
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { session, loading, refetch: fetch };
 }
 
 export function useLatestSessionDates() {
