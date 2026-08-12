@@ -17,6 +17,10 @@ import {
   useResearchSessions,
   useImportSession,
 } from '../lib/hooks';
+// section is aliased -- formatKeywordContext() below already declares its
+// own locally-scoped `section` helper (a different shape: label+array, not
+// heading+body); the alias avoids two same-named functions in one file.
+import { buildContextHeader, field, section as ctxSection } from '../lib/context';
 
 const FUNCTION_URL = '/.netlify/functions/claude-process';
 
@@ -90,6 +94,80 @@ function formatKeywordContext(keywords) {
     section('Bucket 2', byBucket(2)),
     section('Bucket 3', byBucket(3)),
   ].filter(Boolean).join('\n\n')}`;
+}
+
+// ── Context Bundle — "Copy Context for AI" ──────────────────────────────────
+// Same pattern as ProductWorkspace.jsx's ContextBundle. Deliberately a new
+// function, not a reuse of buildConceptBrief() above — that one primes
+// AI-generation prompts (defaults Seasonal Flag to 'evergreen' when unset,
+// correct for priming a generator) where this one represents what's actually
+// been set (omits it instead). concept.raw_import's full original paste text
+// is deliberately excluded from the bundle body — the parsed fields below
+// already carry the substance; re-including the whole paste would duplicate
+// content. It stays visible on-page under "View original paste", just not
+// exported.
+function ConceptContextBundle({ concept, sourceSpark, relatedResearch, importSession, moodAssets }) {
+  const [copied, setCopied] = useState(null);
+
+  function buildBundle() {
+    const briefBlock = [
+      field('Design Direction', concept.design_direction),
+      field('Target Customer', concept.target_customer),
+      field('Visual Style', concept.visual_style),
+      field('Color Palette', concept.color_palette),
+      field('Typography Notes', concept.typography_notes),
+      field('Mood Keywords', (concept.mood_keywords || []).join(', ')),
+      field('Product Types', (concept.product_types || []).join(', ')),
+      field('Seasonal Flag', concept.seasonal_flag),
+      field('Emotional Trigger', concept.emotional_trigger),
+    ].filter(Boolean).join('\n');
+
+    const importLine = importSession && (importSession.date || importSession.source)
+      ? `Imported: ${[importSession.date, importSession.source].filter(Boolean).join(' · ')}`
+      : '';
+
+    const relatedResearchLine = relatedResearch
+      ? `${relatedResearch.collection}${relatedResearch.niche ? ` / ${relatedResearch.niche}` : ''} — ${relatedResearch.source || 'source not set'} — ${relatedResearch.date || 'date not set'}`
+      : '';
+
+    // Always shows all 4 types, including "not yet generated" ones -- a
+    // status checklist for "what's already done", not a content dump.
+    const outputsBlock = OUTPUT_TABS.map(t => {
+      const current = (concept.concept_outputs || []).find(o => o.output_type === t.outputType && o.is_current);
+      return `${t.label}: ${current ? `v${current.version} (${current.output_source === 'imported' ? 'imported' : 'generated'})` : 'not yet generated'}`;
+    }).join('\n');
+
+    return `${buildContextHeader('Concept', [`Collection: ${concept.collection_name}`, `Concept: ${concept.name}${concept.concept_code ? ` (${concept.concept_code})` : ''}`])}
+Mood board: ${moodAssets.length} image${moodAssets.length !== 1 ? 's' : ''} uploaded
+${importLine}
+
+${ctxSection('DESIGN BRIEF', briefBlock)}
+
+${ctxSection('SOURCE SPARK', sourceSpark?.content)}
+
+${ctxSection('RELATED RESEARCH', relatedResearchLine)}
+
+GENERATED OUTPUTS
+${outputsBlock}
+--- END CONTEXT ---`.replace(/\n{3,}/g, '\n\n');
+  }
+
+  function handleCopy(variant) {
+    navigator.clipboard.writeText(buildBundle());
+    setCopied(variant);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div className="section-label" style={{ marginBottom: 10 }}>Context Bundle</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('claude')}>📋 Copy Context for Claude</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('chatgpt')}>📋 Copy Context for ChatGPT</button>
+        {copied && <span className="inline-confirm">Copied to clipboard ✓</span>}
+      </div>
+    </div>
+  );
 }
 
 // ── Upload asset to design-vault ──────────────────────────────────────────────
@@ -444,6 +522,14 @@ export default function ConceptWorkspace() {
               </details>
             </div>
           )}
+
+          <ConceptContextBundle
+            concept={concept}
+            sourceSpark={sourceSpark}
+            relatedResearch={relatedResearch}
+            importSession={importSession}
+            moodAssets={moodAssets}
+          />
 
           <hr className="rule" style={{ marginTop: 24 }} />
           <div style={{ marginTop: 16 }}>

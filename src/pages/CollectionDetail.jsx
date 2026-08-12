@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts } from '../lib/hooks';
 import ConceptChatImport from '../components/ConceptChatImport';
+import { buildContextHeader, field, section } from '../lib/context';
 
 const EVAL_FIELDS = [
   { key: 'evaluation_market_evidence',         label: 'Market evidence' },
@@ -20,6 +21,91 @@ const PRIORITY_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = ['active', 'planned', 'archived'];
+
+// ── Context Bundle — "Copy Context for AI" ──────────────────────────────────
+// Same pattern as ProductWorkspace.jsx's ContextBundle: assemble a labeled
+// plain-text block, copy it to the clipboard for pasting into an external
+// Claude/ChatGPT conversation. field()/section() omit anything empty rather
+// than printing blank labels or dangling headings.
+function CollectionContextBundle({ collection, concepts, collectionProducts, liveProducts, inProgressProducts, collectionSparks, sessions, collSignals, evalScore }) {
+  const [copied, setCopied] = useState(null);
+
+  function buildBundle() {
+    const identityBlock = [
+      field('What this collection stands for', collection.identity),
+      field('Expansion opportunities', collection.expansion_opportunities),
+    ].filter(Boolean).join('\n');
+
+    const evalLine = evalScore > 0
+      ? `EVALUATION (${evalScore}/5 confirmed): ${EVAL_FIELDS.filter(f => collection[f.key]).map(f => f.label).join(', ')}`
+      : '';
+
+    // Same bucket data the on-screen Keyword Coverage block uses, but Top B1
+    // is genuinely the highest-scored keyword here — the on-screen version
+    // takes whichever is first in array order. On-screen display untouched.
+    let keywordBlock = '';
+    if (sessions && sessions.length > 0) {
+      const allKws = sessions.flatMap(s => s.keywords || []);
+      const b1 = allKws.filter(k => k.bucket === 1).sort((a, b) => (b.score || 0) - (a.score || 0));
+      const b2 = allKws.filter(k => k.bucket === 2);
+      const b3 = allKws.filter(k => k.bucket === 3);
+      const topB1 = b1[0];
+      if (b1.length || b2.length || b3.length) {
+        keywordBlock = `B1: ${b1.length} · B2: ${b2.length} · B3: ${b3.length} (${sessions.length} session${sessions.length !== 1 ? 's' : ''})${topB1 ? `\nTop B1: ${topB1.keyword}${topB1.volume ? ` (vol ${topB1.volume.toLocaleString()})` : ''}` : ''}`;
+      } else {
+        keywordBlock = `${allKws.length} keywords logged across ${sessions.length} session${sessions.length !== 1 ? 's' : ''} — not yet bucketed into B1/B2/B3.`;
+      }
+    }
+
+    const conceptsBlock = concepts.map(c => `${c.name}${c.concept_code ? ` (${c.concept_code})` : ''}`).join('\n');
+    const productsBlock = collectionProducts.map(p => `${p.name} — ${p.stage}`).join('\n');
+
+    const visibleSparks = collectionSparks.slice(0, 6);
+    const sparksBlock = [
+      ...visibleSparks.map(s => s.content.length > 80 ? s.content.slice(0, 80) + '…' : s.content),
+      collectionSparks.length > 6 ? `+${collectionSparks.length - 6} more (see Collection page for full list)` : '',
+    ].filter(Boolean).join('\n');
+
+    return `${buildContextHeader('Collection', [`Collection: ${collection.name}`])}
+Priority: ${PRIORITY_OPTIONS.find(p => p.value === (collection.priority || 'supporting'))?.label || 'Supporting'}
+Status: ${collection.status.charAt(0).toUpperCase() + collection.status.slice(1)}
+${field('Chapter', collection.chapter)}
+
+${section('IDENTITY', identityBlock)}
+
+${evalLine}
+
+${section('KEYWORD COVERAGE', keywordBlock)}
+
+${section(`TREND SIGNALS (${collSignals.length})`, collSignals.map(s => `${s.name} — ${s.status}`).join('\n'))}
+
+${section(`CONCEPTS (${concepts.length})`, conceptsBlock)}
+
+${section(`PRODUCTS (${liveProducts.length} live · ${inProgressProducts.length} in progress)`, productsBlock)}
+
+${section(`SPARKS (${collectionSparks.length})`, sparksBlock)}
+
+${section('NOTES', collection.notes)}
+--- END CONTEXT ---`.replace(/\n{3,}/g, '\n\n');
+  }
+
+  function handleCopy(variant) {
+    navigator.clipboard.writeText(buildBundle());
+    setCopied(variant);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div className="section-label" style={{ marginBottom: 10 }}>Context Bundle</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('claude')}>📋 Copy Context for Claude</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => handleCopy('chatgpt')}>📋 Copy Context for ChatGPT</button>
+        {copied && <span className="inline-confirm">Copied to clipboard ✓</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function CollectionDetail() {
   const { name: encodedName } = useParams();
@@ -58,6 +144,7 @@ export default function CollectionDetail() {
   const collectionProducts = products.filter(p => p.collection === name && !['Killed'].includes(p.stage));
   const liveProducts = collectionProducts.filter(p => p.stage === 'Live' || p.stage === 'Reviewing');
   const inProgressProducts = collectionProducts.filter(p => !['Live', 'Reviewing', 'Killed', 'Paused'].includes(p.stage));
+  const collSignals = signals.filter(s => s.collection === name || s.parent_niche === name);
 
   const evalScore = EVAL_FIELDS.filter(f => collection[f.key]).length;
   const allChecked = evalScore === 5;
@@ -303,6 +390,20 @@ export default function CollectionDetail() {
 
       <hr className="rule" />
 
+      <CollectionContextBundle
+        collection={collection}
+        concepts={concepts}
+        collectionProducts={collectionProducts}
+        liveProducts={liveProducts}
+        inProgressProducts={inProgressProducts}
+        collectionSparks={collectionSparks}
+        sessions={sessions}
+        collSignals={collSignals}
+        evalScore={evalScore}
+      />
+
+      <hr className="rule" />
+
       {/* ── Products ── */}
       <div style={{ marginBottom: 24 }}>
         <div className="section-label" style={{ marginBottom: 10 }}>
@@ -409,31 +510,27 @@ export default function CollectionDetail() {
       <hr className="rule" />
 
       {/* ── Trend Signals ── */}
-      {(() => {
-        const collSignals = signals.filter(s => s.collection === name || s.parent_niche === name);
-        if (!collSignals.length) return null;
-        return (
-          <>
-            <div style={{ marginBottom: 24 }}>
-              <div className="section-label" style={{ marginBottom: 10 }}>Trend Signals ({collSignals.length})</div>
-              {collSignals.map(s => {
-                const statusColors = { pursue: { bg: 'rgba(124,175,138,0.15)', color: '#2d6b3c' }, watch: { bg: 'rgba(107,130,168,0.12)', color: '#2d4270' }, timing: { bg: 'rgba(232,168,124,0.15)', color: '#7a4a1e' }, saturated: { bg: 'rgba(201,123,123,0.15)', color: '#7a2b2b' } };
-                const sc = statusColors[s.status] || statusColors.watch;
-                return (
-                  <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.82rem' }}>
-                    <span>{s.name}</span>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.color }}>{s.status}</span>
-                  </div>
-                );
-              })}
-              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => navigate('/trends')}>
-                View all signals →
-              </button>
-            </div>
-            <hr className="rule" />
-          </>
-        );
-      })()}
+      {collSignals.length > 0 && (
+        <>
+          <div style={{ marginBottom: 24 }}>
+            <div className="section-label" style={{ marginBottom: 10 }}>Trend Signals ({collSignals.length})</div>
+            {collSignals.map(s => {
+              const statusColors = { pursue: { bg: 'rgba(124,175,138,0.15)', color: '#2d6b3c' }, watch: { bg: 'rgba(107,130,168,0.12)', color: '#2d4270' }, timing: { bg: 'rgba(232,168,124,0.15)', color: '#7a4a1e' }, saturated: { bg: 'rgba(201,123,123,0.15)', color: '#7a2b2b' } };
+              const sc = statusColors[s.status] || statusColors.watch;
+              return (
+                <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.82rem' }}>
+                  <span>{s.name}</span>
+                  <span style={{ fontSize: '0.65rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.color }}>{s.status}</span>
+                </div>
+              );
+            })}
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => navigate('/trends')}>
+              View all signals →
+            </button>
+          </div>
+          <hr className="rule" />
+        </>
+      )}
 
       {/* ── Notes ── */}
       <div style={{ marginBottom: 24 }}>

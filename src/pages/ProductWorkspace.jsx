@@ -4,6 +4,7 @@ import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlayb
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
+import { buildContextHeader } from '../lib/context';
 import ConfidenceSelector from '../components/ConfidenceSelector';
 import CollectionKnowledge from '../components/CollectionKnowledge';
 import ResearchSessionCard from '../components/ResearchSessionCard';
@@ -402,10 +403,8 @@ function ContextBundle({ product, sessions, photoPlaybook, seoPlaybook, brandVoi
       ? photoSections.map(s => `${s.section_title}:\n${s.body || '(empty)'}`).join('\n\n')
       : 'Listing Photo Standards not loaded — check Knowledge Base > Playbooks > Listing Photos.';
 
-    return `--- TCC CONTEXT BUNDLE ---
-Product: ${product.name}
-Collection: ${product.collection}${product.niche ? `\nNiche: ${product.niche}` : ''}
-Stage: ${product.stage}
+    return `${buildContextHeader('Product', [`Collection: ${product.collection}`, `Product: ${product.name}`])}
+${product.niche ? `Niche: ${product.niche}\n` : ''}Stage: ${product.stage}
 Confidence: ${product.confidence || 'Not set'}
 Ecosystem: ${product.ecosystem_primary || '—'}
 ${triggerLine}
