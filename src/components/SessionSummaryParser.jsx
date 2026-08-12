@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions, useTrendSignals, createTrendSignal } from '../lib/hooks';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 import { STAGES } from '../data/stages';
@@ -21,7 +21,7 @@ function cleanLine(line) {
     .trim();
 }
 
-function parseSummary(text, products, collectionObjects, sparks, researchSessions) {
+function parseSummary(text, products, collectionObjects, sparks, researchSessions, trendSignals) {
   const result = {
     sparks: [],
     stageUpdates: [],
@@ -29,6 +29,7 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     decisions: [],
     notes: [],
     concepts: [],
+    trendSignals: [],
     filed: [],
     session: null,
   };
@@ -73,7 +74,7 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
   }
 
   const SECTION_HEADERS = new Set([
-    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts'
+    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts', 'trend signals'
   ]);
 
   const bulletLines = (block) =>
@@ -239,12 +240,78 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     });
   }
 
+  // TREND SIGNALS — each item starts with "Signal Name:" or "Name:". Unlike
+  // CONCEPTS, an unmatched Collection doesn't block the signal (trend_signals
+  // .collection is plain free text, not a FK) — same warn-don't-block
+  // treatment as an unmatched Source Spark/Related Research above; the raw
+  // pasted text is stored as-is either way, matched only for the preview
+  // annotation. Evidence/Notes support multi-line values, same technique
+  // parseConceptFields uses for Kittl Prompt: capture everything up to the
+  // next "Label:" line.
+  const trendSignalsBlock = extractBlock('TREND SIGNALS');
+  const trendSignalItems = trendSignalsBlock.split(/\n(?=[\*\-]?\s*(?:Signal Name|Name):)/i).filter(Boolean);
+  let trendSignalIdx = 0;
+  for (const item of trendSignalItems) {
+    const itemLines = item.trim().split('\n').map(l => l.trim().replace(/^[\*\-]\s+/, ''));
+    const get = (label) => {
+      const line = itemLines.find(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
+      return line ? line.slice(label.length + 1).trim() : '';
+    };
+    const getMultiline = (label) => {
+      const idx = itemLines.findIndex(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
+      if (idx === -1) return '';
+      const firstLine = itemLines[idx].slice(label.length + 1).trim();
+      const rest = [];
+      for (let i = idx + 1; i < itemLines.length; i++) {
+        if (itemLines[i].match(/^[A-Z][a-zA-Z ]+:/)) break;
+        if (itemLines[i]) rest.push(itemLines[i]);
+      }
+      return [firstLine, ...rest].filter(Boolean).join(' ').trim();
+    };
+
+    const name = get('Signal Name') || get('Name');
+    if (!name) {
+      pushFiled('TREND SIGNALS', `Missing signal name — "${item.trim().slice(0, 60)}"`);
+      continue;
+    }
+
+    const collection = get('Collection') || null;
+    const collectionMatched = !!(collection && collectionObjects?.some(
+      c => c.name.toLowerCase() === collection.toLowerCase()
+    ));
+
+    const rawStatus = get('Status').toLowerCase();
+    const recognizedStatus = ['pursue', 'watch', 'timing', 'saturated', 'discarded'].find(s => rawStatus.includes(s));
+
+    // Dedup — case-insensitive name match, scoped to the same collection when
+    // one's given, unscoped otherwise. Checked only against signals already
+    // saved in the database at parse time (not other items in this same
+    // paste batch) — warn-don't-block, same as everything else here.
+    const dupMatch = (trendSignals || []).find(s => {
+      if (s.name?.toLowerCase() !== name.toLowerCase()) return false;
+      if (collection) return (s.collection || '').toLowerCase() === collection.toLowerCase();
+      return true;
+    });
+
+    result.trendSignals.push({
+      id: `trend-signal-${trendSignalIdx++}`,
+      name,
+      collection,
+      collectionMatched,
+      parent_niche: get('Niche') || null,
+      status: recognizedStatus || 'watch',
+      evidence: getMultiline('Evidence'),
+      notes: getMultiline('Notes'),
+      dupWarning: !!dupMatch,
+    });
+  }
+
   // Any other all-caps section header — file its content for manual triage
   // rather than silently dropping or swallowing it into a neighboring
   // section. This is how object types with no schema yet (Trends, Visual
   // Language, SEO Opportunities, Timing Intelligence, Learnings, Open
-  // Questions, Trend Signals, and anything else a future summary uses) get
-  // captured without hardcoding a header list that will inevitably go stale.
+  // Questions, and anything else a future summary uses) get captured
+  // without hardcoding a header list that will inevitably go stale.
   const seenHeadings = new Set();
   for (const rawLine of normalized.split('\n')) {
     const line = rawLine.trim();
@@ -279,6 +346,7 @@ export default function SessionSummaryParser({ products, onDone }) {
   // Unscoped — concepts within one paste can span different collections, so
   // this can't be pre-filtered the way a single-collection page would.
   const { sessions: allResearchSessions } = useResearchSessions();
+  const { signals: allTrendSignals } = useTrendSignals();
   const [text, setText] = useState('');
   const [parsed, setParsed] = useState(null);
   const [checked, setChecked] = useState({});
@@ -287,10 +355,10 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   function handleParse() {
     if (!text.trim()) return;
-    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions);
+    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions, allTrendSignals);
     setParsed(result);
     const nextChecked = {};
-    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'filed']) {
+    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'trendSignals', 'filed']) {
       for (const item of result[key]) nextChecked[item.id] = true;
     }
     setChecked(nextChecked);
@@ -304,7 +372,7 @@ export default function SessionSummaryParser({ products, onDone }) {
     setSaving(true);
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
-    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, filed: 0 };
+    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, trendSignals: 0, filed: 0 };
     const errors = [];
     const stageDetails = [];
 
@@ -413,6 +481,22 @@ export default function SessionSummaryParser({ products, onDone }) {
       }
     }
 
+    for (const signal of parsed.trendSignals) {
+      if (!checked[signal.id]) continue;
+      const { id, dupWarning, collectionMatched, ...fields } = signal;
+      const { error } = await createTrendSignal({
+        ...fields,
+        score: 0,
+        score_breakdown: {},
+        first_spotted: today,
+        last_updated: today,
+        source: parsed.session?.source || null,
+        session_id: sessionId,
+      });
+      if (error) errors.push(`Trend signal "${signal.name}": ${error.message}`);
+      else counts.trendSignals++;
+    }
+
     for (const item of parsed.filed) {
       if (!checked[item.id]) continue;
       const { error } = await createWorkshopItem({
@@ -463,7 +547,7 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   if (saveResult) {
     const total = saveResult.sparks + saveResult.stages + saveResult.research + saveResult.decisions
-      + saveResult.concepts + saveResult.filed + (saveResult.notesResult?.count || 0);
+      + saveResult.concepts + saveResult.trendSignals + saveResult.filed + (saveResult.notesResult?.count || 0);
     return (
       <div>
         <div className="section-label" style={{ marginBottom: 12 }}>Saved</div>
@@ -486,6 +570,9 @@ export default function SessionSummaryParser({ products, onDone }) {
           )}
           {saveResult.concepts > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.concepts} Concept{saveResult.concepts !== 1 ? 's' : ''} created</div>
+          )}
+          {saveResult.trendSignals > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.trendSignals} trend signal{saveResult.trendSignals !== 1 ? 's' : ''} added</div>
           )}
           {saveResult.decisions > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.decisions} decision{saveResult.decisions !== 1 ? 's' : ''} flagged for Codex review</div>
@@ -574,6 +661,13 @@ CONCEPTS
   Design Direction: ...
   Source Spark: ... (optional)
   Related Research: ... (optional)
+
+TREND SIGNALS
+- Signal Name: ...
+  Collection: Mom Chapter (optional)
+  Niche: ... (optional)
+  Status: watch (optional — pursue/watch/timing/saturated/discarded)
+  Evidence: ... (optional)
 
 DECISIONS (for Codex)
 - Decision that needs to go into TCC OS
@@ -687,6 +781,36 @@ function PreviewChecklist({ parsed, checked, toggle, products, saving, onSave, o
               }
             >
               {c.name}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.trendSignals.length > 0 && (
+        <PreviewSection title={`Trend Signals (${parsed.trendSignals.length})`}>
+          {parsed.trendSignals.map(s => (
+            <PreviewRow
+              key={s.id}
+              checked={!!checked[s.id]}
+              onToggle={() => toggle(s.id)}
+              annotation={
+                <>
+                  {s.collection && (
+                    <span style={{ color: s.collectionMatched ? '#2d6b3c' : '#7a4a1e' }}>
+                      {s.collectionMatched
+                        ? `→ collection matched: "${s.collection}"`
+                        : `⚠ collection "${s.collection}" not found — will save as typed`}
+                    </span>
+                  )}
+                  {s.dupWarning && (
+                    <div style={{ color: '#7a4a1e' }}>
+                      ⚠ A signal named "{s.name}" already exists{s.collection ? ` in ${s.collection}` : ''} — this will create a duplicate; uncheck if you meant to update the existing one instead.
+                    </div>
+                  )}
+                </>
+              }
+            >
+              {s.name}{s.parent_niche ? ` — ${s.parent_niche}` : ''}
             </PreviewRow>
           ))}
         </PreviewSection>

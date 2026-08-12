@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCompetitorListings, useTrendSignals, useChapters } from '../lib/hooks';
+import { useProducts, useCompetitorListings, useTrendSignals, useChapters, createTrendSignal } from '../lib/hooks';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
@@ -95,17 +95,16 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
   async function handleCreateSignalFromCluster(tag, collection) {
     setCreatingCluster(tag);
     const now = new Date().toISOString();
-    await supabase.from('trend_signals').insert({
+    await createTrendSignal({
       name: tag,
       collection: collection || null,
       status: 'watch',
       score: 0,
       score_breakdown: {},
       evidence: `Auto-detected from competitor white-space cluster: ${tag}`,
+      source: 'Competitor Analysis',
       first_spotted: now.split('T')[0],
       last_updated: now.split('T')[0],
-      created_at: now,
-      updated_at: now,
     });
     setCreatingCluster(null);
     onRefetch?.();
@@ -344,14 +343,14 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                                         onClick={async () => {
                                           setSavingMatch(l.id);
                                           const now = new Date().toISOString();
-                                          const { data: newSignal } = await supabase.from('trend_signals').insert({
+                                          const { data: newSignal } = await createTrendSignal({
                                             name: tag,
                                             status: 'watch', score: 0, score_breakdown: {},
                                             evidence: `Created from competitor listing: ${l.product_name || ''}`,
+                                            source: 'Competitor Analysis',
                                             first_spotted: now.split('T')[0],
                                             last_updated: now.split('T')[0],
-                                            created_at: now, updated_at: now,
-                                          }).select().single();
+                                          });
                                           if (newSignal) {
                                             await supabase.from('competitor_listings').update({
                                               matched_signal_id: newSignal.id,

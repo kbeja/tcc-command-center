@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCollections, autoHotSparksForSignal, useChapters, useTrendSignals } from '../lib/hooks';
+import { useProducts, useCollections, autoHotSparksForSignal, useChapters, useTrendSignals, createTrendSignal, updateTrendSignal } from '../lib/hooks';
+import ConfidenceSelector from '../components/ConfidenceSelector';
 
 const STATUSES = [
   { key: 'pursue',    label: '🟢 Pursue',    color: '#2d6b3c', bg: 'rgba(124,175,138,0.15)' },
@@ -60,6 +61,7 @@ function SignalCard({ signal, products, collections, onAction }) {
   const [form, setForm] = useState({ ...signal });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [pursueToast, setPursueToast] = useState(false);
   const { chapters } = useChapters();
 
@@ -70,6 +72,7 @@ function SignalCard({ signal, products, collections, onAction }) {
 
   async function handleSave() {
     setSaving(true);
+    setSaveError('');
     // Some signals (imported/seeded before this rubric existed) carry a raw
     // score with no breakdown. Recomputing from an empty/untouched breakdown
     // would silently zero out that score on any unrelated edit (e.g. just
@@ -79,7 +82,7 @@ function SignalCard({ signal, products, collections, onAction }) {
     const totalScore = breakdownTouched
       ? SCORE_DIALS.reduce((s, d) => s + (parseInt(form.score_breakdown?.[d.key]) || 0), 0)
       : (signal.score ?? 0);
-    await supabase.from('trend_signals').update({
+    const { error } = await updateTrendSignal(signal.id, {
       name: form.name,
       collection: form.collection,
       parent_niche: form.parent_niche || null,
@@ -88,11 +91,17 @@ function SignalCard({ signal, products, collections, onAction }) {
       score_breakdown: form.score_breakdown,
       evidence: form.evidence,
       notes: form.notes,
+      source: form.source || null,
+      confidence: form.confidence || null,
       competitor_snapshot: form.competitor_snapshot || null,
       revisit_date: form.revisit_date || null,
       last_updated: new Date().toISOString().split('T')[0],
-      updated_at: new Date().toISOString(),
-    }).eq('id', signal.id);
+    });
+    if (error) {
+      setSaveError(error.message);
+      setSaving(false);
+      return;
+    }
     if (form.status === 'pursue' && signal.status !== 'pursue') {
       await autoHotSparksForSignal(form.collection);
     }
@@ -130,6 +139,8 @@ function SignalCard({ signal, products, collections, onAction }) {
               </button>
             ))}
           </div>
+          <input value={form.source || ''} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} placeholder="Source (e.g. Everbee, Pinterest, ChatGPT)" style={{ fontSize: '0.8rem' }} />
+          <ConfidenceSelector value={form.confidence || ''} onChange={v => setForm(f => ({ ...f, confidence: v }))} />
           <ScoreDials
             breakdown={form.score_breakdown || {}}
             onChange={sb => setForm(f => ({ ...f, score_breakdown: sb }))}
@@ -143,9 +154,14 @@ function SignalCard({ signal, products, collections, onAction }) {
             <input type="date" value={form.revisit_date || ''} onChange={e => setForm(f => ({ ...f, revisit_date: e.target.value }))} />
           </div>
         </div>
+        {saveError && (
+          <div style={{ background: 'rgba(201,123,123,0.12)', border: '1px solid var(--alert)', borderRadius: 2, padding: '8px 12px', marginBottom: 12, fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>
+            Save failed: {saveError}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(false); setForm({ ...signal }); }}>Cancel</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(false); setForm({ ...signal }); setSaveError(''); }}>Cancel</button>
         </div>
       </div>
     );
@@ -201,6 +217,11 @@ function SignalCard({ signal, products, collections, onAction }) {
 
       {expanded && (
         <div style={{ marginTop: 8, borderTop: 'var(--border)', paddingTop: 12 }}>
+          {(signal.source || signal.confidence) && (
+            <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
+              {signal.source && `Source: ${signal.source}`}{signal.source && signal.confidence ? ' · ' : ''}{signal.confidence && `Confidence: ${signal.confidence}`}
+            </div>
+          )}
           {signal.evidence && (
             <div style={{ marginBottom: 12 }}>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Evidence</div>
@@ -274,24 +295,28 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
   const { chapters } = useChapters();
   const [form, setForm] = useState({
     name: '', collection: '', parent_niche: '', status: 'watch',
-    score_breakdown: {}, evidence: '', notes: '', competitor_snapshot: '', revisit_date: '',
+    score_breakdown: {}, evidence: '', notes: '', source: '', confidence: '',
+    competitor_snapshot: '', revisit_date: '',
     first_spotted: new Date().toISOString().split('T')[0],
   });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   async function handleSave() {
     if (!form.name.trim()) return;
     setSaving(true);
+    setSaveError('');
     const score = SCORE_DIALS.reduce((s, d) => s + (parseInt(form.score_breakdown?.[d.key]) || 0), 0);
-    const now = new Date().toISOString();
-    await supabase.from('trend_signals').insert({
+    const { error } = await createTrendSignal({
       ...form,
+      source: form.source || null,
+      confidence: form.confidence || null,
+      revisit_date: form.revisit_date || null,
       score,
       last_updated: form.first_spotted,
-      created_at: now,
-      updated_at: now,
     });
     setSaving(false);
+    if (error) { setSaveError(error.message); return; }
     onSaved?.();
   }
 
@@ -318,6 +343,8 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
             </button>
           ))}
         </div>
+        <input value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} placeholder="Source (e.g. Everbee, Pinterest, ChatGPT)" style={{ fontSize: '0.8rem' }} />
+        <ConfidenceSelector value={form.confidence} onChange={v => setForm(f => ({ ...f, confidence: v }))} />
         <ScoreDials
           breakdown={form.score_breakdown}
           onChange={sb => setForm(f => ({ ...f, score_breakdown: sb }))}
@@ -337,6 +364,11 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
           </div>
         </div>
       </div>
+      {saveError && (
+        <div style={{ background: 'rgba(201,123,123,0.12)', border: '1px solid var(--alert)', borderRadius: 2, padding: '8px 12px', marginTop: 12, fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>
+          Save failed: {saveError}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving || !form.name.trim()}>
           {saving ? 'Saving…' : 'Save Signal →'}
@@ -355,43 +387,6 @@ export default function Trends() {
   const [adding, setAdding] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [nicheFilter, setNicheFilter] = useState('');
-  const [importText, setImportText] = useState('');
-  const [showImport, setShowImport] = useState(false);
-  const [importPreview, setImportPreview] = useState([]);
-  const [importDone, setImportDone] = useState('');
-
-  function parseImport(text) {
-    return text.split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 2)
-      .map(line => {
-        const parts = line.split(/[|,\t]/).map(p => p.trim());
-        const name = parts[0];
-        const rawStatus = (parts[1] || '').toLowerCase();
-        const status = ['pursue','watch','timing','saturated','discarded'].find(s => rawStatus.includes(s)) || 'watch';
-        const notes = parts.slice(2).join(' · ') || '';
-        return { name, status, notes };
-      })
-      .filter(s => s.name);
-  }
-
-  async function applyImport() {
-    if (!importPreview.length) return;
-    const now = new Date().toISOString();
-    const today = now.split('T')[0];
-    await supabase.from('trend_signals').insert(
-      importPreview.map(s => ({
-        name: s.name, status: s.status, notes: s.notes,
-        score: 0, score_breakdown: {},
-        first_spotted: today, last_updated: today,
-        created_at: now, updated_at: now,
-      }))
-    );
-    setImportDone(`Imported ${importPreview.length} signal${importPreview.length !== 1 ? 's' : ''}`);
-    setImportPreview([]);
-    setImportText('');
-    setTimeout(() => { setImportDone(''); refetch(); }, 2000);
-  }
 
   const filtered = signals.filter(s =>
     (!statusFilter || s.status === statusFilter) &&
@@ -473,53 +468,6 @@ export default function Trends() {
           </div>
         );
       })}
-
-      {/* Cowork Import */}
-      <div style={{ marginTop: 32, paddingTop: 20, borderTop: 'var(--border)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div className="section-label" style={{ margin: 0 }}>Import from Cowork</div>
-          <button className="btn btn-ghost btn-sm" onClick={() => setShowImport(!showImport)}>
-            {showImport ? 'Hide' : 'Paste import'}
-          </button>
-        </div>
-        {showImport && (
-          <div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 10, lineHeight: 1.6 }}>
-              One signal per line. Optional: separate name, status, and notes with <code>|</code> or <code>,</code>.<br/>
-              Example: <code>Retro camping mugs | watch | growing seller count</code>
-            </div>
-            <textarea
-              value={importText}
-              onChange={e => { setImportText(e.target.value); setImportPreview([]); }}
-              placeholder="Paste signal names here, one per line…"
-              rows={8}
-              style={{ marginBottom: 10, fontSize: '0.78rem' }}
-            />
-            {importDone ? (
-              <span className="inline-confirm">{importDone} ✓</span>
-            ) : importPreview.length > 0 ? (
-              <div>
-                <div className="eyebrow" style={{ marginBottom: 8 }}>Preview ({importPreview.length} signals)</div>
-                {importPreview.map((s, i) => (
-                  <div key={i} style={{ fontSize: '0.75rem', display: 'flex', gap: 8, marginBottom: 4, alignItems: 'center' }}>
-                    <span style={{ flex: 1 }}>{s.name}</span>
-                    <span style={{ fontSize: '0.65rem', padding: '1px 7px', borderRadius: 20, background: 'rgba(43,41,38,0.08)', color: 'var(--charcoal-soft)' }}>{s.status}</span>
-                    {s.notes && <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>{s.notes}</span>}
-                  </div>
-                ))}
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button className="btn btn-primary btn-sm" onClick={applyImport}>Import {importPreview.length} signals →</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setImportPreview([])}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <button className="btn btn-ghost btn-sm" onClick={() => setImportPreview(parseImport(importText))} disabled={!importText.trim()}>
-                Preview →
-              </button>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

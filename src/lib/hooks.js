@@ -536,6 +536,26 @@ export function useTrendSignals() {
   return { signals, loading, refetch: fetch };
 }
 
+export async function createTrendSignal(fields) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('trend_signals')
+    .insert({ ...fields, created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function updateTrendSignal(id, updates) {
+  const { data, error } = await supabase
+    .from('trend_signals')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
 // ─── Competitor Listings ──────────────────────────────────────────────────────
 
 export function useCompetitorListings() {
