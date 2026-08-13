@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts } from '../lib/hooks';
+import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts, useVisualTags, useCollectionTags, createVisualTag, applyTagToCollection, removeTagFromCollection } from '../lib/hooks';
 import ConceptChatImport from '../components/ConceptChatImport';
+import VisualTagPicker from '../components/VisualTagPicker';
 import { buildContextHeader, field, section } from '../lib/context';
 
 const EVAL_FIELDS = [
@@ -121,6 +122,8 @@ export default function CollectionDetail() {
   const collection = collections.find(c => c.name === name);
 
   const { concepts, loading: conceptsLoading, refetch: refetchConcepts } = useConcepts(name);
+  const { tags: allVisualTags } = useVisualTags();
+  const { tags: collectionTags, refetch: refetchCollectionTags } = useCollectionTags(collection?.id);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [showImport, setShowImport] = useState(false);
@@ -173,6 +176,22 @@ export default function CollectionDetail() {
     setFieldSaved(field);
     refetch();
     setTimeout(() => setFieldSaved(''), 1500);
+  }
+
+  async function handleAddCollectionTag(tag) {
+    let tagId = tag.id;
+    if (!tagId) {
+      const { data, error } = await createVisualTag(tag.name);
+      if (error || !data) return;
+      tagId = data.id;
+    }
+    await applyTagToCollection(collection.id, tagId);
+    refetchCollectionTags();
+  }
+
+  async function handleRemoveCollectionTag(tag) {
+    await removeTagFromCollection(collection.id, tag.id);
+    refetchCollectionTags();
   }
 
   async function handleArchive() {
@@ -346,6 +365,30 @@ export default function CollectionDetail() {
             defaultValue={collection.expansion_opportunities || ''}
             onBlur={e => handleFieldBlur('expansion_opportunities', e.target.value)}
             placeholder="e.g. Apparel, mugs, totes, bookmarks, journals, printables"
+          />
+        </div>
+      </div>
+
+      <hr className="rule" />
+
+      {/* ── Visual Style ── */}
+      <div style={{ marginBottom: 24 }}>
+        <div className="section-label" style={{ marginBottom: 12 }}>Visual Style</div>
+        <div className="form-group">
+          <label className="form-label">Visual Tags</label>
+          <VisualTagPicker allTags={allVisualTags} appliedTags={collectionTags} onAdd={handleAddCollectionTag} onRemove={handleRemoveCollectionTag} />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">
+            Style Guide
+            {fieldSaved === 'style_guide' && <span className="inline-confirm" style={{ marginLeft: 6 }}>✓</span>}
+          </label>
+          <textarea
+            defaultValue={collection.style_guide || ''}
+            onBlur={e => handleFieldBlur('style_guide', e.target.value)}
+            rows={6}
+            placeholder="Aesthetic, colors, typography, motifs, vibe…"
+            style={{ fontSize: '0.82rem', fontFamily: 'inherit' }}
           />
         </div>
       </div>

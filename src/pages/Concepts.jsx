@@ -1,19 +1,28 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useConcepts, archiveConcept } from '../lib/hooks';
+import { useConcepts, archiveConcept, useConceptTagsAll } from '../lib/hooks';
 import ConceptChatImport from '../components/ConceptChatImport';
 
 export default function Concepts() {
   const navigate = useNavigate();
   const { concepts, loading, refetch } = useConcepts(); // no collection filter = all
+  const { tagsByConceptId } = useConceptTagsAll();
   const [search, setSearch] = useState('');
   const [filterCollection, setFilterCollection] = useState('');
+  const [filterTag, setFilterTag] = useState('');
   const [showImport, setShowImport] = useState(false);
 
   const collections = [...new Set(concepts.map(c => c.collection_name).filter(Boolean))].sort();
+  // Derived from `concepts` (already status='active'-filtered by useConcepts()),
+  // not a separate all-tags fetch -- otherwise an archived concept's tag
+  // could appear as a filter option that can never match anything visible.
+  const allConceptTags = [...new Map(
+    concepts.flatMap(c => tagsByConceptId[c.id] || []).map(t => [t.id, t])
+  ).values()].sort((a, b) => a.name.localeCompare(b.name));
 
   const visible = concepts.filter(c => {
     if (filterCollection && c.collection_name !== filterCollection) return false;
+    if (filterTag && !(tagsByConceptId[c.id] || []).some(t => t.id === filterTag)) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -59,6 +68,14 @@ export default function Concepts() {
           <option value="">All collections</option>
           {collections.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select
+          value={filterTag}
+          onChange={e => setFilterTag(e.target.value)}
+          style={{ fontSize: '0.78rem', padding: '6px 8px' }}
+        >
+          <option value="">All tags</option>
+          {allConceptTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
       </div>
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
@@ -80,7 +97,7 @@ export default function Concepts() {
       {!loading && visible.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {visible.map(c => (
-            <ConceptCard key={c.id} concept={c} onNavigate={() => navigate(`/concepts/${c.id}`)} onArchive={async () => { await archiveConcept(c.id); refetch(); }} />
+            <ConceptCard key={c.id} concept={c} tags={tagsByConceptId[c.id] || []} onNavigate={() => navigate(`/concepts/${c.id}`)} onArchive={async () => { await archiveConcept(c.id); refetch(); }} />
           ))}
         </div>
       )}
@@ -102,7 +119,7 @@ export default function Concepts() {
   );
 }
 
-function ConceptCard({ concept, onNavigate, onArchive }) {
+function ConceptCard({ concept, tags, onNavigate, onArchive }) {
   const [confirmArchive, setConfirmArchive] = useState(false);
   const kittlOutput = concept.concept_outputs?.find(o => o.output_type === 'kittl_prompt' && o.is_current);
 
@@ -140,6 +157,16 @@ function ConceptCard({ concept, onNavigate, onArchive }) {
             {concept.mood_keywords.slice(0, 4).map(k => (
               <span key={k} style={{ fontSize: '0.62rem', padding: '2px 7px', borderRadius: 20, background: 'rgba(107,130,168,0.12)', color: '#2d4270' }}>
                 {k}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {tags?.length > 0 && (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+            {tags.map(t => (
+              <span key={t.id} style={{ fontSize: '0.62rem', padding: '2px 7px', borderRadius: 20, background: 'rgba(124,175,138,0.15)', color: '#2d6b3c' }}>
+                {t.name}
               </span>
             ))}
           </div>

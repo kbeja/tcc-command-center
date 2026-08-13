@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection, useSparks, useResearchSessions, createImportSession } from '../lib/hooks';
+import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection, useSparks, useResearchSessions, createImportSession, useVisualTags, createVisualTag, applyTagToConcept } from '../lib/hooks';
+import VisualTagPicker from './VisualTagPicker';
 
 // Bidirectional case-insensitive substring match — same rule used for
 // Source Spark / Related Research matching everywhere this concept-import
@@ -91,6 +92,7 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
   const { chapters } = useChapters();
   const { sparks: allSparks } = useSparks();
   const { sessions: allResearchSessions } = useResearchSessions();
+  const { tags: allVisualTags } = useVisualTags();
   // When opened from a Spark, ask upfront whether to quick-create from the
   // spark's own text or paste a fuller ChatGPT-drafted block — either way
   // spark_id ends up on the saved concept. With no source spark this is
@@ -114,6 +116,7 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
   const [newCollectionStyleGuide, setNewCollectionStyleGuide] = useState('');
   const [newCollectionSeason, setNewCollectionSeason] = useState('');
   const [newCollectionLaunch, setNewCollectionLaunch] = useState('');
+  const [selectedTags, setSelectedTags] = useState([]);
 
   // Manual Date/Source — this paste format has no DATE:/SOURCE: header to
   // auto-parse (unlike SessionSummaryParser.jsx's summary format), so this
@@ -188,6 +191,7 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
     setNewCollectionLaunch('');
     setSessionDate('');
     setSessionSource('');
+    setSelectedTags([]);
   }
 
   // Quick-create path: seed a blank concept straight from the spark's own
@@ -293,6 +297,13 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
         setSaveError('Failed to save concept: ' + (conceptError?.message || 'Unknown error'));
         setSaving(false);
         return;
+      }
+
+      if (selectedTags.length) {
+        for (const t of selectedTags) {
+          const tagId = t.id || (await createVisualTag(t.name)).data?.id;
+          if (tagId) await applyTagToConcept(savedConcept.id, tagId);
+        }
       }
 
       if (kittl_prompt) {
@@ -446,6 +457,9 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
             setSessionDate={setSessionDate}
             sessionSource={sessionSource}
             setSessionSource={setSessionSource}
+            allTags={allVisualTags}
+            selectedTags={selectedTags}
+            setSelectedTags={setSelectedTags}
           />
 
           {saveError && (
@@ -509,6 +523,7 @@ function ConceptPreview({
   newCollectionSeason, setNewCollectionSeason,
   newCollectionLaunch, setNewCollectionLaunch,
   showSessionFields, sessionDate, setSessionDate, sessionSource, setSessionSource,
+  allTags, selectedTags, setSelectedTags,
 }) {
   const hasKittlPrompt = !!concept.kittl_prompt;
   const fieldStyle = { width: '100%', padding: '6px 10px', borderRadius: 5, border: '1px solid #333', background: '#111', color: '#e5e5e5', fontSize: 13, boxSizing: 'border-box' };
@@ -672,6 +687,16 @@ function ConceptPreview({
           onChange={e => onChange('product_types', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
           style={{ width: '100%', padding: '6px 10px', borderRadius: 5, border: '1px solid #333', background: '#111', color: '#e5e5e5', fontSize: 13, boxSizing: 'border-box' }}
           placeholder="comma-separated"
+        />
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Visual Tags</div>
+        <VisualTagPicker
+          allTags={allTags}
+          appliedTags={selectedTags}
+          onAdd={tag => setSelectedTags(prev => [...prev, tag])}
+          onRemove={tag => setSelectedTags(prev => prev.filter(t => (t.id || t.name) !== (tag.id || tag.name)))}
+          dark
         />
       </div>
 

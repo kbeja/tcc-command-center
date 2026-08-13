@@ -1018,3 +1018,131 @@ export function useImportSession(id) {
   useEffect(() => { fetch(); }, [fetch]);
   return { session, loading, refetch: fetch };
 }
+
+// ─── Visual Tags (Phase 18 — shared visual-language taxonomy) ──────────────
+// One shared controlled vocabulary (visual_tags), applied to both concepts
+// and collections via two junction tables (concept_tags / collection_tags).
+// Case-insensitive uniqueness is enforced at the DB level via a lower(name)
+// unique index (see migration) as a safety net; primary matching happens
+// here in JS via .toLowerCase()/.ilike(), the same convention every other
+// case-insensitive match in this app already uses (looseTextMatch(), every
+// comparison in SessionSummaryParser.jsx).
+
+export function useVisualTags() {
+  const [tags, setTags] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('visual_tags').select('*').order('name', { ascending: true });
+    if (data) setTags(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('visual-tags-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visual_tags' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  return { tags, loading, refetch: fetch };
+}
+
+// Insert-or-reuse: a unique-violation on the lower(name) index means this
+// name already exists under different casing -- same "unique error means
+// it already exists, use it" recovery ConceptChatImport.jsx's handleSave()
+// already does by hand for createCollection(), centralized here since
+// every tag-creating call site (both pickers, Visual Language paste
+// ingestion) needs the identical recovery.
+export async function createVisualTag(name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return { data: null, error: new Error('Tag name required') };
+  const { data, error } = await supabase.from('visual_tags').insert({ name: trimmed }).select().single();
+  if (error) {
+    if (error.message?.toLowerCase().includes('unique')) {
+      const { data: existing } = await supabase.from('visual_tags').select('*').ilike('name', trimmed).maybeSingle();
+      if (existing) return { data: existing, error: null };
+    }
+    return { data: null, error };
+  }
+  return { data, error: null };
+}
+
+// Tags currently applied to one concept -- used by ConceptWorkspace.jsx's picker.
+export function useConceptTags(conceptId) {
+  const [tags, setTags] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!conceptId) { setTags([]); setLoading(false); return; }
+    const { data } = await supabase.from('concept_tags').select('tag_id, visual_tags(id, name)').eq('concept_id', conceptId);
+    setTags((data || []).map(r => r.visual_tags).filter(Boolean));
+    setLoading(false);
+  }, [conceptId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { tags, loading, refetch: fetch };
+}
+
+// Tags currently applied to one collection -- used by CollectionDetail.jsx's picker.
+export function useCollectionTags(collectionId) {
+  const [tags, setTags] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!collectionId) { setTags([]); setLoading(false); return; }
+    const { data } = await supabase.from('collection_tags').select('tag_id, visual_tags(id, name)').eq('collection_id', collectionId);
+    setTags((data || []).map(r => r.visual_tags).filter(Boolean));
+    setLoading(false);
+  }, [collectionId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { tags, loading, refetch: fetch };
+}
+
+// All concept_tags grouped by concept_id -- used by Concepts.jsx (Design
+// Vault) for tag-pill display and the tag filter dropdown without an N+1
+// query per card. Mirrors useConceptsBySpark()'s grouped-map shape.
+export function useConceptTagsAll() {
+  const [tagsByConceptId, setTagsByConceptId] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('concept_tags').select('concept_id, visual_tags(id, name)');
+    const grouped = {};
+    (data || []).forEach(r => { if (r.visual_tags) (grouped[r.concept_id] ||= []).push(r.visual_tags); });
+    setTagsByConceptId(grouped);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('concept-tags-all-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'concept_tags' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  return { tagsByConceptId, loading, refetch: fetch };
+}
+
+export async function applyTagToConcept(conceptId, tagId) {
+  const { data, error } = await supabase.from('concept_tags').insert({ concept_id: conceptId, tag_id: tagId }).select().single();
+  return { data, error };
+}
+
+export async function removeTagFromConcept(conceptId, tagId) {
+  return supabase.from('concept_tags').delete().eq('concept_id', conceptId).eq('tag_id', tagId);
+}
+
+export async function applyTagToCollection(collectionId, tagId) {
+  const { data, error } = await supabase.from('collection_tags').insert({ collection_id: collectionId, tag_id: tagId }).select().single();
+  return { data, error };
+}
+
+export async function removeTagFromCollection(collectionId, tagId) {
+  return supabase.from('collection_tags').delete().eq('collection_id', collectionId).eq('tag_id', tagId);
+}

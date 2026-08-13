@@ -1229,7 +1229,7 @@ export default function ProductWorkspace() {
         <>
           <div style={{ marginBottom: 24 }}>
             <div className="section-label" style={{ marginBottom: 8 }}>Collection Knowledge</div>
-            <CollectionKnowledge collection={product.collection} stage={product.stage} />
+            <CollectionKnowledge collection={product.collection} stage={product.stage} collectionObj={collectionObj} />
           </div>
           <hr className="rule" />
         </>

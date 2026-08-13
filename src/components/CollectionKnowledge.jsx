@@ -14,11 +14,17 @@ function Collapsible({ title, children, defaultOpen = false }) {
   );
 }
 
-export default function CollectionKnowledge({ collection, stage }) {
+export default function CollectionKnowledge({ collection, stage, collectionObj }) {
   const data = collectionKnowledge[collection];
   if (!data) return null;
 
   const stageTip = data.stageTips?.[stage];
+  // Live DB value wins once set (edited via the Collection page's Style
+  // Guide field, Phase 18) -- falls back to the static hardcoded text only
+  // when the DB value is empty, e.g. before the Phase 18 backfill migration
+  // has actually been run. Keywords/Prompts/StageTips stay purely static --
+  // out of scope for that phase.
+  const styleGuide = collectionObj?.style_guide || data.styleGuide;
 
   return (
     <div>
@@ -43,7 +49,7 @@ export default function CollectionKnowledge({ collection, stage }) {
 
       <Collapsible title="Style Guide">
         <pre style={{ fontSize: '0.78rem', whiteSpace: 'pre-wrap', lineHeight: 1.7, fontFamily: 'var(--font-body)' }}>
-          {data.styleGuide}
+          {styleGuide}
         </pre>
       </Collapsible>
 

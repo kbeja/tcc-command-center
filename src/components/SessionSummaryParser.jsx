@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions, useTrendSignals, createTrendSignal } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection } from '../lib/hooks';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 import { STAGES } from '../data/stages';
@@ -21,7 +21,7 @@ function cleanLine(line) {
     .trim();
 }
 
-function parseSummary(text, products, collectionObjects, sparks, researchSessions, trendSignals) {
+function parseSummary(text, products, collectionObjects, sparks, researchSessions, trendSignals, visualTags) {
   const result = {
     sparks: [],
     stageUpdates: [],
@@ -30,6 +30,7 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     notes: [],
     concepts: [],
     trendSignals: [],
+    visualLanguage: [],
     filed: [],
     session: null,
   };
@@ -74,7 +75,7 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
   }
 
   const SECTION_HEADERS = new Set([
-    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts', 'trend signals'
+    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts', 'trend signals', 'visual language'
   ]);
 
   const bulletLines = (block) =>
@@ -306,12 +307,83 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     });
   }
 
+  // VISUAL LANGUAGE — each item starts with "Collection:" (same item-split
+  // convention RESEARCH already uses, since both have "Collection:" as
+  // their first field, unlike CONCEPTS/TREND SIGNALS' "Name:"-first shape).
+  // Unlike Trend Signals' warn-don't-block collection handling, an
+  // unmatched Collection here hard-blocks to Workshop — collection_tags
+  // .collection_id is a real FK to collections.id, so unlike
+  // trend_signals.collection (plain text) there's no way to "save it
+  // anyway" without a resolvable collection, the same reasoning CONCEPTS
+  // already uses for its own collection_name.
+  const visualLanguageBlock = extractBlock('VISUAL LANGUAGE');
+  const visualLanguageItems = visualLanguageBlock.split(/\n(?=[\*\-]?\s*Collection:)/i).filter(Boolean);
+  let visualLanguageIdx = 0;
+  for (const item of visualLanguageItems) {
+    const itemLines = item.trim().split('\n').map(l => l.trim().replace(/^[\*\-]\s+/, ''));
+    const get = (label) => {
+      const line = itemLines.find(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
+      return line ? line.slice(label.length + 1).trim() : '';
+    };
+    const getMultiline = (label) => {
+      const idx = itemLines.findIndex(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
+      if (idx === -1) return '';
+      const firstLine = itemLines[idx].slice(label.length + 1).trim();
+      const rest = [];
+      for (let i = idx + 1; i < itemLines.length; i++) {
+        if (itemLines[i].match(/^[A-Z][a-zA-Z ]+:/)) break;
+        if (itemLines[i]) rest.push(itemLines[i]);
+      }
+      return [firstLine, ...rest].filter(Boolean).join(' ').trim();
+    };
+
+    const collectionText = get('Collection');
+    const rawTagNames = (get('Tags') || '').split(',').map(t => t.trim()).filter(Boolean);
+    // Dedup case-insensitively within one item (preserving first-seen
+    // casing) so "Tags: cottagecore, Cottagecore" doesn't double-process
+    // the same tag.
+    const tagNames = [...new Map(rawTagNames.map(t => [t.toLowerCase(), t])).values()];
+
+    if (!collectionText || tagNames.length === 0) {
+      pushFiled('VISUAL LANGUAGE', `Missing Collection or Tags — "${item.trim().slice(0, 60)}"`);
+      continue;
+    }
+
+    const collectionMatch = collectionObjects?.find(c => c.name.toLowerCase() === collectionText.toLowerCase());
+    if (!collectionMatch) {
+      pushFiled('VISUAL LANGUAGE', `"${tagNames.join(', ')}" — collection "${collectionText}" not found. Fix the collection name and re-paste, or add tags directly from the Collection page.`);
+      continue;
+    }
+
+    // Split into "matches existing vocabulary" vs. "will be created" for
+    // the preview only — informational, not a warning (unlike Trend
+    // Signals' amber dedup warning, there's no risk here: minting a
+    // genuinely new tag is the intended behavior, not a problem).
+    const existingMatched = [];
+    const willCreate = [];
+    for (const t of tagNames) {
+      const match = visualTags?.find(vt => vt.name.toLowerCase() === t.toLowerCase());
+      if (match) existingMatched.push(match.name);
+      else willCreate.push(t);
+    }
+
+    result.visualLanguage.push({
+      id: `visual-language-${visualLanguageIdx++}`,
+      collection: collectionMatch.name,
+      collectionId: collectionMatch.id,
+      tagNames,
+      existingMatched,
+      willCreate,
+      notes: getMultiline('Notes'),
+    });
+  }
+
   // Any other all-caps section header — file its content for manual triage
   // rather than silently dropping or swallowing it into a neighboring
-  // section. This is how object types with no schema yet (Trends, Visual
-  // Language, SEO Opportunities, Timing Intelligence, Learnings, Open
-  // Questions, and anything else a future summary uses) get captured
-  // without hardcoding a header list that will inevitably go stale.
+  // section. This is how object types with no schema yet (Trends, SEO
+  // Opportunities, Timing Intelligence, Learnings, Open Questions, and
+  // anything else a future summary uses) get captured without hardcoding
+  // a header list that will inevitably go stale.
   const seenHeadings = new Set();
   for (const rawLine of normalized.split('\n')) {
     const line = rawLine.trim();
@@ -347,6 +419,7 @@ export default function SessionSummaryParser({ products, onDone }) {
   // this can't be pre-filtered the way a single-collection page would.
   const { sessions: allResearchSessions } = useResearchSessions();
   const { signals: allTrendSignals } = useTrendSignals();
+  const { tags: allVisualTags } = useVisualTags();
   const [text, setText] = useState('');
   const [parsed, setParsed] = useState(null);
   const [checked, setChecked] = useState({});
@@ -355,10 +428,10 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   function handleParse() {
     if (!text.trim()) return;
-    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions, allTrendSignals);
+    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions, allTrendSignals, allVisualTags);
     setParsed(result);
     const nextChecked = {};
-    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'trendSignals', 'filed']) {
+    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'trendSignals', 'visualLanguage', 'filed']) {
       for (const item of result[key]) nextChecked[item.id] = true;
     }
     setChecked(nextChecked);
@@ -372,7 +445,7 @@ export default function SessionSummaryParser({ products, onDone }) {
     setSaving(true);
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
-    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, trendSignals: 0, filed: 0 };
+    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, trendSignals: 0, visualLanguage: 0, filed: 0 };
     const errors = [];
     const stageDetails = [];
 
@@ -497,6 +570,33 @@ export default function SessionSummaryParser({ products, onDone }) {
       else counts.trendSignals++;
     }
 
+    for (const vl of parsed.visualLanguage) {
+      if (!checked[vl.id]) continue;
+      let itemError = null;
+      for (const tagName of vl.tagNames) {
+        const { data: tag, error: tagError } = await createVisualTag(tagName);
+        if (tagError || !tag) { itemError = tagError; continue; }
+        const { error: applyError } = await applyTagToCollection(vl.collectionId, tag.id);
+        // A duplicate-key error here just means this tag's already applied
+        // to this collection — treat as a no-op success, not an error.
+        if (applyError && !applyError.message?.toLowerCase().includes('duplicate')) {
+          itemError = applyError;
+        }
+      }
+      if (itemError) errors.push(`Visual language "${vl.collection}": ${itemError.message}`);
+      else counts.visualLanguage++;
+
+      if (vl.notes) {
+        const { error } = await createWorkshopItem({
+          type: 'note',
+          content: `[Visual Language — ${vl.collection}] ${vl.notes}`,
+          source: 'Session Import',
+          session_id: sessionId,
+        });
+        if (!error) counts.filed++;
+      }
+    }
+
     for (const item of parsed.filed) {
       if (!checked[item.id]) continue;
       const { error } = await createWorkshopItem({
@@ -547,7 +647,7 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   if (saveResult) {
     const total = saveResult.sparks + saveResult.stages + saveResult.research + saveResult.decisions
-      + saveResult.concepts + saveResult.trendSignals + saveResult.filed + (saveResult.notesResult?.count || 0);
+      + saveResult.concepts + saveResult.trendSignals + saveResult.visualLanguage + saveResult.filed + (saveResult.notesResult?.count || 0);
     return (
       <div>
         <div className="section-label" style={{ marginBottom: 12 }}>Saved</div>
@@ -573,6 +673,9 @@ export default function SessionSummaryParser({ products, onDone }) {
           )}
           {saveResult.trendSignals > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.trendSignals} trend signal{saveResult.trendSignals !== 1 ? 's' : ''} added</div>
+          )}
+          {saveResult.visualLanguage > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.visualLanguage} visual language update{saveResult.visualLanguage !== 1 ? 's' : ''} applied</div>
           )}
           {saveResult.decisions > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.decisions} decision{saveResult.decisions !== 1 ? 's' : ''} flagged for Codex review</div>
@@ -668,6 +771,11 @@ TREND SIGNALS
   Niche: ... (optional)
   Status: watch (optional — pursue/watch/timing/saturated/discarded)
   Evidence: ... (optional)
+
+VISUAL LANGUAGE
+- Collection: Mom Chapter
+  Tags: cottagecore, retro, dopamine dressing
+  Notes: ... (optional)
 
 DECISIONS (for Codex)
 - Decision that needs to go into TCC OS
@@ -811,6 +919,32 @@ function PreviewChecklist({ parsed, checked, toggle, products, saving, onSave, o
               }
             >
               {s.name}{s.parent_niche ? ` — ${s.parent_niche}` : ''}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.visualLanguage.length > 0 && (
+        <PreviewSection title={`Visual Language (${parsed.visualLanguage.length})`}>
+          {parsed.visualLanguage.map(vl => (
+            <PreviewRow
+              key={vl.id}
+              checked={!!checked[vl.id]}
+              onToggle={() => toggle(vl.id)}
+              annotation={
+                <>
+                  <span style={{ color: '#2d6b3c' }}>→ collection: "{vl.collection}"</span>
+                  {vl.existingMatched.length > 0 && (
+                    <div style={{ color: '#2d6b3c' }}>✓ {vl.existingMatched.length} existing tag{vl.existingMatched.length !== 1 ? 's' : ''} matched: {vl.existingMatched.join(', ')}</div>
+                  )}
+                  {vl.willCreate.length > 0 && (
+                    <div style={{ color: '#2d4270' }}>+ will create {vl.willCreate.length} new tag{vl.willCreate.length !== 1 ? 's' : ''}: {vl.willCreate.join(', ')}</div>
+                  )}
+                  {vl.notes && <div style={{ color: 'var(--charcoal-soft)' }}>📝 Notes will file to Workshop, referencing {vl.collection}</div>}
+                </>
+              }
+            >
+              {vl.tagNames.join(', ')}
             </PreviewRow>
           ))}
         </PreviewSection>

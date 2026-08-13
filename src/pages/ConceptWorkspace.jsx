@@ -16,11 +16,17 @@ import {
   useResearchSession,
   useResearchSessions,
   useImportSession,
+  useVisualTags,
+  useConceptTags,
+  createVisualTag,
+  applyTagToConcept,
+  removeTagFromConcept,
 } from '../lib/hooks';
 // section is aliased -- formatKeywordContext() below already declares its
 // own locally-scoped `section` helper (a different shape: label+array, not
 // heading+body); the alias avoids two same-named functions in one file.
 import { buildContextHeader, field, section as ctxSection } from '../lib/context';
+import VisualTagPicker from '../components/VisualTagPicker';
 
 const FUNCTION_URL = '/.netlify/functions/claude-process';
 
@@ -270,6 +276,8 @@ export default function ConceptWorkspace() {
   // Same unconditional-call rationale as useSpark/useResearchSession above —
   // useImportSession(undefined) no-ops safely while concept is still null.
   const { session: importSession } = useImportSession(concept?.session_id);
+  const { tags: allVisualTags } = useVisualTags();
+  const { tags: conceptTags, refetch: refetchConceptTags } = useConceptTags(id);
 
   const [activeTab, setActiveTab] = useState('overview');
   const [fieldSaved, setFieldSaved] = useState('');
@@ -304,6 +312,22 @@ export default function ConceptWorkspace() {
     setFieldSaved(field);
     refetch();
     setTimeout(() => setFieldSaved(''), 1500);
+  }
+
+  async function handleAddConceptTag(tag) {
+    let tagId = tag.id;
+    if (!tagId) {
+      const { data, error } = await createVisualTag(tag.name);
+      if (error || !data) return;
+      tagId = data.id;
+    }
+    await applyTagToConcept(id, tagId);
+    refetchConceptTags();
+  }
+
+  async function handleRemoveConceptTag(tag) {
+    await removeTagFromConcept(id, tag.id);
+    refetchConceptTags();
   }
 
   async function handleUpload(e) {
@@ -499,6 +523,9 @@ export default function ConceptWorkspace() {
               placeholder="comma-separated: Tee, Mug, Tote…"
               style={{ fontSize: '0.82rem' }}
             />
+          </FieldRow>
+          <FieldRow label="Visual Tags">
+            <VisualTagPicker allTags={allVisualTags} appliedTags={conceptTags} onAdd={handleAddConceptTag} onRemove={handleRemoveConceptTag} />
           </FieldRow>
 
           {concept.raw_import && (
