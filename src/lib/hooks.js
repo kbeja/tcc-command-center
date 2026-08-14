@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
 import { daysBetween, today } from '../data/seasons';
 import { interpretKeyword } from './keywordIntelligence';
+import { analyzeVisual } from './claude';
 
 // ─── Products ───────────────────────────────────────────────────────────────
 
@@ -717,6 +718,196 @@ export function useCompetitorListings() {
 
   useEffect(() => { fetch(); }, [fetch]);
   return { listings, loading, refetch: fetch };
+}
+
+// ─── Marketplace Visual Intelligence (Phase 20) ────────────────────────────
+// visual_profiles is append-only (one row per analysis run, never
+// overwritten — see migration comment) so a listing's CURRENT profile is
+// "whichever row has the latest analyzed_at", not a single mutable record.
+
+const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+// Every visual_profiles row (with its tags embedded via the real FK to
+// competitor_listing_tags), collapsed down to just the latest per
+// listing_id in JS. Deliberately queries the base table rather than the
+// current_visual_profiles view — PostgREST's relationship-embedding isn't
+// guaranteed to trace a real FK through a DISTINCT ON view the way it does
+// a plain table, and this sidesteps that uncertainty entirely. Same
+// sort-then-take-first-per-key shape as groupHistoryBySource() in
+// keywordIntelligence.js. Never paginated like useCompetitorListings() —
+// this table only grows as listings are actually analyzed (human-gated),
+// realistically dozens to low hundreds of rows, not thousands.
+export function useVisualProfilesByListing() {
+  const [profilesByListingId, setProfilesByListingId] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('visual_profiles')
+      .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))')
+      .order('analyzed_at', { ascending: false });
+    const grouped = {};
+    for (const row of data || []) {
+      if (!grouped[row.listing_id]) grouped[row.listing_id] = row;
+    }
+    setProfilesByListingId(grouped);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { profilesByListingId, loading, refetch: fetch };
+}
+
+// Runs the full per-listing pipeline: fetch the captured image server-side
+// (reusing fetch-image.js exactly as ConceptWorkspace.jsx's
+// uploadAssetFromUrl() does — same CORS-bypass reasoning), send it to
+// analyze-visual.js for structured vision analysis, then persist. Every
+// early-exit path (no image_url, fetch failure, analysis failure, model
+// flags the image itself as unusable) still writes a visual_profiles row —
+// status 'image_unavailable' or 'failed' with failure_reason set — rather
+// than silently doing nothing, so "unanalyzed" (see CompetitorsTab) can
+// mean "no row at all, or the last attempt didn't succeed" and a listing
+// never just vanishes from view when something goes wrong.
+//
+// The storage snapshot is only uploaded AFTER analysis succeeds, not
+// before — so a failed run never leaves an orphaned storage object with
+// nothing pointing at it (concept_assets/mobile-capture.js both had to
+// learn this the hard way; doing it in this order avoids the problem
+// rather than adding rollback-after-the-fact).
+export async function analyzeListing(listing) {
+  const base = { listing_id: listing.id, source_image_url: listing.image_url || null };
+
+  if (!listing.image_url) {
+    const { data, error } = await supabase.from('visual_profiles')
+      .insert({ ...base, status: 'image_unavailable', failure_reason: 'No image captured for this listing' })
+      .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))').single();
+    return { data, error, tagsApplied: 0 };
+  }
+
+  // Wrapped in try/catch, not just an .ok check — a fully unreachable
+  // function endpoint (offline, DNS failure, etc.) makes fetch() itself
+  // reject rather than resolve with a bad status, and an uncaught rejection
+  // here would silently abort runBatch()'s whole loop on one bad listing
+  // instead of recording this one as failed and moving on.
+  let fetchRes, fetchData;
+  try {
+    fetchRes = await fetch('/.netlify/functions/fetch-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: listing.image_url }),
+    });
+    fetchData = await fetchRes.json();
+  } catch (err) {
+    const { data, error } = await supabase.from('visual_profiles')
+      .insert({ ...base, status: 'image_unavailable', failure_reason: `Image fetch failed: ${err.message}` })
+      .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))').single();
+    return { data, error, tagsApplied: 0 };
+  }
+  if (!fetchRes.ok) {
+    const { data, error } = await supabase.from('visual_profiles')
+      .insert({ ...base, status: 'image_unavailable', failure_reason: fetchData?.error || `Image fetch failed (${fetchRes.status})` })
+      .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))').single();
+    return { data, error, tagsApplied: 0 };
+  }
+
+  let analysis;
+  try {
+    analysis = await analyzeVisual(fetchData.base64, fetchData.mediaType);
+  } catch (err) {
+    analysis = { ok: false, error: `Analysis request failed: ${err.message}` };
+  }
+  if (!analysis.ok) {
+    const { data, error } = await supabase.from('visual_profiles')
+      .insert({ ...base, status: 'failed', failure_reason: analysis.error })
+      .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))').single();
+    return { data, error, tagsApplied: 0 };
+  }
+
+  const { profile, model, taxonomyVersion, usage } = analysis.data;
+  const provenance = {
+    model,
+    taxonomy_version: taxonomyVersion,
+    analysis_notes: profile.analysis_notes || null,
+    input_tokens: usage?.input_tokens ?? null,
+    output_tokens: usage?.output_tokens ?? null,
+  };
+
+  if (profile.image_quality_sufficient === false) {
+    const { data, error } = await supabase.from('visual_profiles')
+      .insert({ ...base, ...provenance, status: 'failed', failure_reason: 'Image quality insufficient for analysis' })
+      .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))').single();
+    return { data, error, tagsApplied: 0 };
+  }
+
+  // Taxonomy arrays are stripped out of design before it's stored — they
+  // live ONLY in competitor_listing_tags (step below), never duplicated
+  // into design_profile jsonb. See migration header comment for why.
+  const { typography, composition, treatment, aesthetic, motifs, ...designProfile } = profile.design || {};
+
+  const byteChars = atob(fetchData.base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  const snapshotPath = `${listing.id}/${Date.now()}.${EXT_BY_MIME[fetchData.mediaType] || 'jpg'}`;
+  const { error: uploadError } = await supabase.storage
+    .from('competitor-visual-snapshots')
+    .upload(snapshotPath, new Blob([bytes], { type: fetchData.mediaType }), { cacheControl: '3600', upsert: false });
+  // Non-fatal — the analysis is still real and worth keeping even if the
+  // snapshot upload itself has a problem; just record it without a path.
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from('visual_profiles')
+    .insert({
+      ...base,
+      ...provenance,
+      status: 'complete',
+      snapshot_storage_path: uploadError ? null : snapshotPath,
+      design_profile: designProfile,
+      mockup_profile: profile.mockup || null,
+      design_confidence: profile.design?.overall_confidence || null,
+      mockup_confidence: profile.mockup?.overall_confidence || null,
+    })
+    .select()
+    .single();
+  if (profileError || !profileRow) return { data: null, error: profileError, tagsApplied: 0 };
+
+  const tagGroups = [
+    ['typography', typography], ['composition', composition], ['treatment', treatment],
+    ['aesthetic', aesthetic], ['motif', motifs],
+  ];
+  let tagsApplied = 0;
+  for (const [category, entries] of tagGroups) {
+    for (const entry of entries || []) {
+      if (!entry?.name) continue;
+      const { data: tag } = await createVisualTag(entry.name);
+      if (!tag) continue;
+      const { error: tagError } = await supabase.from('competitor_listing_tags')
+        .insert({ visual_profile_id: profileRow.id, tag_id: tag.id, category, confidence: entry.confidence || null });
+      if (!tagError) tagsApplied++;
+    }
+  }
+
+  const { data: fullRow } = await supabase.from('visual_profiles')
+    .select('*, competitor_listing_tags(tag_id, category, confidence, visual_tags(id, name))')
+    .eq('id', profileRow.id).single();
+  return { data: fullRow || profileRow, error: null, tagsApplied };
+}
+
+// Manual correction after AI analysis — same shape as applyTagToConcept/
+// removeTagFromConcept below, just keyed to a visual_profile_id + category
+// instead of a concept_id. confidence is left null for a human-applied tag
+// (no AI confidence to record) rather than defaulting to 'High' — an
+// invented confidence value would be exactly the kind of fabricated
+// certainty this project's evidence model rules out.
+export async function applyTagToListingProfile(visualProfileId, tagId, category) {
+  const { data, error } = await supabase.from('competitor_listing_tags')
+    .insert({ visual_profile_id: visualProfileId, tag_id: tagId, category })
+    .select('tag_id, category, confidence, visual_tags(id, name)').single();
+  return { data, error };
+}
+
+export async function removeTagFromListingProfile(visualProfileId, tagId, category) {
+  return supabase.from('competitor_listing_tags').delete()
+    .eq('visual_profile_id', visualProfileId).eq('tag_id', tagId).eq('category', category);
 }
 
 // ─── Knowledge Base ──────────────────────────────────────────────────────────

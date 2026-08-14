@@ -179,6 +179,7 @@ export default function Popup() {
         shop_link: etsyCapture.shopLink,
         price: etsyCapture.lowPrice,
         category: etsyCapture.category,
+        image_url: etsyCapture.imageUrl,
         avg_reviews: etsyCapture.ratingValue,
         total_reviews: etsyCapture.reviewCount,
         ...everbee,

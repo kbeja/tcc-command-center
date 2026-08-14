@@ -7,3 +7,18 @@ export async function processWithClaude(type, payload) {
   if (!res.ok) throw new Error(`Claude function error: ${res.status}`);
   return res.json();
 }
+
+// Separate function/file from claude-process.js (analyze-visual.js) — see
+// its own header comment for why. Returns { ok, data } instead of throwing
+// so callers (analyzeListing() in hooks.js) can record a graceful 'failed'
+// visual_profiles row instead of an uncaught exception.
+export async function analyzeVisual(imageBase64, mediaType) {
+  const res = await fetch('/.netlify/functions/analyze-visual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64, mediaType }),
+  });
+  const data = await res.json();
+  if (!res.ok) return { ok: false, error: data?.error || `Analysis failed (${res.status})` };
+  return { ok: true, data };
+}

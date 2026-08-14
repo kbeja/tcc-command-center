@@ -51,6 +51,25 @@ function extractEverbeeStats() {
   return stats;
 }
 
+// schema.org Product.image can be a bare URL string, an array of URL
+// strings, or an ImageObject (or array of those) — take the first entry
+// either way. Returns null rather than guessing when nothing usable is
+// there; a missing image is a normal, expected case downstream (Phase 20
+// analysis just stays unavailable for that listing), not an error.
+//
+// contentURL (capital URL) is what Etsy's own ImageObject markup actually
+// uses, confirmed live against a real listing — schema.org's own spec
+// defines the lowercase-r contentUrl, so checking both rather than trusting
+// the spec's casing is deliberate, not redundant: a version that only
+// checked `url`/`contentUrl` silently extracted null from every real Etsy
+// page tested against.
+function extractImageUrl(image) {
+  const first = Array.isArray(image) ? image[0] : image;
+  if (!first) return null;
+  if (typeof first === 'string') return first;
+  return first.url || first.contentUrl || first.contentURL || null;
+}
+
 function extractEtsyListing() {
   if (!/\/listing\/\d+/.test(location.pathname)) return { isEtsyListing: false };
 
@@ -79,6 +98,7 @@ function extractEtsyListing() {
     shopName: decodeHtmlEntities(product?.brand?.name) || null,
     shopLink,
     category: decodeHtmlEntities(product?.category) || null,
+    imageUrl: extractImageUrl(product?.image),
     ratingValue: product?.aggregateRating?.ratingValue != null ? Number(product.aggregateRating.ratingValue) : null,
     reviewCount: product?.aggregateRating?.reviewCount != null ? Number(product.aggregateRating.reviewCount) : null,
     everbeeStats: extractEverbeeStats(),

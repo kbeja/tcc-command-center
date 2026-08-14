@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCompetitorListings, useTrendSignals, useChapters, createTrendSignal } from '../lib/hooks';
+import {
+  useProducts, useCompetitorListings, useTrendSignals, useChapters, createTrendSignal,
+  useVisualProfilesByListing, useVisualTags, createVisualTag, analyzeListing, applyTagToListingProfile, removeTagFromListingProfile,
+} from '../lib/hooks';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
@@ -8,6 +11,7 @@ import PinterestCSVImport from '../components/PinterestCSVImport';
 import EverbeeCSVImport from '../components/EverbeeCSVImport';
 import WeeklyReview from '../components/WeeklyReview';
 import EtsyStatsEntry from '../components/EtsyStatsEntry';
+import VisualDNACard from '../components/VisualDNACard';
 
 const PRINTIFY_COST_DEFAULT = 14;
 const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
@@ -80,6 +84,64 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
   const [expandedId, setExpandedId] = useState(null);
   const [savingMatch, setSavingMatch] = useState(null);
   const [creatingCluster, setCreatingCluster] = useState(null);
+
+  // ── Marketplace Visual Intelligence (Phase 20) ──
+  const { profilesByListingId, refetch: refetchProfiles } = useVisualProfilesByListing();
+  const { tags: allVisualTags } = useVisualTags();
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [analyzingId, setAnalyzingId] = useState(null);
+  const [batch, setBatch] = useState(null); // { total, done, tokens } while a batch is running
+  const [confirmBatch, setConfirmBatch] = useState(null); // 'selected' | 'unanalyzed' — pending confirmation
+
+  function toggleSelected(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function runAnalysis(listing) {
+    setAnalyzingId(listing.id);
+    const result = await analyzeListing(listing);
+    setAnalyzingId(null);
+    refetchProfiles();
+    return result;
+  }
+
+  // Sequential, not parallel — mirrors EverbeeCSVImport's own chunked-import
+  // pattern (client-side loop, visible progress) rather than firing many
+  // vision calls at once, which would make the progress count and any
+  // partial-failure story much harder to follow for very little speed gain
+  // on what's realistically a few dozen listings at a time.
+  async function runBatch(listingsToAnalyze) {
+    setConfirmBatch(null);
+    setBatch({ total: listingsToAnalyze.length, done: 0, tokens: 0 });
+    for (const listing of listingsToAnalyze) {
+      const result = await analyzeListing(listing);
+      const used = (result.data?.input_tokens || 0) + (result.data?.output_tokens || 0);
+      setBatch(prev => prev && ({ ...prev, done: prev.done + 1, tokens: prev.tokens + used }));
+    }
+    refetchProfiles();
+    setSelectedIds(new Set());
+    setBatch(null);
+  }
+
+  async function handleAddTag(profile, category, tag) {
+    let tagId = tag.id;
+    if (!tagId) {
+      const { data: created } = await createVisualTag(tag.name);
+      if (!created) return;
+      tagId = created.id;
+    }
+    await applyTagToListingProfile(profile.id, tagId, category);
+    refetchProfiles();
+  }
+
+  async function handleRemoveTag(profile, category, tag) {
+    await removeTagFromListingProfile(profile.id, tag.id, category);
+    refetchProfiles();
+  }
 
   async function handleManualMatch(listingId, signalId) {
     setSavingMatch(listingId);
@@ -228,11 +290,66 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
         )}
       </div>
 
+      {/* Visual analysis actions — always human-triggered, never automatic on
+          capture or import. Counts are computed against `filtered` (the
+          currently-visible set, respecting the filters above) rather than
+          every tracked listing, so "unanalyzed" can't silently balloon into
+          a many-thousand-row batch just because no filter happens to be set. */}
+      {(() => {
+        const unanalyzed = filtered.filter(l => {
+          const p = profilesByListingId[l.id];
+          return !p || p.status !== 'complete';
+        });
+        return (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: '0.75rem' }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={selectedIds.size === 0 || !!batch}
+              onClick={() => setConfirmBatch('selected')}
+            >
+              Analyze selected ({selectedIds.size})
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={unanalyzed.length === 0 || !!batch}
+              onClick={() => setConfirmBatch('unanalyzed')}
+            >
+              Analyze unanalyzed in view ({unanalyzed.length})
+            </button>
+            {confirmBatch && (
+              <span style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--charcoal-soft)' }}>
+                Run {confirmBatch === 'selected' ? selectedIds.size : unanalyzed.length} vision analysis call{(confirmBatch === 'selected' ? selectedIds.size : unanalyzed.length) === 1 ? '' : 's'}?
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => runBatch(confirmBatch === 'selected' ? filtered.filter(l => selectedIds.has(l.id)) : unanalyzed)}
+                >
+                  Confirm
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmBatch(null)}>Cancel</button>
+              </span>
+            )}
+            {batch && (
+              <span style={{ color: 'var(--charcoal-soft)' }}>
+                Analyzing {batch.done}/{batch.total}… ({batch.tokens.toLocaleString()} tokens so far)
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Listings table */}
       <div style={{ overflowX: 'auto', maxHeight: 500, overflowY: 'auto', marginBottom: 24, border: 'var(--border)', borderRadius: 2 }}>
         <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', fontSize: '0.75rem', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)', position: 'sticky', top: 0, background: 'var(--warm-white)', zIndex: 1 }}>
+              <th style={{ padding: '8px 4px', width: 26 }}>
+                <input
+                  type="checkbox"
+                  title="Select all visible"
+                  checked={filtered.length > 0 && filtered.every(l => selectedIds.has(l.id))}
+                  onChange={e => setSelectedIds(e.target.checked ? new Set(filtered.map(l => l.id)) : new Set())}
+                />
+              </th>
               <th style={{ textAlign: 'left', padding: '8px 8px', fontWeight: 500, color: 'var(--charcoal-soft)', width: '30%' }}>Listing</th>
               {[
                 { key: 'price', label: 'Price' },
@@ -258,10 +375,14 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--charcoal-faint)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
+                  <td style={{ padding: '8px 4px' }} onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => toggleSelected(l.id)} />
+                  </td>
                   <td style={{ padding: '8px 8px', maxWidth: 200 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.product_name}</div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>
                       {l.shop_name}{l.white_space_flag ? <span style={{ color: 'var(--dusty-rose)', marginLeft: 4 }}>⚑ white-space</span> : null}
+                      {profilesByListingId[l.id]?.status === 'complete' ? <span style={{ color: 'var(--success)', marginLeft: 4 }} title="Visual analysis complete">🎨</span> : null}
                     </div>
                   </td>
                   <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{l.price ? `$${Number(l.price).toFixed(2)}` : '—'}</td>
@@ -273,7 +394,7 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                 </tr>
                 {expandedId === l.id && (
                   <tr key={`${l.id}-expanded`} style={{ background: 'var(--charcoal-faint)' }}>
-                    <td colSpan={7} style={{ padding: '10px 12px' }}>
+                    <td colSpan={8} style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: '0.75rem', marginBottom: 10 }}>
                         <div>
                           {[
@@ -388,6 +509,27 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                           </div>
                         ) : null;
                       })()}
+
+                      {/* Visual DNA — Marketplace Visual Intelligence (Phase 20) */}
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(43,41,38,0.1)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)' }}>Visual Analysis</div>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={analyzingId === l.id || !!batch}
+                            onClick={() => runAnalysis(l)}
+                          >
+                            {analyzingId === l.id ? 'Analyzing…' : profilesByListingId[l.id] ? 'Re-analyze' : 'Analyze this listing'}
+                          </button>
+                        </div>
+                        <VisualDNACard
+                          profile={profilesByListingId[l.id]}
+                          allTags={allVisualTags}
+                          editable
+                          onAddTag={(category, tag) => handleAddTag(profilesByListingId[l.id], category, tag)}
+                          onRemoveTag={(category, tag) => handleRemoveTag(profilesByListingId[l.id], category, tag)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 )}

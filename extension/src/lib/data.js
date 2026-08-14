@@ -78,6 +78,7 @@ export async function saveCompetitorListing(fields) {
     shop_link: fields.shop_link || null,
     price: fields.price ?? null,
     category: fields.category || null,
+    image_url: fields.image_url || null,
     avg_reviews: fields.avg_reviews ?? null,
     total_reviews: fields.total_reviews ?? null,
     est_sales: fields.est_sales ?? null,

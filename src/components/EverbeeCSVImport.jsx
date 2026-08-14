@@ -183,6 +183,11 @@ export default function EverbeeCSVImport({ products, onImported }) {
             shop_name: shopName,
             shop_link: shopLink,
             product_link: productLink,
+            // No image_url here — confirmed 2026-08-14 that Everbee's
+            // listing export has no image/thumbnail column at all. CSV-
+            // imported competitor_listings rows stay image-less; the
+            // browser extension's single-listing capture (content.js) is
+            // the only source of image_url, going forward from Phase 20.
             price: num(col(r, 'price')),
             growth_rate: num(col(r, 'growth rate')),
             total_reviews: int(col(r, 'total reviews')),
