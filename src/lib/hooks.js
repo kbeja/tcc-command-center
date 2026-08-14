@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
 import { daysBetween, today } from '../data/seasons';
+import { interpretKeyword } from './keywordIntelligence';
 
 // ─── Products ───────────────────────────────────────────────────────────────
 
@@ -175,51 +176,124 @@ export async function updateKeyword(id, updates) {
 
 // Re-importing a keyword you already track (same collection, same text) updates
 // the existing row in place — fresh volume/competition/score/bucket — instead of
-// inserting a duplicate. The row's prior values are snapshotted to keyword_history
-// first, so nothing is lost, it just stops cluttering the keyword bank.
-// tags_only keywords (misspelling/tag variants) are always inserted fresh — they're
-// not part of the bucket-ranked "current value" concept this merge is for.
+// inserting a duplicate, so the keyword bank stays current. Unlike before Phase
+// 19, this no longer discards the prior reading: every incoming (keyword,
+// source) reading gets its own keyword_history row — including a keyword's
+// very first sighting, not just re-imports — so keyword_history becomes a
+// real, append-only, multi-source-safe evidence ledger (Everbee and eRank
+// readings for the same keyword now both survive, queryable side by side,
+// instead of the second import silently erasing the first). classifyKeyword()
+// (src/lib/keywordIntelligence.js) reads that full ledger and writes
+// classification/confidence/trend/disagreement/interpretation_summary back
+// onto the live row alongside the usual volume/competition/score/bucket.
+// tags_only keywords (misspelling/tag variants) are always inserted fresh —
+// they're not part of the bucket-ranked "current value" concept this is for.
+// Pass a session with a real `id` (a full row from an existing
+// research_sessions fetch, e.g. ListingBuilder's InlineKeywordAdd letting you
+// pick "add to session X" from a dropdown) to append keywords to that
+// existing session instead of creating a new one — merge/history/
+// interpretation all behave identically either way; only the
+// research_sessions insert itself is skipped. Every downstream reference
+// already reads collection/date/source off the `session` param rather than
+// the inserted row, so this needed no other changes to the function body.
 export async function createResearchSession(session, keywords) {
   const now = new Date().toISOString();
-  const { data: s, error } = await supabase
-    .from('research_sessions')
-    .insert({ ...session, created_at: now })
-    .select()
-    .single();
-  if (error || !s) return { error };
+  const todayStr = now.split('T')[0];
+
+  let s;
+  let createdSession = false;
+  if (session.id) {
+    s = session;
+  } else {
+    const { data, error } = await supabase
+      .from('research_sessions')
+      .insert({ ...session, created_at: now })
+      .select()
+      .single();
+    if (error || !data) return { error };
+    s = data;
+    createdSession = true;
+  }
 
   if (keywords?.length) {
     const mergeable = keywords.filter(k => !k.tags_only && k.keyword?.trim());
     const alwaysInsert = keywords.filter(k => k.tags_only || !k.keyword?.trim());
 
     let existingByKeyword = new Map();
+    let collectionSeason = null;
     if (mergeable.length && session.collection) {
-      const { data: existingRows } = await supabase
-        .from('keywords')
-        .select('id, keyword, volume, competition, score, updated_at, created_at, research_sessions!inner(collection, source)')
-        .eq('research_sessions.collection', session.collection);
+      const [{ data: existingRows }, { data: collectionRow }] = await Promise.all([
+        supabase
+          .from('keywords')
+          .select('id, keyword, volume, competition, score, updated_at, created_at, research_sessions!inner(collection, source)')
+          .eq('research_sessions.collection', session.collection),
+        supabase.from('collections').select('season').eq('name', session.collection).maybeSingle(),
+      ]);
       for (const row of existingRows || []) {
         const key = (row.keyword || '').toLowerCase().trim();
         if (key && !existingByKeyword.has(key)) existingByKeyword.set(key, row);
+      }
+      collectionSeason = collectionRow?.season || null;
+    }
+
+    // Every matched keyword's full evidence trail, batched in one query — the
+    // interpretation engine needs the complete history, not just whichever
+    // single reading is being saved right now. Still O(1) round trips
+    // relative to keyword count, not one query per keyword.
+    const matchedIds = [...existingByKeyword.values()].map(m => m.id);
+    const historyByKeywordId = new Map();
+    if (matchedIds.length) {
+      const { data: priorHistory } = await supabase.from('keyword_history').select('*').in('keyword_id', matchedIds);
+      for (const row of priorHistory || []) {
+        if (!historyByKeywordId.has(row.keyword_id)) historyByKeywordId.set(row.keyword_id, []);
+        historyByKeywordId.get(row.keyword_id).push(row);
       }
     }
 
     const toInsert = [];
     const toUpdate = [];
-    const historyRows = [];
+    const historyRows = [];          // rows with a real keyword_id — insertable immediately
+    const historyRowsPendingId = []; // rows for brand-new keywords — backfilled once the keywords insert returns real ids
+
+    // Explicit whitelist, not a raw {...k} spread — callers increasingly attach
+    // ledger-only fields to k (clicks, ctr, data_window, trend_data, a source's
+    // own precomputed score, …) that belong on keyword_history, not keywords.
+    // Spreading k straight into a keywords insert would send those same field
+    // names to PostgREST and fail with "column does not exist" the moment any
+    // caller's keyword row carries one.
+    const baseKeywordFields = k => ({
+      keyword: k.keyword,
+      volume: k.volume ?? null,
+      competition: k.competition ?? null,
+      score: k.score ?? null,
+      tag_type: k.tag_type,
+      tags_only: k.tags_only || false,
+      bucket: k.bucket ?? null,
+      bucket_source: k.bucket_source ?? null,
+    });
 
     for (const k of mergeable) {
       const match = existingByKeyword.get(k.keyword.toLowerCase().trim());
+      const incomingReading = {
+        source: session.source || null,
+        volume: k.volume ?? null,
+        competition: k.competition ?? null,
+        score: k.score ?? null,
+        clicks: k.clicks ?? null,
+        ctr: k.ctr ?? null,
+        data_date: session.date || todayStr,
+        data_window: k.data_window ?? null,
+        trend_data: k.trend_data ?? null,
+        source_score: k.source_score ?? null,
+        research_session_id: s.id,
+        recorded_at: now,
+      };
+
       if (match) {
-        historyRows.push({
-          keyword_id: match.id,
-          keyword: match.keyword,
-          volume: match.volume,
-          competition: match.competition,
-          score: match.score,
-          source: match.research_sessions?.source || null,
-          recorded_at: match.updated_at || match.created_at,
-        });
+        const fullHistory = [...(historyByKeywordId.get(match.id) || []), { ...incomingReading, keyword: k.keyword }];
+        const interpretation = interpretKeyword(fullHistory, { collectionSeason });
+
+        historyRows.push({ ...incomingReading, keyword_id: match.id, keyword: k.keyword });
         toUpdate.push({
           id: match.id,
           keyword: k.keyword,
@@ -231,20 +305,27 @@ export async function createResearchSession(session, keywords) {
           bucket_source: k.bucket_source ?? null,
           research_session_id: s.id,
           updated_at: now,
+          ...interpretation,
         });
       } else {
-        toInsert.push({ ...k, research_session_id: s.id, created_at: now, updated_at: now });
+        const interpretation = interpretKeyword([{ ...incomingReading, keyword: k.keyword }], { collectionSeason });
+        toInsert.push({ ...baseKeywordFields(k), research_session_id: s.id, created_at: now, updated_at: now, ...interpretation });
+        historyRowsPendingId.push({ ...incomingReading, keyword: k.keyword, _matchKeyword: k.keyword.toLowerCase().trim() });
       }
     }
     for (const k of alwaysInsert) {
-      toInsert.push({ ...k, research_session_id: s.id, created_at: now, updated_at: now });
+      toInsert.push({ ...baseKeywordFields(k), research_session_id: s.id, created_at: now, updated_at: now });
     }
 
-    // Roll back the session so we don't leave an orphaned session on any failure
+    // Roll back the session so we don't leave an orphaned session on any
+    // failure — but only when this call created it. Deleting a session an
+    // earlier call already committed (the attach-to-existing path above)
+    // would destroy a pre-existing research session and any keywords/history
+    // already filed under it, just because a later, unrelated add failed.
     if (historyRows.length) {
       const { error: histErr } = await supabase.from('keyword_history').insert(historyRows);
       if (histErr) {
-        await supabase.from('research_sessions').delete().eq('id', s.id);
+        if (createdSession) await supabase.from('research_sessions').delete().eq('id', s.id);
         return { error: histErr };
       }
     }
@@ -258,15 +339,30 @@ export async function createResearchSession(session, keywords) {
       ));
       const updErr = results.find(r => r.error)?.error;
       if (updErr) {
-        await supabase.from('research_sessions').delete().eq('id', s.id);
+        if (createdSession) await supabase.from('research_sessions').delete().eq('id', s.id);
         return { error: updErr };
       }
     }
     if (toInsert.length) {
-      const { error: insErr } = await supabase.from('keywords').insert(toInsert);
+      const { data: insertedRows, error: insErr } = await supabase.from('keywords').insert(toInsert).select('id, keyword');
       if (insErr) {
-        await supabase.from('research_sessions').delete().eq('id', s.id);
+        if (createdSession) await supabase.from('research_sessions').delete().eq('id', s.id);
         return { error: insErr };
+      }
+      // Backfill keyword_id onto the pending history rows now that the new
+      // keywords rows have real ids, then write them.
+      if (historyRowsPendingId.length && insertedRows?.length) {
+        const idByKeyword = new Map(insertedRows.map(r => [(r.keyword || '').toLowerCase().trim(), r.id]));
+        const readyHistoryRows = historyRowsPendingId
+          .map(({ _matchKeyword, ...row }) => ({ ...row, keyword_id: idByKeyword.get(_matchKeyword) || null }))
+          .filter(row => row.keyword_id);
+        if (readyHistoryRows.length) {
+          const { error: histErr2 } = await supabase.from('keyword_history').insert(readyHistoryRows);
+          if (histErr2) {
+            if (createdSession) await supabase.from('research_sessions').delete().eq('id', s.id);
+            return { error: histErr2 };
+          }
+        }
       }
     }
     // Touch the collection's last_verified date here so every ingestion path
@@ -276,10 +372,34 @@ export async function createResearchSession(session, keywords) {
     // so collections researched via CSV import or session-summary paste
     // always showed "never verified" regardless of how current the data was.
     if (session.collection) {
-      await supabase.from('collections').update({ last_verified: now.split('T')[0] }).eq('name', session.collection);
+      await supabase.from('collections').update({ last_verified: todayStr }).eq('name', session.collection);
     }
   }
   return { data: s };
+}
+
+// One keyword's full keyword_history, re-interpreted and written back — for
+// the manual single-keyword-edit paths (ResearchSessionCard's EditableKeyword,
+// Research.jsx's inline KeywordList edit) so hand-correcting a volume/
+// competition number doesn't leave stale classification sitting on the row.
+// Re-derives interpretation only; does not itself write a new keyword_history
+// row (a manual field correction isn't a new source reading).
+export async function recomputeKeywordInterpretation(keywordId) {
+  const { data: kw } = await supabase
+    .from('keywords')
+    .select('id, research_sessions(collection)')
+    .eq('id', keywordId)
+    .single();
+  if (!kw) return { error: new Error('Keyword not found') };
+
+  const collectionName = kw.research_sessions?.collection || null;
+  const [{ data: history }, { data: collectionRow }] = await Promise.all([
+    supabase.from('keyword_history').select('*').eq('keyword_id', keywordId),
+    collectionName ? supabase.from('collections').select('season').eq('name', collectionName).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+
+  const interpretation = interpretKeyword(history || [], { collectionSeason: collectionRow?.season || null });
+  return supabase.from('keywords').update(interpretation).eq('id', keywordId);
 }
 
 // ─── Sparks ──────────────────────────────────────────────────────────────────

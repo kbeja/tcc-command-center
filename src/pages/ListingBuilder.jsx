@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts, createProduct, updateProduct, createCollection } from '../lib/hooks';
+import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts, createProduct, updateProduct, createCollection, createResearchSession } from '../lib/hooks';
 import { resizeImageForUpload } from '../lib/image';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';

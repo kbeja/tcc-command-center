@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
-import { supabase } from '../lib/supabase';
-import { createCollection, useChapters } from '../lib/hooks';
+import { createCollection, createResearchSession, useChapters } from '../lib/hooks';
 
 // ─── Column detection ─────────────────────────────────────────────────────────
 
@@ -97,6 +96,15 @@ function parseNum(val) {
   if (!val) return null;
   const n = parseFloat(String(val).replace(/[^0-9.]/g, ''));
   return isNaN(n) ? null : Math.round(n);
+}
+
+// Unrounded, for percentage-shaped fields (ctr) where parseNum's rounding
+// would collapse "12.3%" to 12 — same strip-then-parseFloat convention
+// EverbeeCSVImport.jsx's num() already uses for percent columns.
+function parsePercent(val) {
+  if (!val) return null;
+  const n = parseFloat(String(val).replace(/[^0-9.]/g, ''));
+  return isNaN(n) ? null : n;
 }
 
 // ─── Bucket assignment ────────────────────────────────────────────────────────
@@ -558,40 +566,37 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
       if (error && !error.message?.includes('unique')) return;
     }
     const isErank = (sourceLabel || '').toLowerCase().includes('erank');
-    const { data: session } = await supabase
-      .from('research_sessions')
-      .insert({
+    const kwRows = groupKws.map(k => ({
+      keyword:       k.keyword,
+      volume:        k.volume,
+      competition:   k.competition,
+      // Difficulty folds into score for eRank sources exactly as it already
+      // did before this went through createResearchSession — eRank rows have
+      // no separate TCC-formula score to preserve alongside it.
+      score:         isErank ? (k.difficulty ?? null) : (k.score ?? null),
+      clicks:        k.clicks ?? null,
+      ctr:           parsePercent(k.ctr),
+      bucket:        k.bucket,
+      bucket_source: isErank ? 'erank_color' : 'everbee_score',
+      tag_type:      'watch',
+      tags_only:     false,
+    }));
+
+    const { error: sessionErr } = await createResearchSession(
+      {
+        collection: collName || null,
         date: new Date().toISOString().slice(0, 10),
-        collection: collName,
         source: sourceLabel || 'Keyword Explore',
         status: 'Complete',
         notes: [
           context ? `Research context: ${context}` : '',
           `Imported from Explore — ${group.name}`,
         ].filter(Boolean).join('\n'),
-      })
-      .select('id')
-      .single();
+      },
+      kwRows
+    );
+    if (sessionErr) { console.error(sessionErr); return; }
 
-    if (session?.id) {
-      const rows = groupKws.map(k => ({
-        research_session_id: session.id,
-        keyword:     k.keyword,
-        volume:      k.volume,
-        competition: k.competition,
-        score:       isErank ? (k.difficulty ?? null) : (k.score ?? null),
-        bucket:      k.bucket,
-        bucket_source: isErank ? 'erank_color' : 'everbee_score',
-        tag_type:    'watch',
-        tags_only:   false,
-      }));
-      await supabase.from('keywords').insert(rows);
-    }
-    // Same last_verified touch createResearchSession does for its callers — this
-    // path inserts directly and would otherwise miss it.
-    if (collName) {
-      await supabase.from('collections').update({ last_verified: new Date().toISOString().slice(0, 10) }).eq('name', collName);
-    }
     if (isNew) onCollectionCreated?.();
   }
 

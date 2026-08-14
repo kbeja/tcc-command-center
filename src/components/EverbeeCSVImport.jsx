@@ -77,8 +77,11 @@ function scoreKeyword(volume, competition) {
 }
 
 // Statistical outlier — score wildly inflated relative to near-zero competition.
-// Text-quality issues (mashed tag combos, invented words) are handled separately
-// by isLowQualityKeyword() and routed to tags_only instead of discarded outright.
+// No longer a discard signal (see handleFile below) — flags the row so the
+// interpretation engine's isAnomalousReading() can classify it Suspect / Low
+// Confidence instead of it silently vanishing before anyone sees it. Text-
+// quality issues (mashed tag combos, invented words) are a separate, orthogonal
+// concern handled by isLowQualityKeyword() and routed to tags_only.
 function isGarbage(volume, competition, score) {
   return score > 50000 && competition <= 1;
 }
@@ -148,16 +151,23 @@ export default function EverbeeCSVImport({ products, onImported }) {
           const keyword = col(r, 'keyword') || '';
           const volume = int(col(r, 'volume'));
           const competition = int(col(r, 'competition'));
+          const sourceScore = num(col(r, 'keyword score'));
           const score = scoreKeyword(volume, competition);
           const garbage = isGarbage(volume, competition, score);
-          const misspelling = !garbage && isLowQualityKeyword(keyword);
-          const keep = !garbage && !misspelling && score >= 50;
-          return { keyword, volume, competition, score: Math.round(score), garbage, misspelling, keep };
+          const misspelling = isLowQualityKeyword(keyword);
+          const keep = !misspelling && score >= 50;
+          return { keyword, volume, competition, sourceScore, score: Math.round(score), garbage, misspelling, keep };
         });
+        // garbage rows are no longer excluded — they still pass score >= 50
+        // (isGarbage requires score > 50000) so they land in keep and import
+        // normally; the interpretation engine flags them Suspect / Low
+        // Confidence via isAnomalousReading() instead of them being silently
+        // discarded pre-database. anomalies is informational only, not a
+        // separate/excluded bucket — every anomaly row is also in keep.
         const keep = parsed.filter(r => r.keep);
-        const discard = parsed.filter(r => r.garbage);
+        const anomalies = keep.filter(r => r.garbage);
         const misspellings = parsed.filter(r => r.misspelling);
-        setPreview({ type: 'keyword', keep, discard, misspellings, total: parsed.length });
+        setPreview({ type: 'keyword', keep, anomalies, misspellings, total: parsed.length });
 
       } else {
         const ownShop = [], competitors = [], ambiguous = [];
@@ -229,6 +239,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
             volume: k.volume ?? null,
             competition: k.competition ?? null,
             score: k.score ?? null,
+            source_score: k.sourceScore ?? null,
             tag_type: (k.score ?? 0) >= 1000 ? 'use' : 'watch',
           })),
           ...preview.misspellings.map(k => ({
@@ -250,7 +261,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
             date: now.split('T')[0],
             source: 'Everbee',
             status: 'Complete',
-            notes: `Everbee keyword import — ${preview.keep.length} keywords (score ≥ 50), ${preview.discard.length} discarded, ${preview.misspellings.length} misspelling flags`,
+            notes: `Everbee keyword import — ${preview.keep.length} keywords (score ≥ 50), ${preview.anomalies.length} flagged as possible data anomalies, ${preview.misspellings.length} misspelling flags`,
             seasonal: false,
           },
           kwRows
@@ -261,13 +272,13 @@ export default function EverbeeCSVImport({ products, onImported }) {
           import_type: 'everbee_keywords',
           imported_at: now,
           records_updated: kwRows.length,
-          notes: `${preview.discard.length} discarded, ${preview.misspellings.length} misspellings, niche: ${collection || 'uncategorized'}, parent: ${parentNiche || 'none'}`,
+          notes: `${preview.anomalies.length} flagged as anomalies, ${preview.misspellings.length} misspellings, niche: ${collection || 'uncategorized'}, parent: ${parentNiche || 'none'}`,
         });
 
         setResult({
           type: 'keyword',
           added: kwRows.length,
-          discarded: preview.discard.length,
+          anomalies: preview.anomalies.length,
           misspellings: preview.misspellings.length,
           collection,
         });
@@ -379,7 +390,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           {result.type === 'keyword' ? (
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div>✓ {result.added} keywords saved to Research → {result.collection || 'Uncategorized'}</div>
-              <div>✗ {result.discarded} garbage rows discarded</div>
+              {result.anomalies > 0 && <div>⚠ {result.anomalies} flagged as possible data anomalies — imported as Suspect / Low Confidence</div>}
               {result.misspellings > 0 && <div>⚑ {result.misspellings} misspellings included as Watch (tags-only)</div>}
             </div>
           ) : (
@@ -447,11 +458,9 @@ export default function EverbeeCSVImport({ products, onImported }) {
           <div style={{ display: 'flex', gap: 12, marginBottom: 14, fontSize: '0.78rem' }}>
             <div style={{ flex: 1, background: 'rgba(124,175,138,0.1)', border: '1px solid var(--success)', borderRadius: 2, padding: '10px 12px' }}>
               <div style={{ fontWeight: 500, marginBottom: 4 }}>✓ {preview.keep.length} keeping</div>
-              <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>Score ≥ 50</div>
-            </div>
-            <div style={{ flex: 1, background: 'rgba(201,123,123,0.08)', border: '1px solid var(--alert)', borderRadius: 2, padding: '10px 12px' }}>
-              <div style={{ fontWeight: 500, marginBottom: 4 }}>✗ {preview.discard.length} discarded</div>
-              <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>Garbage rows</div>
+              <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>
+                Score ≥ 50{preview.anomalies.length > 0 ? ` · ${preview.anomalies.length} flagged as possible anomalies` : ''}
+              </div>
             </div>
             {preview.misspellings.length > 0 && (
               <div style={{ flex: 1, background: 'rgba(232,168,124,0.1)', border: '1px solid var(--warning)', borderRadius: 2, padding: '10px 12px' }}>
@@ -467,7 +476,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
               <div style={{ maxHeight: 200, overflowY: 'auto', fontSize: '0.75rem', border: 'var(--border)', borderRadius: 2 }}>
                 {preview.keep.sort((a, b) => b.score - a.score).slice(0, 30).map((k, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 10px', borderBottom: '1px solid rgba(43,41,38,0.06)' }}>
-                    <span>{k.keyword}{k.misspelling ? <span style={{ color: 'var(--warning)', marginLeft: 4 }}>⚑</span> : null}</span>
+                    <span>{k.keyword}{k.garbage ? <span title="Flagged as a possible data anomaly" style={{ color: 'var(--warning)', marginLeft: 4 }}>⚠</span> : null}</span>
                     <span style={{ color: 'var(--charcoal-soft)', whiteSpace: 'nowrap', marginLeft: 8 }}>
                       vol {k.volume?.toLocaleString()} · score {k.score}
                     </span>
