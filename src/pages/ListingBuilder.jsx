@@ -632,34 +632,32 @@ function InlineKeywordAdd({ collection, sessions, onSaved }) {
     if (!valid.length) return;
     setSaving(true);
 
-    let sessionId = targetSession;
-
-    if (!sessionId) {
-      const { data } = await supabase.from('research_sessions').insert({
-        date: new Date().toISOString().slice(0, 10),
-        collection,
-        source: 'Inline add',
-        status: 'Needs More Data',
-      }).select('id').single();
-      sessionId = data?.id;
-      if (sessionId) setTargetSession(sessionId);
-    }
-
-    if (!sessionId) { setSaving(false); return; }
+    // targetSession holds a real research_sessions.id once one's picked from
+    // the dropdown (each session object carries its own collection/source/
+    // date already, from the `*, keywords(*)` fetch in the parent) — pass it
+    // straight through so createResearchSession() appends to that session
+    // instead of creating a new one. Blank means "+ Create new session".
+    const existingSession = targetSession ? sessions.find(s => s.id === targetSession) : null;
+    const sessionParam = existingSession || {
+      date: new Date().toISOString().slice(0, 10),
+      collection,
+      source: 'Inline add',
+      status: 'Needs More Data',
+    };
 
     const kwRows = valid.map(r => ({
-      research_session_id: sessionId,
-      keyword:     r.keyword.trim(),
-      volume:      r.volume ? parseInt(r.volume) : null,
-      competition: r.competition ? parseInt(r.competition) : null,
-      bucket:      r.bucket ? parseInt(r.bucket) : null,
+      keyword:       r.keyword.trim(),
+      volume:        r.volume ? parseInt(r.volume) : null,
+      competition:   r.competition ? parseInt(r.competition) : null,
+      bucket:        r.bucket ? parseInt(r.bucket) : null,
       bucket_source: r.bucket ? 'manual' : null,
-      tag_type:    'watch',
-      tags_only:   false,
+      tag_type:      'watch',
+      tags_only:     false,
     }));
 
-    await supabase.from('keywords').insert(kwRows);
-    await supabase.from('collections').update({ last_verified: new Date().toISOString().slice(0, 10) }).eq('name', collection);
+    const { data, error } = await createResearchSession(sessionParam, kwRows);
+    if (error) { console.error(error); setSaving(false); return; }
+    if (!existingSession && data?.id) setTargetSession(data.id);
 
     setSaving(false);
     setSaved(true);
