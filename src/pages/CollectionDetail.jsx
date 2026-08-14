@@ -395,8 +395,8 @@ export default function CollectionDetail() {
                           <TrendIndicator trend={k.trend_classification} />
                           <DisagreementFlag flag={k.disagreement_flag} />
                         </span>
-                        <ConfidenceBadge confidence={k.confidence} />
-                        <StatusBadge status={k.research_status} />
+                        <span><ConfidenceBadge confidence={k.confidence} /></span>
+                        <span><StatusBadge status={k.research_status} /></span>
                         <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k._sources.join(', ') || '—'}</span>
                       </div>
                     ))}
