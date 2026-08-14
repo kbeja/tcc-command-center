@@ -399,7 +399,12 @@ export async function recomputeKeywordInterpretation(keywordId) {
   ]);
 
   const interpretation = interpretKeyword(history || [], { collectionSeason: collectionRow?.season || null });
-  return supabase.from('keywords').update(interpretation).eq('id', keywordId);
+  // Return the already-computed interpretation, not the raw (unselected,
+  // data:null) update result — callers that want to merge fresh
+  // classification/confidence into local state without an extra fetch
+  // (e.g. ResearchSessionCard's EditableKeyword) can use it directly.
+  const { error } = await supabase.from('keywords').update(interpretation).eq('id', keywordId);
+  return { data: interpretation, error };
 }
 
 // ─── Sparks ──────────────────────────────────────────────────────────────────

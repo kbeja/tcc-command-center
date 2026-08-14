@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { deleteResearchSession, deleteKeyword, useChapters, useCollections } from '../lib/hooks';
+import { deleteResearchSession, deleteKeyword, useChapters, useCollections, recomputeKeywordInterpretation } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
@@ -39,7 +39,12 @@ function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
       updated_at: new Date().toISOString(),
     };
     await supabase.from('keywords').update(updates).eq('id', k.id);
-    onSave({ ...k, ...updates });
+    // Volume/competition/score may have just changed — re-run classification
+    // against this keyword's full history so classification/confidence/trend
+    // don't go stale relative to the numbers just typed in. Not itself a new
+    // source reading, so this never writes a keyword_history row.
+    const { data: interpretation } = await recomputeKeywordInterpretation(k.id);
+    onSave({ ...k, ...updates, ...(interpretation || {}) });
     setSaving(false);
     setEditing(false);
   }
