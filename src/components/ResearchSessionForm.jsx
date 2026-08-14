@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createResearchSession, useCollections, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
-const SOURCES = ['Everbee', 'eRank', 'Etsy Search', 'Pinterest', 'Other'];
+const SOURCES = ['Everbee', 'eRank', 'Etsy Search', 'Etsy Marketplace Insights', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
 
 const KW_STATUS = {
@@ -119,6 +119,22 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
             {kw.bucket_source === 'everbee_score' ? ' auto' : kw.bucket_source === 'manual' ? ' manual' : ''}
           </span>
         )}
+        <input
+          value={kw.clicks}
+          onChange={e => onChange(index, { ...kw, clicks: e.target.value })}
+          type="number"
+          placeholder="Clicks"
+          title="Clicks (optional)"
+          style={{ width: 56, padding: '2px 6px', fontSize: '0.68rem', marginLeft: 'auto' }}
+        />
+        <input
+          value={kw.ctr}
+          onChange={e => onChange(index, { ...kw, ctr: e.target.value })}
+          type="number"
+          placeholder="CTR %"
+          title="Click-through rate, as a percentage (optional)"
+          style={{ width: 56, padding: '2px 6px', fontSize: '0.68rem' }}
+        />
       </div>
     </div>
   );
@@ -154,7 +170,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
       const parts = line.split('|').map(p => p.trim());
       if (parts.length < 1 || !parts[0]) continue;
       if (parts[0].toLowerCase() === 'keyword') continue;
-      const [keyword, volume, competition, score, statusText] = parts;
+      const [keyword, volume, competition, score, statusText, clicks, ctr] = parts;
       if (!keyword) continue;
       parsed.push({
         keyword,
@@ -162,6 +178,8 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         competition: competition || '',
         score: score || '',
         status: autoColor(score, competition, statusText),
+        clicks: clicks || '',
+        ctr: ctr || '',
         updated_at: new Date().toISOString(),
       });
     }
@@ -201,7 +219,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   }
 
   function addBlankKeyword() {
-    setKeywords(prev => [...prev, { keyword: '', volume: '', competition: '', score: '', status: 'watch', tags_only: false }]);
+    setKeywords(prev => [...prev, { keyword: '', volume: '', competition: '', score: '', status: 'watch', tags_only: false, clicks: '', ctr: '' }]);
   }
 
   async function handleSave() {
@@ -231,6 +249,8 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         is_misspelling_variant: !!k.tags_only,
         bucket: k.bucket ? parseInt(k.bucket) : null,
         bucket_source: k.bucket_source || null,
+        clicks: k.clicks ? parseInt(k.clicks) : null,
+        ctr: k.ctr ? parseFloat(k.ctr) : null,
       }));
     await createResearchSession(
       { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
@@ -382,7 +402,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
             <textarea
               value={bulkText}
               onChange={e => setBulkText(e.target.value)}
-              placeholder={`Paste pipe-separated keywords:\nkeyword | volume | competition | score | status\nmom life svg | 4368 | 5 | 873750 | Use\nbookish tee | 1736 | 36 | 48230 | Watch`}
+              placeholder={`Paste pipe-separated keywords:\nkeyword | volume | competition | score | status\nmom life svg | 4368 | 5 | 873750 | Use\nbookish tee | 1736 | 36 | 48230 | Watch\n\nOptional trailing clicks | ctr:\nmom life svg | 4368 | 5 | 873750 | Use | 210 | 12.3`}
               rows={5}
               style={{ fontFamily: 'monospace', fontSize: '0.75rem', marginBottom: 8 }}
             />
