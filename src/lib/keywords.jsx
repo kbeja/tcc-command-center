@@ -82,3 +82,95 @@ export function BucketBadge({ bucket, style }) {
     </span>
   );
 }
+
+// ─── Phase 19 interpretation badges ─────────────────────────────────────────
+// Shared between Research.jsx's Keywords tab and KeywordDetail.jsx so the
+// same classification/confidence/status/trend reads identically wherever
+// it's shown. Deliberately reuses this codebase's existing 4-color language
+// (green/amber/red/neutral, same hex values as scoreColor, the seasonal
+// badge, and the stale/aged session badges elsewhere) rather than inventing
+// a 5th or 6th color — "calm, not a color-coded wall" per the spec.
+
+export const CLASSIFICATION_STYLE = {
+  'Strong Unicorn':          { bg: 'rgba(124,175,138,0.18)', color: '#2d6b3c', border: 'rgba(124,175,138,0.35)' },
+  'Emerging Unicorn':        { bg: 'var(--rose-faint)',      color: 'var(--dusty-rose)', border: 'rgba(188,143,143,0.4)' },
+  'Evergreen':                { bg: 'rgba(124,175,138,0.18)', color: '#2d6b3c', border: 'rgba(124,175,138,0.35)' },
+  'Seasonal':                  { bg: 'rgba(232,168,124,0.2)',  color: '#7a4a1e', border: 'rgba(232,168,124,0.4)' },
+  'Watchlist':                 { bg: 'rgba(43,41,38,0.08)',    color: 'var(--charcoal-soft)', border: 'rgba(43,41,38,0.15)' },
+  'Suspect / Low Confidence': { bg: 'rgba(201,123,123,0.15)', color: '#7a2b2b', border: 'rgba(201,123,123,0.35)' },
+};
+
+export function ClassificationBadge({ classification, style }) {
+  if (!classification) return null;
+  const s = CLASSIFICATION_STYLE[classification] || CLASSIFICATION_STYLE.Watchlist;
+  return (
+    <span style={{
+      fontSize: '0.6rem', fontWeight: 700, padding: '1px 6px', borderRadius: 10,
+      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      whiteSpace: 'nowrap', ...style,
+    }}>
+      {classification}
+    </span>
+  );
+}
+
+const CONFIDENCE_COLOR = { High: '#2d6b3c', Medium: '#7a4a1e', Low: 'var(--charcoal-soft)' };
+
+export function ConfidenceBadge({ confidence, style }) {
+  if (!confidence) return null;
+  return (
+    <span style={{ fontSize: '0.68rem', color: CONFIDENCE_COLOR[confidence] || 'var(--charcoal-soft)', whiteSpace: 'nowrap', ...style }}>
+      ● {confidence}
+    </span>
+  );
+}
+
+export const RESEARCH_STATUS_STYLE = {
+  'Researching':       { bg: 'rgba(43,41,38,0.08)',    color: 'var(--charcoal-soft)', border: 'rgba(43,41,38,0.15)' },
+  'Validated':          { bg: 'rgba(124,175,138,0.18)', color: '#2d6b3c', border: 'rgba(124,175,138,0.35)' },
+  'Watch':              { bg: 'rgba(232,168,124,0.2)',  color: '#7a4a1e', border: 'rgba(232,168,124,0.4)' },
+  'Create':             { bg: 'var(--rose-faint)',      color: 'var(--dusty-rose)', border: 'rgba(188,143,143,0.4)' },
+  'Hold':               { bg: 'rgba(232,168,124,0.15)', color: '#7a4a1e', border: 'rgba(232,168,124,0.3)' },
+  'Reject':             { bg: 'rgba(201,123,123,0.15)', color: '#7a2b2b', border: 'rgba(201,123,123,0.35)' },
+  'Seasonal — Future':  { bg: 'rgba(232,168,124,0.2)',  color: '#7a4a1e', border: 'rgba(232,168,124,0.4)' },
+  'Archived':           { bg: 'rgba(43,41,38,0.05)',    color: 'var(--charcoal-soft)', border: 'rgba(43,41,38,0.1)' },
+};
+
+export function StatusBadge({ status, style }) {
+  if (!status) return null;
+  const s = RESEARCH_STATUS_STYLE[status] || RESEARCH_STATUS_STYLE.Researching;
+  return (
+    <span style={{
+      fontSize: '0.6rem', fontWeight: 600, padding: '1px 6px', borderRadius: 10,
+      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      whiteSpace: 'nowrap', ...style,
+    }}>
+      {status}
+    </span>
+  );
+}
+
+const TREND_ARROW = { Emerging: '↗', Rising: '↑', Stable: '→', Seasonal: '↻', Peaking: '⤒', Declining: '↓' };
+
+// Renders nothing for 'Unknown'/null rather than a chip reading "Unknown" —
+// most keywords won't have enough history for a trend read yet, and a chip
+// on every row for that common case would be exactly the "wall" the spec's
+// calm-visual-treatment note warns against.
+export function TrendIndicator({ trend, style }) {
+  const arrow = TREND_ARROW[trend];
+  if (!arrow) return null;
+  return (
+    <span title={`Trend: ${trend}`} style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', ...style }}>
+      {arrow}
+    </span>
+  );
+}
+
+export function DisagreementFlag({ flag, style }) {
+  if (!flag) return null;
+  return (
+    <span title="Sources disagree on this keyword's demand — see Keyword Detail" style={{ fontSize: '0.65rem', color: '#7a4a1e', ...style }}>
+      ⚠
+    </span>
+  );
+}

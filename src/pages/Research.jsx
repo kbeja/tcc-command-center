@@ -1,11 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useResearchSessions, useCollections, useCollectionObjects, useChapters, useProducts, createCollection, deleteCollection, updateKeyword, deleteKeyword } from '../lib/hooks';
+import { useResearchSessions, useCollections, useCollectionObjects, useChapters, useProducts, createCollection, deleteCollection, updateKeyword, deleteKeyword, recomputeKeywordInterpretation } from '../lib/hooks';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
-import { assignBucket, BucketBadge, BUCKET_STYLE, isLowQualityKeyword } from '../lib/keywords';
+import KeywordDetail from '../components/KeywordDetail';
+import { assignBucket, BucketBadge, BUCKET_STYLE, isLowQualityKeyword, ClassificationBadge, ConfidenceBadge, StatusBadge, TrendIndicator, DisagreementFlag } from '../lib/keywords';
+import { CLASSIFICATIONS, CONFIDENCE_LEVELS, TREND_CLASSIFICATIONS, RESEARCH_STATUSES } from '../lib/keywordIntelligence';
+
+// Plain filter-state presets (not a persisted "saved views" feature) for the
+// five named quick views from the spec. Applied on top of, not instead of,
+// the manual classification/confidence/trend/status filters below.
+const KEYWORD_PRESETS = {
+  emerging:    { label: 'Emerging Opportunities', test: k => k.classification === 'Emerging Unicorn' },
+  unicorn:     { label: 'Unicorn Candidates',      test: k => k.classification === 'Strong Unicorn' || k.classification === 'Emerging Unicorn' },
+  investigate: { label: 'Needs Investigation',     test: k => k.classification === 'Suspect / Low Confidence' || k.disagreement_flag },
+  seasonal:    { label: 'Seasonal Opportunities',   test: k => k.classification === 'Seasonal' || k.trend_classification === 'Seasonal' },
+  evergreen:   { label: 'Evergreen Foundation',     test: k => k.classification === 'Evergreen' },
+};
 
 const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
@@ -142,137 +155,6 @@ function CollectionsManager({ refetch: refetchNames }) {
   );
 }
 
-function SourceCompare() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [filterCollection, setFilter] = useState('');
-  const { collections } = useCollections();
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setErr('');
-      const { data, error } = await supabase
-        .from('keywords')
-        .select('keyword, volume, competition, score, bucket, research_session_id, research_sessions(source, collection)');
-      if (error) { setErr(error.message); setLoading(false); return; }
-      if (!data || data.length === 0) { setLoading(false); return; }
-      const withSession = data.filter(k => k.research_session_id && k.research_sessions);
-
-      // Group by lowercase keyword
-      const map = {};
-      for (const k of withSession) {
-        const key = k.keyword?.toLowerCase().trim();
-        if (!key) continue;
-        if (!map[key]) map[key] = { keyword: k.keyword, entries: [] };
-        map[key].entries.push({
-          source: k.research_sessions?.source || '—',
-          collection: k.research_sessions?.collection || '—',
-          volume: k.volume,
-          competition: k.competition,
-          score: k.score,
-        });
-      }
-
-      // Keep only keywords that appear in both eRank and Everbee
-      const conflicts = Object.values(map).filter(r => {
-        const sources = new Set(r.entries.map(e => e.source?.toLowerCase()));
-        return sources.has('erank') && sources.has('everbee');
-      }).map(r => {
-        const erank   = r.entries.find(e => e.source?.toLowerCase() === 'erank');
-        const everbee = r.entries.find(e => e.source?.toLowerCase() === 'everbee');
-        const volDiff = (erank?.volume != null && everbee?.volume != null)
-          ? Math.abs(erank.volume - everbee.volume) : null;
-        const compDiff = (erank?.competition != null && everbee?.competition != null)
-          ? Math.abs(erank.competition - everbee.competition) : null;
-        return { keyword: r.keyword, erank, everbee, volDiff, compDiff,
-          collection: erank?.collection || everbee?.collection };
-      }).sort((a, b) => (b.volDiff || 0) - (a.volDiff || 0));
-
-      setRows(conflicts);
-      setLoading(false);
-    }
-    load();
-  }, []);
-
-  const visible = filterCollection ? rows.filter(r => r.collection === filterCollection) : rows;
-
-  const cell = (val, alt, diff, pct) => (
-    <td style={{ fontSize: '0.72rem', padding: '4px 8px', verticalAlign: 'middle' }}>
-      <div>{val != null ? val.toLocaleString() : '—'}</div>
-      {alt != null && diff != null && (
-        <div style={{ fontSize: '0.62rem', color: pct > 30 ? '#7a2b2b' : 'var(--charcoal-soft)', opacity: 0.7 }}>
-          vs {alt.toLocaleString()} {pct != null ? `(${pct}% diff)` : ''}
-        </div>
-      )}
-    </td>
-  );
-
-  return (
-    <div style={{ paddingTop: 8 }}>
-      <p style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
-        Keywords appearing in both eRank and Everbee sessions — sorted by volume discrepancy.
-      </p>
-      <div style={{ marginBottom: 12 }}>
-        <select value={filterCollection} onChange={e => setFilter(e.target.value)} style={{ fontSize: '0.78rem' }}>
-          <option value="">All collections</option>
-          {collections.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-      {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
-      {err && <div style={{ color: 'var(--alert)', fontSize: '0.82rem', padding: '10px 0' }}>Error: {err}</div>}
-      {!loading && !err && visible.length === 0 && (
-        <div className="empty-state">
-          <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>📊</div>
-          <p style={{ marginBottom: 6 }}>No cross-source keyword matches yet.</p>
-          <p style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', lineHeight: 1.6 }}>
-            This tab shows keywords that appear in <strong>both</strong> an eRank session and an Everbee session so you can compare their volume and competition numbers side by side. Research the same keyword in both tools to see discrepancies here.
-          </p>
-        </div>
-      )}
-      {!loading && visible.length > 0 && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(43,41,38,0.12)', textAlign: 'left' }}>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>Keyword</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>Collection</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#2d6b3c' }}>eRank Vol</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6b4a10' }}>Everbee Vol</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#2d6b3c' }}>eRank Comp</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6b4a10' }}>Everbee Comp</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>eRank KD</th>
-                <th style={{ padding: '6px 8px', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>Everbee Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((r, i) => {
-                const volPct = (r.erank?.volume && r.everbee?.volume)
-                  ? Math.round(Math.abs(r.erank.volume - r.everbee.volume) / Math.max(r.erank.volume, r.everbee.volume) * 100) : null;
-                const compPct = (r.erank?.competition && r.everbee?.competition)
-                  ? Math.round(Math.abs(r.erank.competition - r.everbee.competition) / Math.max(r.erank.competition, r.everbee.competition) * 100) : null;
-                return (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(43,41,38,0.06)' }}>
-                    <td style={{ padding: '4px 8px', fontWeight: 500, fontSize: '0.78rem' }}>{r.keyword}</td>
-                    <td style={{ padding: '4px 8px', fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>{r.collection}</td>
-                    {cell(r.erank?.volume, r.everbee?.volume, r.volDiff, volPct)}
-                    {cell(r.everbee?.volume, r.erank?.volume, r.volDiff, volPct)}
-                    {cell(r.erank?.competition, r.everbee?.competition, r.compDiff, compPct)}
-                    {cell(r.everbee?.competition, r.erank?.competition, r.compDiff, compPct)}
-                    <td style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{r.erank?.score ?? '—'}</td>
-                    <td style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{r.everbee?.score ?? '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
 const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
 
 function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '', initialSearch = '', refreshKey }) {
@@ -288,6 +170,12 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
   const [filterChapter, setFilterChapter] = useState('');
   const [filterCollection, setFilterCollection] = useState(initialCollection);
   const [filterBucket, setFilterBucket]   = useState('');
+  const [filterClassification, setFilterClassification] = useState('');
+  const [filterConfidence, setFilterConfidence] = useState('');
+  const [filterTrend, setFilterTrend]     = useState('');
+  const [filterStatus, setFilterStatus]   = useState('');
+  const [filterDisagreement, setFilterDisagreement] = useState(false);
+  const [activePreset, setActivePreset]   = useState('');
   const [search, setSearch]           = useState(initialSearch);
   const [editId, setEditId]           = useState(null);
   const [editVals, setEditVals]       = useState({});
@@ -296,6 +184,9 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
   const [rebucketResult, setRebucketResult] = useState(null);
   const [cleaning, setCleaning]       = useState(false);
   const [cleanupResult, setCleanupResult] = useState(null);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeResult, setRecomputeResult] = useState(null);
+  const [selectedKeywordId, setSelectedKeywordId] = useState(null);
   const [sortCol, setSortCol] = useState('');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -343,6 +234,12 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
       const bucketNum = Number(filterBucket);
       if (bucketNum === 0 ? !!k.bucket : k.bucket !== bucketNum) return false;
     }
+    if (filterClassification && k.classification !== filterClassification) return false;
+    if (filterConfidence && k.confidence !== filterConfidence) return false;
+    if (filterTrend && k.trend_classification !== filterTrend) return false;
+    if (filterStatus && k.research_status !== filterStatus) return false;
+    if (filterDisagreement && !k.disagreement_flag) return false;
+    if (activePreset && !KEYWORD_PRESETS[activePreset].test(k)) return false;
     if (search && !k.keyword?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
@@ -357,6 +254,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
       score: k.score ?? '',
       collection: col,
       editChapter: colChapterMap[col] || '',
+      status: k.research_status || 'Researching',
     });
   }
 
@@ -369,6 +267,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     if (editVals.competition !== '') updates.competition = Number(editVals.competition) || null;
     if (editVals.score !== '')       updates.score       = Number(editVals.score) || null;
     if (updates.bucket)              updates.bucket_source = 'manual';
+    if (editVals.status)             updates.research_status = editVals.status;
 
     // If collection changed, find the most recent session for that collection and reassign
     const currentCol = kw?.research_sessions?.collection || '';
@@ -385,9 +284,25 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     }
 
     await updateKeyword(id, updates);
+    // Volume/competition/score may have just changed — re-run classification
+    // against this keyword's full history so it doesn't go stale relative to
+    // the numbers just typed in. Same recompute ResearchSessionCard's inline
+    // edit already does.
+    await recomputeKeywordInterpretation(id);
     await load();
     setEditId(null);
     setSaving(false);
+  }
+
+  async function handleRecomputeAll() {
+    setRecomputing(true);
+    setRecomputeResult(null);
+    const toRecompute = keywords.filter(k => !k.tags_only);
+    const results = await Promise.all(toRecompute.map(k => recomputeKeywordInterpretation(k.id)));
+    const failed = results.filter(r => r.error).length;
+    await load();
+    setRecomputeResult({ updated: toRecompute.length - failed, failed });
+    setRecomputing(false);
   }
 
   async function handleDelete(id) {
@@ -491,6 +406,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
           title="Flag mashed tag-combo / invented-word keywords (e.g. 'gifte-sweatshirt') as tags-only so they stop competing for anchor/bucket slots">
           {cleaning ? 'Cleaning…' : '🧹 Clean up low-quality'}
         </button>
+        <button className="btn btn-ghost btn-sm" onClick={handleRecomputeAll} disabled={recomputing}
+          title="Re-run classification/confidence/trend against every keyword's full evidence history — useful right after running the Phase 19 migration, or whenever historical data changes underneath existing keywords">
+          {recomputing ? 'Recomputing…' : '✦ Recompute Classifications'}
+        </button>
         <button className="btn btn-primary btn-sm" onClick={onAddSession}>+ Add Session</button>
       </div>
       {rebucketResult && (
@@ -503,6 +422,47 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
           ✓ {cleanupResult.updated} keyword{cleanupResult.updated !== 1 ? 's' : ''} flagged tags-only (mashed/invented text)
         </div>
       )}
+      {recomputeResult && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+          ✓ {recomputeResult.updated} recomputed{recomputeResult.failed > 0 ? ` · ${recomputeResult.failed} failed` : ''}
+        </div>
+      )}
+
+      {/* Interpretation filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={filterClassification} onChange={e => setFilterClassification(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
+          <option value="">All classifications</option>
+          {CLASSIFICATIONS.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterConfidence} onChange={e => setFilterConfidence(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
+          <option value="">All confidence</option>
+          {CONFIDENCE_LEVELS.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterTrend} onChange={e => setFilterTrend(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
+          <option value="">All trends</option>
+          {TREND_CLASSIFICATIONS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
+          <option value="">All statuses</option>
+          {RESEARCH_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <button className={`btn btn-sm ${filterDisagreement ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterDisagreement(d => !d)}>
+          ⚠ Disagreement only
+        </button>
+      </div>
+
+      {/* Quick-filter presets */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {Object.entries(KEYWORD_PRESETS).map(([key, { label }]) => (
+          <button
+            key={key}
+            className={`btn btn-sm ${activePreset === key ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActivePreset(p => p === key ? '' : key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {!loading && filterCollection && (() => {
         const colKws = keywords.filter(k => k.research_sessions?.collection === filterCollection);
@@ -537,15 +497,16 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
 
       {!loading && filtered.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 830 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 1060 }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
             <span>Keyword</span>
             {[['bucket','Bucket'],['vol','Vol'],['comp','Comp'],['kd','KD']].map(([col, lbl]) => (
               <span key={col} onClick={() => toggleSort(col)} style={{ cursor: 'pointer', userSelect: 'none', color: sortCol === col ? 'var(--dusty-rose)' : undefined }}>
                 {lbl}{sortCol === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
               </span>
             ))}
+            <span>Classification</span><span>Conf.</span><span>Status</span>
             <span>Collection</span><span>Source(s)</span><span></span>
           </div>
 
@@ -612,7 +573,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                       <input value={editVals.score} onChange={e => setEditVals(v => ({ ...v, score: e.target.value }))} style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }} placeholder="—" />
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
                     <div>
                       <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Chapter</div>
                       <select value={editVals.editChapter}
@@ -630,6 +591,13 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                         {editableCollections.map(col => <option key={col} value={col}>{col}</option>)}
                       </select>
                     </div>
+                    <div>
+                      <div style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', textTransform: 'uppercase', marginBottom: 2 }}>Research Status</div>
+                      <select value={editVals.status} onChange={e => setEditVals(v => ({ ...v, status: e.target.value }))}
+                        style={{ fontSize: '0.78rem', padding: '4px 6px', width: '100%' }}>
+                        {RESEARCH_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-primary btn-sm" onClick={() => saveEdit(k.id)} disabled={saving}>
@@ -642,7 +610,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
             }
 
               return (
-                <div key={k.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center' }}>
+                <div key={k.id}
+                  onClick={() => setSelectedKeywordId(k.id)}
+                  title="Click for classification, source comparison, and history"
+                  style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center', cursor: 'pointer' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
                     {k.keyword}
                     {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
@@ -668,6 +639,13 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                   <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.volume?.toLocaleString() ?? '—'}</span>
                   <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{k.competition?.toLocaleString() ?? '—'}</span>
                   <span style={{ fontSize: '0.72rem', color: scoreColor }}>{k.score ?? '—'}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden' }}>
+                    <ClassificationBadge classification={k.classification} />
+                    <TrendIndicator trend={k.trend_classification} />
+                    <DisagreementFlag flag={k.disagreement_flag} />
+                  </span>
+                  <ConfidenceBadge confidence={k.confidence} />
+                  <StatusBadge status={k.research_status} />
                   <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
                   <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                     {sources.map(s => (
@@ -675,8 +653,8 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                     ))}
                   </span>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={() => startEdit(k)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px' }}>✎</button>
-                    <button onClick={() => handleDelete(k.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px', opacity: 0.4 }}>🗑</button>
+                    <button onClick={e => { e.stopPropagation(); startEdit(k); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px' }}>✎</button>
+                    <button onClick={e => { e.stopPropagation(); handleDelete(k.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--charcoal-soft)', fontSize: '0.75rem', padding: '2px', opacity: 0.4 }}>🗑</button>
                   </div>
                 </div>
               );
@@ -685,6 +663,14 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
 
         </div>
         </div>
+      )}
+
+      {selectedKeywordId && (
+        <KeywordDetail
+          keywordId={selectedKeywordId}
+          onClose={() => setSelectedKeywordId(null)}
+          onUpdated={load}
+        />
       )}
     </div>
   );
@@ -756,7 +742,6 @@ export default function Research() {
           <button className={`btn btn-sm ${tab === 'sessions' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('sessions')}>Sessions</button>
           <button className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('collections')}>Collections</button>
           <button className={`btn btn-sm ${tab === 'explore' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('explore')}>Explore</button>
-          <button className={`btn btn-sm ${tab === 'compare' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('compare')}>Compare Sources</button>
         </div>
       </div>
 
@@ -792,8 +777,6 @@ export default function Research() {
           onCollectionCreated={refetchCollections}
         />
       )}
-
-      {tab === 'compare' && <SourceCompare />}
 
       {tab === 'sessions' && (
         <>
