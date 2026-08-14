@@ -137,6 +137,29 @@ function bestTrendSeries(readingsBySource) {
   return null;
 }
 
+// Same search as bestTrendSeries(), but returns which source the qualifying
+// series came from instead of the values — explainKeyword()'s Emerging
+// Unicorn sentence needs to credit the source that actually HAS the
+// supporting trend, which is routinely the lower-current-value source
+// (an older/laggier reading catching up), not necessarily the source
+// reporting the higher current number.
+function trendSourceFor(readingsBySource) {
+  for (const [source, group] of Object.entries(readingsBySource || {})) {
+    const td = group.latest?.trend_data;
+    if (Array.isArray(td) && td.length >= TREND_MIN_POINTS) {
+      const vals = td.map(p => (typeof p === 'number' ? p : p?.value)).filter(v => v != null);
+      if (vals.length >= TREND_MIN_POINTS) return source;
+    }
+  }
+  for (const [source, group] of Object.entries(readingsBySource || {})) {
+    if (group.readings.length >= TREND_MIN_POINTS) {
+      const vals = group.readings.map(r => r.volume).filter(v => v != null);
+      if (vals.length >= TREND_MIN_POINTS) return source;
+    }
+  }
+  return null;
+}
+
 export function classifyTrend(readingsBySource, { collectionSeason } = {}) {
   const series = bestTrendSeries(readingsBySource);
   if (!series || series.length < TREND_MIN_POINTS) return 'Unknown';
@@ -174,7 +197,12 @@ export function scoreConfidence(readingsBySource, { classification, trend } = {}
   const isStale = daysSince != null && daysSince > 120;
 
   if (isStale) return 'Low';
-  if (sourceCount === 1 && !hasTrend) return 'Low';
+  // <=1, not ===1 — a keyword with zero recorded history (every keyword that
+  // predates this phase's always-append history write, confirmed live: 0
+  // keyword_history rows existed anywhere before this recompute) has even
+  // less evidence than a single-source one, not more; it must not fall
+  // through to the 'Medium' default below.
+  if (sourceCount <= 1 && !hasTrend) return 'Low';
   if (sourceCount >= 2 && hasTrend && classification !== 'Emerging Unicorn') return 'High';
   return 'Medium';
 }
@@ -239,7 +267,12 @@ export function explainKeyword({ classification, trend, disagreement, anomaly, r
     const lowerVal = Math.min(worst.aValue, worst.bValue);
     const lowerSource = worst.higherSource === worst.a ? worst.b : worst.a;
     if (classification === 'Emerging Unicorn') {
-      sentences.push(`${worst.higherSource} reports ${higherVal.toLocaleString()}, well above ${lowerSource}'s ${lowerVal.toLocaleString()}. Recent ${worst.higherSource} activity supports the higher estimate — likely an emerging trend.`);
+      // The trend that justifies trusting the higher number over the lower
+      // one routinely belongs to the LOWER-current-value source (an older
+      // reading catching up), not the higher one — credit whichever source
+      // actually has the qualifying trend, not just the higher-reporting one.
+      const trendSource = trendSourceFor(readingsBySource) || worst.higherSource;
+      sentences.push(`${worst.higherSource} reports ${higherVal.toLocaleString()}, well above ${lowerSource}'s ${lowerVal.toLocaleString()}. Recent ${trendSource} activity supports the higher estimate — likely an emerging trend.`);
     } else {
       sentences.push(`${worst.higherSource} reports significantly higher demand (${higherVal.toLocaleString()}) than ${lowerSource} (${lowerVal.toLocaleString()}). No trend acceleration supports the difference — treat as low-confidence until more evidence comes in.`);
     }
