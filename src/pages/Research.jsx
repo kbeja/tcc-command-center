@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useResearchSessions, useCollections, useCollectionObjects, useChapters, useProducts, createCollection, deleteCollection, updateKeyword, deleteKeyword, recomputeKeywordInterpretation } from '../lib/hooks';
@@ -157,6 +157,86 @@ function CollectionsManager({ refetch: refetchNames }) {
 
 const BUCKET_LABELS = { 1: 'B1 Visibility', 2: 'B2 Reach', 3: 'B3 Bestseller' };
 
+// A column header that's both a sort trigger (click the label) and a filter
+// trigger (click the ▾) — reuses the same single-select filter state each
+// column already had in the old standalone dropdown row, just relocated
+// onto the column itself instead of a separate filter bar.
+function ColumnFilterHeader({ label, sortKey, sortCol, sortDir, onSort, value, onChange, options, allLabel, searchable }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const normalized = options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
+  const visible = searchable && query
+    ? normalized.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
+    : normalized;
+  const activeLabel = normalized.find(o => o.value === value)?.label;
+
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0, maxWidth: '100%' }}>
+      <span
+        onClick={() => sortKey && onSort(sortKey)}
+        title={activeLabel ? `Filtered: ${activeLabel}` : label}
+        style={{
+          cursor: sortKey ? 'pointer' : 'default', userSelect: 'none',
+          color: sortCol === sortKey || value ? 'var(--dusty-rose)' : undefined,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}
+      >
+        {label}{sortCol === sortKey ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+      </span>
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        title="Filter"
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '0.55rem', lineHeight: 1, color: value ? 'var(--dusty-rose)' : 'var(--charcoal-soft)', opacity: value ? 1 : 0.5, flexShrink: 0 }}
+      >▾</button>
+      {open && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 30,
+            background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.15)', borderRadius: 4,
+            boxShadow: '0 4px 14px rgba(0,0,0,0.12)', minWidth: 170, maxHeight: 280, overflowY: 'auto',
+            padding: 4, textTransform: 'none', letterSpacing: 'normal', fontWeight: 400,
+          }}
+        >
+          {searchable && (
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search…"
+              style={{ width: '100%', fontSize: '0.75rem', padding: '4px 6px', marginBottom: 4, boxSizing: 'border-box' }}
+            />
+          )}
+          <div
+            onClick={() => { onChange(''); setOpen(false); setQuery(''); }}
+            style={{ padding: '5px 8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: !value ? 600 : 400, borderRadius: 3, background: !value ? 'rgba(188,100,90,0.08)' : 'none' }}
+          >{allLabel}</div>
+          {visible.map(o => (
+            <div
+              key={o.value}
+              onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+              style={{ padding: '5px 8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: value === o.value ? 600 : 400, borderRadius: 3, background: value === o.value ? 'rgba(188,100,90,0.08)' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >{o.label}</div>
+          ))}
+          {searchable && query && visible.length === 0 && (
+            <div style={{ padding: '5px 8px', fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>No matches</div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function KeywordList({ collectionObjects, chapters, onAddSession, initialCollection = '', initialSearch = '', refreshKey }) {
   const { products } = useProducts();
   const liveListingWords = new Set(
@@ -174,6 +254,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
   const [filterConfidence, setFilterConfidence] = useState('');
   const [filterTrend, setFilterTrend]     = useState('');
   const [filterStatus, setFilterStatus]   = useState('');
+  const [filterSource, setFilterSource]   = useState('');
   const [filterDisagreement, setFilterDisagreement] = useState(false);
   const [activePreset, setActivePreset]   = useState('');
   const [search, setSearch]           = useState(initialSearch);
@@ -223,6 +304,10 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     ? allCollectionsFromData.filter(col => colChapterMap[col] === filterChapter)
     : allCollectionsFromData;
 
+  const allSourcesFromData = [...new Set(
+    keywords.map(k => k.research_sessions?.source).filter(Boolean)
+  )].sort();
+
   const uncategorizedCount = keywords.filter(k => !k.research_sessions?.collection).length;
 
   const filtered = keywords.filter(k => {
@@ -238,6 +323,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     if (filterConfidence && k.confidence !== filterConfidence) return false;
     if (filterTrend && k.trend_classification !== filterTrend) return false;
     if (filterStatus && k.research_status !== filterStatus) return false;
+    if (filterSource && k.research_sessions?.source !== filterSource) return false;
     if (filterDisagreement && !k.disagreement_flag) return false;
     if (activePreset && !KEYWORD_PRESETS[activePreset].test(k)) return false;
     if (search && !k.keyword?.toLowerCase().includes(search.toLowerCase())) return false;
@@ -353,20 +439,72 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     setCleaning(false);
   }
 
-  const sorted = sortCol ? [...filtered].sort((a, b) => {
+  // Dedup by keyword text FIRST, then sort the deduped rows — not the other
+  // way around. A keyword researched under two different collections exists
+  // as two separate raw rows; sorting the raw rows and deduping afterward let
+  // a row's sort position come from whichever raw row was encountered first
+  // while its DISPLAYED collection came from whichever raw row separately won
+  // "primary" status (bucket-assigned wins) — the two could disagree, making
+  // e.g. a Collection sort visibly out of order. Deduping first and sorting
+  // the merged rows means sort position always matches what's on screen.
+  const dedupMap = new Map();
+  for (const k of filtered) {
+    const key = (k.keyword || '').toLowerCase().trim();
+    if (!key) continue;
+    if (!dedupMap.has(key)) {
+      dedupMap.set(key, { primary: k, sources: [] });
+    }
+    const entry = dedupMap.get(key);
+    const src = k.research_sessions?.source;
+    if (src && !entry.sources.includes(src)) entry.sources.push(src);
+    // Prefer the entry with a bucket assigned
+    if (k.bucket && !entry.primary.bucket) entry.primary = k;
+  }
+  const dedupedRows = [...dedupMap.values()];
+
+  // Columns whose values are strings sort alphabetically (empty/null always
+  // sorts last, regardless of direction, so "unclassified" doesn't jump to
+  // the top on a descending sort); the original numeric columns are unchanged.
+  // Getters read the same values the row actually renders — sources.join for
+  // the Source(s) column (its badges = the full merged list), primary's own
+  // field for everything else.
+  const SORT_STRING_GETTERS = {
+    keyword:        e => e.primary.keyword || '',
+    classification: e => e.primary.classification || '',
+    confidence:     e => e.primary.confidence || '',
+    status:         e => e.primary.research_status || '',
+    collection:     e => e.primary.research_sessions?.collection || '',
+    source:         e => e.sources.join(', '),
+  };
+  const sortedRows = sortCol ? [...dedupedRows].sort((a, b) => {
+    if (SORT_STRING_GETTERS[sortCol]) {
+      const getStr = SORT_STRING_GETTERS[sortCol];
+      const as = getStr(a), bs = getStr(b);
+      if (!as && bs) return 1;
+      if (as && !bs) return -1;
+      if (!as && !bs) return 0;
+      const cmp = as.localeCompare(bs);
+      return sortDir === 'desc' ? -cmp : cmp;
+    }
     let av, bv;
-    if (sortCol === 'vol')   { av = a.volume ?? -1;      bv = b.volume ?? -1; }
-    if (sortCol === 'comp')  { av = a.competition ?? -1;  bv = b.competition ?? -1; }
-    if (sortCol === 'kd')    { av = a.score ?? -1;         bv = b.score ?? -1; }
-    if (sortCol === 'bucket'){ av = a.bucket ?? 0;         bv = b.bucket ?? 0; }
+    if (sortCol === 'vol')   { av = a.primary.volume ?? -1;      bv = b.primary.volume ?? -1; }
+    if (sortCol === 'comp')  { av = a.primary.competition ?? -1;  bv = b.primary.competition ?? -1; }
+    if (sortCol === 'kd')    { av = a.primary.score ?? -1;         bv = b.primary.score ?? -1; }
+    if (sortCol === 'bucket'){ av = a.primary.bucket ?? 0;         bv = b.primary.bucket ?? 0; }
     return sortDir === 'desc' ? bv - av : av - bv;
-  }) : filtered;
+  }) : dedupedRows;
 
   const totalFiltered = filtered.length;
 
   return (
     <div>
-      {/* Filters row */}
+      {/* Filters row — Bucket/Classification/Confidence/Status/Collection/Source
+          filters now live on their own column headers below (click a header's
+          ▾ to filter, click its label to sort); this bar keeps only what
+          doesn't map to a single column: free-text search, chapter (a
+          collection grouping, not a column), trend + disagreement (both
+          displayed inline within the Classification cell, not columns of
+          their own), and the bulk actions. */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           value={search}
@@ -382,22 +520,16 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
             <option value="__other">— No chapter —</option>
           )}
         </select>
-        <select value={filterCollection} onChange={e => setFilterCollection(e.target.value)}
-          style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
-          <option value="">All collections</option>
-          {uncategorizedCount > 0 && !filterChapter && (
-            <option value="__uncategorized__">— Uncategorized ({uncategorizedCount}) —</option>
-          )}
-          {visibleCollections.map(col => <option key={col} value={col}>{col}</option>)}
+        <select value={filterTrend} onChange={e => setFilterTrend(e.target.value)} style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
+          <option value="">All trends</option>
+          {TREND_CLASSIFICATIONS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={filterBucket} onChange={e => setFilterBucket(e.target.value)}
-          style={{ fontSize: '0.78rem', padding: '6px 8px' }}>
-          <option value="">All buckets ({totalFiltered})</option>
-          <option value="1">B1 Visibility</option>
-          <option value="2">B2 Reach</option>
-          <option value="3">B3 Bestseller</option>
-          <option value="0">Unclassified</option>
-        </select>
+        <button className={`btn btn-sm ${filterDisagreement ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterDisagreement(d => !d)}>
+          ⚠ Disagreement only
+        </button>
+        <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', whiteSpace: 'nowrap' }}>
+          {totalFiltered} keyword{totalFiltered !== 1 ? 's' : ''}
+        </span>
         <button className="btn btn-ghost btn-sm" onClick={handleRebucket} disabled={rebucketing}
           title="Re-run bucket assignment on all keywords with volume + competition data">
           {rebucketing ? 'Re-bucketing…' : '⟳ Re-bucket'}
@@ -427,29 +559,6 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
           ✓ {recomputeResult.updated} recomputed{recomputeResult.failed > 0 ? ` · ${recomputeResult.failed} failed` : ''}
         </div>
       )}
-
-      {/* Interpretation filters */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={filterClassification} onChange={e => setFilterClassification(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
-          <option value="">All classifications</option>
-          {CLASSIFICATIONS.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={filterConfidence} onChange={e => setFilterConfidence(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
-          <option value="">All confidence</option>
-          {CONFIDENCE_LEVELS.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={filterTrend} onChange={e => setFilterTrend(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
-          <option value="">All trends</option>
-          {TREND_CLASSIFICATIONS.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ fontSize: '0.75rem', padding: '5px 8px' }}>
-          <option value="">All statuses</option>
-          {RESEARCH_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <button className={`btn btn-sm ${filterDisagreement ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterDisagreement(d => !d)}>
-          ⚠ Disagreement only
-        </button>
-      </div>
 
       {/* Quick-filter presets */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -489,43 +598,57 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
-      {!loading && filtered.length === 0 && (
-        <div className="empty-state">
-          <p>No keywords match these filters.</p>
-        </div>
-      )}
-
-      {!loading && filtered.length > 0 && (
+      {/* Header renders whenever keywords have loaded at all, even when the
+          current filter combination matches zero rows — the column filters
+          now live in this header, so if it only rendered alongside actual
+          rows, filtering down to zero would hide the very controls needed
+          to undo that filter. */}
+      {!loading && keywords.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 1060 }}>
-          {/* Header */}
+          {/* Header — click a label to sort that column, click ▾ to filter it.
+              Keyword stays frozen at the left edge while the rest scrolls. */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
-            <span>Keyword</span>
-            {[['bucket','Bucket'],['vol','Vol'],['comp','Comp'],['kd','KD']].map(([col, lbl]) => (
+            <span
+              onClick={() => toggleSort('keyword')}
+              style={{
+                position: 'sticky', left: 10, zIndex: 2, background: 'var(--linen)',
+                cursor: 'pointer', userSelect: 'none', color: sortCol === 'keyword' ? 'var(--dusty-rose)' : undefined,
+                paddingRight: 8, boxShadow: '4px 0 6px -4px rgba(43,41,38,0.25)',
+              }}
+            >
+              Keyword{sortCol === 'keyword' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+            </span>
+            <ColumnFilterHeader label="Bucket" sortKey="bucket" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterBucket} onChange={setFilterBucket} allLabel="All buckets"
+              options={[{ value: '1', label: 'B1 Visibility' }, { value: '2', label: 'B2 Reach' }, { value: '3', label: 'B3 Bestseller' }, { value: '0', label: 'Unclassified' }]} />
+            {[['vol','Vol'],['comp','Comp'],['kd','KD']].map(([col, lbl]) => (
               <span key={col} onClick={() => toggleSort(col)} style={{ cursor: 'pointer', userSelect: 'none', color: sortCol === col ? 'var(--dusty-rose)' : undefined }}>
                 {lbl}{sortCol === col ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
               </span>
             ))}
-            <span>Classification</span><span>Conf.</span><span>Status</span>
-            <span>Collection</span><span>Source(s)</span><span></span>
+            <ColumnFilterHeader label="Classification" sortKey="classification" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterClassification} onChange={setFilterClassification} allLabel="All classifications" options={CLASSIFICATIONS} />
+            <ColumnFilterHeader label="Conf." sortKey="confidence" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterConfidence} onChange={setFilterConfidence} allLabel="All confidence" options={CONFIDENCE_LEVELS} />
+            <ColumnFilterHeader label="Status" sortKey="status" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterStatus} onChange={setFilterStatus} allLabel="All statuses" options={RESEARCH_STATUSES} />
+            <ColumnFilterHeader label="Collection" sortKey="collection" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterCollection} onChange={setFilterCollection} allLabel="All collections" searchable
+              options={[
+                ...(uncategorizedCount > 0 ? [{ value: '__uncategorized__', label: `— Uncategorized (${uncategorizedCount}) —` }] : []),
+                ...visibleCollections,
+              ]} />
+            <ColumnFilterHeader label="Source(s)" sortKey="source" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterSource} onChange={setFilterSource} allLabel="All sources" options={allSourcesFromData} />
+            <span></span>
           </div>
 
-          {(() => {
-            // Dedup by keyword text — merge source badges onto one row
-            const dedupMap = new Map();
-            for (const k of sorted) {
-              const key = (k.keyword || '').toLowerCase().trim();
-              if (!key) continue;
-              if (!dedupMap.has(key)) {
-                dedupMap.set(key, { primary: k, sources: [] });
-              }
-              const entry = dedupMap.get(key);
-              const src = k.research_sessions?.source;
-              if (src && !entry.sources.includes(src)) entry.sources.push(src);
-              // Prefer the entry with a bucket assigned
-              if (k.bucket && !entry.primary.bucket) entry.primary = k;
-            }
-            return [...dedupMap.values()].map(({ primary: k, sources }) => {
+          {filtered.length === 0 ? (
+            <div className="empty-state">
+              <p>No keywords match these filters.</p>
+            </div>
+          ) : sortedRows.map(({ primary: k, sources }) => {
               const col = k.research_sessions?.collection || '—';
               // Score direction is opposite between sources: eRank's KD is 0-100,
               // higher = harder to rank (bad). Everbee's score is unbounded and
@@ -614,7 +737,12 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                   onClick={() => setSelectedKeywordId(k.id)}
                   title="Click for classification, source comparison, and history"
                   style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center', cursor: 'pointer' }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>
+                  <span style={{
+                    fontSize: '0.82rem', fontWeight: 500,
+                    position: 'sticky', left: 10, zIndex: 1, background: 'var(--warm-white)',
+                    alignSelf: 'stretch', display: 'flex', alignItems: 'center', paddingRight: 8,
+                    boxShadow: '4px 0 6px -4px rgba(43,41,38,0.15)',
+                  }}>
                     {k.keyword}
                     {k.tags_only && <span style={{ fontSize: '0.6rem', color: 'var(--charcoal-soft)', marginLeft: 4 }}>tag</span>}
                     {inLiveListing && <span style={{ fontSize: '0.55rem', marginLeft: 5, padding: '1px 5px', borderRadius: 8, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', fontWeight: 600 }}>live</span>}
@@ -658,8 +786,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                   </div>
                 </div>
               );
-            });
-          })()}
+            })}
 
         </div>
         </div>
