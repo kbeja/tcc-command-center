@@ -3,7 +3,52 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts, useVisualTags, useCollectionTags, createVisualTag, applyTagToCollection, removeTagFromCollection } from '../lib/hooks';
 import ConceptChatImport from '../components/ConceptChatImport';
 import VisualTagPicker from '../components/VisualTagPicker';
+import KeywordDetail from '../components/KeywordDetail';
+import { ClassificationBadge, ConfidenceBadge, StatusBadge, TrendIndicator, DisagreementFlag } from '../lib/keywords';
 import { buildContextHeader, field, section } from '../lib/context';
+
+// Duplicated from Research.jsx/ResearchSessionForm.jsx (already-flagged drift,
+// not fixed here — see this phase's Risks notes) rather than an odd
+// page-importing-page dependency for one constant. This copy uses the more
+// complete 9-item list (includes 4th of July).
+const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
+
+// Template-based sentence assembly from real classification counts — same
+// house style as keywordIntelligence.js's explainKeyword(), not free-
+// generation. Nothing here is invented; it only describes counts already
+// computed by classifyKeyword() and stored on each keyword.
+function buildOpportunitySummary(keywords) {
+  const classified = keywords.filter(k => k.classification);
+  if (!classified.length) {
+    return keywords.length
+      ? 'No classified keywords yet — run "Recompute Classifications" from the Research page’s Keywords tab.'
+      : 'No keywords researched for this collection yet.';
+  }
+  const counts = {};
+  for (const k of classified) counts[k.classification] = (counts[k.classification] || 0) + 1;
+  const strong = counts['Strong Unicorn'] || 0;
+  const emerging = counts['Emerging Unicorn'] || 0;
+  const evergreen = counts['Evergreen'] || 0;
+  const seasonal = counts['Seasonal'] || 0;
+  const watchlist = counts['Watchlist'] || 0;
+  const suspect = counts['Suspect / Low Confidence'] || 0;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  const sentences = [];
+  if (strong || emerging) {
+    const parts = [];
+    if (strong) parts.push(`${plural(strong, 'strong unicorn')}`);
+    if (emerging) parts.push(`${plural(emerging, 'emerging unicorn')}`);
+    sentences.push(`This collection has ${parts.join(' and ')} worth prioritizing.`);
+  } else {
+    sentences.push('No unicorn-tier keywords identified yet in this collection.');
+  }
+  if (evergreen) sentences.push(`${plural(evergreen, 'evergreen keyword')} provide${evergreen === 1 ? 's' : ''} a stable foundation.`);
+  if (seasonal) sentences.push(`${plural(seasonal, 'keyword')} ${seasonal === 1 ? 'is' : 'are'} seasonal — time listings around ${seasonal === 1 ? 'its' : 'their'} window.`);
+  if (suspect) sentences.push(`${plural(suspect, 'keyword')} ${suspect === 1 ? 'is' : 'are'} flagged Suspect / Low Confidence and need${suspect === 1 ? 's' : ''} a closer look before relying on ${suspect === 1 ? 'it' : 'them'}.`);
+  if (watchlist) sentences.push(`${plural(watchlist, 'keyword')} ${watchlist === 1 ? 'is' : 'are'} still on the Watchlist, pending more evidence.`);
+  return sentences.join(' ');
+}
 
 const EVAL_FIELDS = [
   { key: 'evaluation_market_evidence',         label: 'Market evidence' },
@@ -116,7 +161,7 @@ export default function CollectionDetail() {
   const { collections, loading: colLoading, refetch } = useCollectionObjects();
   const { sparks } = useSparks();
   const { products } = useProducts();
-  const { sessions } = useResearchSessions(name);
+  const { sessions, refetch: refetchSessions } = useResearchSessions(name);
   const { signals } = useTrendSignals();
 
   const collection = collections.find(c => c.name === name);
@@ -133,6 +178,7 @@ export default function CollectionDetail() {
   const [saved, setSaved] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [fieldSaved, setFieldSaved] = useState('');
+  const [selectedKeywordId, setSelectedKeywordId] = useState(null);
 
   useEffect(() => {
     if (collection && !form) {
@@ -234,7 +280,7 @@ export default function CollectionDetail() {
 
       {/* ── Tab Bar ── */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(43,41,38,0.12)', marginBottom: 20 }}>
-        {[['overview', 'Overview'], ['concepts', `Concepts${concepts.length ? ` (${concepts.length})` : ''}`]].map(([key, label]) => (
+        {[['overview', 'Overview'], ['concepts', `Concepts${concepts.length ? ` (${concepts.length})` : ''}`], ['research', 'Research']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
@@ -295,6 +341,83 @@ export default function CollectionDetail() {
           )}
         </div>
       )}
+
+      {/* ── Research Tab ── */}
+      {activeTab === 'research' && (() => {
+        // Dedup by keyword text — same convention as Research.jsx's Keywords
+        // tab. Without this, a keyword imported across multiple sessions
+        // (including legacy pre-Phase-19 duplicate rows, before
+        // createResearchSession() merged on collection+text) shows as
+        // repeated rows and inflates the Opportunity Summary's counts.
+        const dedupMap = new Map();
+        for (const s of sessions) {
+          for (const k of (s.keywords || [])) {
+            const key = (k.keyword || '').toLowerCase().trim();
+            if (!key) continue;
+            if (!dedupMap.has(key)) dedupMap.set(key, { primary: k, sources: [] });
+            const entry = dedupMap.get(key);
+            if (s.source && !entry.sources.includes(s.source)) entry.sources.push(s.source);
+            if (k.bucket && !entry.primary.bucket) entry.primary = k;
+          }
+        }
+        const allKws = [...dedupMap.values()].map(({ primary, sources }) => ({ ...primary, _sources: sources }));
+        const summary = buildOpportunitySummary(allKws);
+        return (
+          <div>
+            <p style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--warm-charcoal)', marginBottom: 16, background: 'var(--charcoal-faint)', padding: '12px 14px', borderRadius: 4 }}>
+              {summary}
+            </p>
+
+            {allKws.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--charcoal-soft)' }}>
+                <div style={{ fontSize: '0.9rem', marginBottom: 12 }}>No research yet</div>
+                <button className="btn btn-primary btn-sm" onClick={() => navigate(`/research?collection=${encodeURIComponent(name)}`)}>+ Research Session</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 640 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) 60px 70px 118px 62px 90px 110px', gap: 8, padding: '4px 8px', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+                      <span>Keyword</span><span>Vol</span><span>Comp</span><span>Classification</span><span>Conf.</span><span>Status</span><span>Source</span>
+                    </div>
+                    {[...allKws].sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
+                      <div
+                        key={k.id}
+                        onClick={() => setSelectedKeywordId(k.id)}
+                        title="Click for classification, source comparison, and history"
+                        style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1fr) 60px 70px 118px 62px 90px 110px', gap: 8, padding: '6px 8px', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.07)', borderRadius: 3, alignItems: 'center', cursor: 'pointer', fontSize: '0.78rem' }}
+                      >
+                        <span style={{ fontWeight: 500 }}>{k.keyword}</span>
+                        <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>{k.volume?.toLocaleString() ?? '—'}</span>
+                        <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.72rem' }}>{k.competition?.toLocaleString() ?? '—'}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden' }}>
+                          <ClassificationBadge classification={k.classification} />
+                          <TrendIndicator trend={k.trend_classification} />
+                          <DisagreementFlag flag={k.disagreement_flag} />
+                        </span>
+                        <ConfidenceBadge confidence={k.confidence} />
+                        <StatusBadge status={k.research_status} />
+                        <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k._sources.join(', ') || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/research?collection=${encodeURIComponent(name)}`)}>
+                  Open full Keywords tab →
+                </button>
+              </>
+            )}
+
+            {selectedKeywordId && (
+              <KeywordDetail
+                keywordId={selectedKeywordId}
+                onClose={() => setSelectedKeywordId(null)}
+                onUpdated={refetchSessions}
+              />
+            )}
+          </div>
+        );
+      })()}
 
       {activeTab === 'overview' && <>
 
@@ -428,6 +551,28 @@ export default function CollectionDetail() {
             onBlur={e => handleFieldBlur('chapter', e.target.value)}
             placeholder="e.g. Reader, Mom, Kids"
           />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: collection.season ? '1fr 1fr' : '1fr', gap: 12, marginTop: 12 }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Season</label>
+            <select
+              value={collection.season || ''}
+              onChange={e => updateCollection(collection.id, { season: e.target.value || null }).then(() => refetch())}
+            >
+              <option value="">— Evergreen —</option>
+              {SEASONS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {collection.season && (
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Target Launch</label>
+              <input
+                type="date"
+                value={collection.launch_date || ''}
+                onChange={e => updateCollection(collection.id, { launch_date: e.target.value || null }).then(() => refetch())}
+              />
+            </div>
+          )}
         </div>
       </div>
 
