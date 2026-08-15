@@ -335,5 +335,16 @@ if (!pb) return { error: 'Playbook not found' };
 
 ---
 
-*57 total findings. 7 Critical · 8 High · 38 Medium · 4 Low.*
+## TRC-010 products.stats_updated_at / printify_cost missing from live schema — silent save failures
+**Area:** Traceability · **Severity:** Critical · **Status:** open (code fix shipped 2026-08-15; schema migration still pending — see Fix step 1)
+**File:** `src/pages/ProductWorkspace.jsx` (`handleStatsSave`, `handleFieldBlur`, the inline "Save Details" button handler)
+**Description:** `products.stats_updated_at` and `products.printify_cost` are written by the app but neither column exists in the live database (confirmed via direct network inspection of the real PATCH request/response, `PGRST204`, and independently by grepping every file in `supabase/migrations/` — neither name appears anywhere). PostgREST rejects the whole request atomically whenever either is in the payload. Three call sites ignored `updateProduct()`'s returned `{error}`, so this failed completely silently — "✓ Saved" showed while nothing persisted. Worst case found: the "Save Details" button bundles `printify_cost` together with `ecosystem_primary`/`emotional_trigger`/`niche`/`live_title`/`live_tags` in one PATCH, so that button silently failed on all six fields, every click, regardless of whether Printify Cost itself was being edited.
+**Fix:**
+1. Run `supabase/migrations/20260815_products_missing_stats_columns.sql` in the Supabase SQL Editor — not yet run. Adds both columns, nullable, no default.
+2. Done — every `updateProduct()` call site in `ProductWorkspace.jsx` now checks `{error}` and shows a visible "⚠ Save failed" banner instead of proceeding to a false success state.
+3. Worth Kristen confirming her real Live products' manually-entered stats/cost/details are actually current, since some may not have persisted for an unknown period before this was caught.
+
+---
+
+*58 total findings. 8 Critical · 8 High · 38 Medium · 4 Low.*
 *SEC = Security, OPT = Optimization, TRC = Traceability.*

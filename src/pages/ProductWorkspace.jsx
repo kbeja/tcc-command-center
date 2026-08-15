@@ -124,7 +124,7 @@ function LiveStats({ product, onSave }) {
   const isStale = daysSinceUpdate !== null && daysSinceUpdate >= staleThreshold;
 
   async function handleSave() {
-    await onSave({
+    const ok = await onSave({
       went_live_at: wentLive || null,
       stats_updated_at: new Date().toISOString(),
       mo_sales: parseInt(moSales) || 0,
@@ -145,6 +145,8 @@ function LiveStats({ product, onSave }) {
       ad_spend: parseFloat(adSpend) || 0,
       ad_roas: parseFloat(adRoas) || 0,
     });
+    // Only claim success if the write actually persisted — see handleStatsSave.
+    if (!ok) return;
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -965,6 +967,7 @@ export default function ProductWorkspace() {
   const [stageSaved, setStageSaved] = useState(false);
   const [fieldSaved, setFieldSaved] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
   const { generations: listingGenerations } = useListingGenerations(product?.id);
@@ -980,7 +983,9 @@ export default function ProductWorkspace() {
   const { concept: linkedConcept } = useConcept(product?.concept_id || null);
   const { concepts: pickableConcepts } = useConcepts(product?.collection || undefined);
   async function handleConceptLink(conceptId) {
-    await updateProduct(id, { concept_id: conceptId || null });
+    const { error } = await updateProduct(id, { concept_id: conceptId || null });
+    if (error) { setSaveError(error.message); return; }
+    setSaveError('');
     refetch();
   }
 
@@ -1006,32 +1011,46 @@ export default function ProductWorkspace() {
   async function handleFieldBlur(field, value) {
     // Use explicit null check so numeric 0 is preserved, not coerced to null
     const dbValue = (value === '' || value === undefined) ? null : value;
-    await updateProduct(id, { [field]: dbValue });
+    const { error } = await updateProduct(id, { [field]: dbValue });
+    if (error) { setSaveError(error.message); return; }
+    setSaveError('');
     setFieldSaved(field);
     setTimeout(() => setFieldSaved(''), 2000);
   }
 
   async function handleStageUpdate(stage) {
-    await updateProduct(id, { stage, stage_updated_at: new Date().toISOString() });
+    const { error } = await updateProduct(id, { stage, stage_updated_at: new Date().toISOString() });
+    if (error) { setSaveError(error.message); return; }
+    setSaveError('');
     setStageSaved(true);
     setTimeout(() => setStageSaved(false), 2000);
     refetch();
   }
 
   async function handleConfidence(confidence) {
-    await updateProduct(id, { confidence });
+    const { error } = await updateProduct(id, { confidence });
+    if (error) { setSaveError(error.message); return; }
+    setSaveError('');
     refetch();
   }
 
   async function handleNoteBlur() {
-    await updateProduct(id, { notes });
+    const { error } = await updateProduct(id, { notes });
+    if (error) { setSaveError(error.message); return; }
+    setSaveError('');
     setNoteSaved(true);
     setTimeout(() => setNoteSaved(false), 2000);
   }
 
+  // Returns true on success / false on failure so LiveStats (which owns its
+  // own "✓ Saved" indicator) never shows success for a save that didn't
+  // actually persist — this exact silent-success mismatch is the bug being fixed.
   async function handleStatsSave(stats) {
-    await updateProduct(id, stats);
+    const { error } = await updateProduct(id, stats);
+    if (error) { setSaveError(error.message); return false; }
+    setSaveError('');
     refetch();
+    return true;
   }
 
   if (loading) return <div className="page"><div style={{ color: 'var(--charcoal-soft)' }}>Loading…</div></div>;
@@ -1090,6 +1109,12 @@ export default function ProductWorkspace() {
         </div>
         <ConfidenceSelector value={product.confidence} onChange={handleConfidence} />
       </div>
+
+      {saveError && (
+        <div style={{ padding: '10px 14px', background: 'rgba(201,123,123,0.12)', border: '1px solid var(--alert)', borderRadius: 4, marginBottom: 16, fontSize: '0.8rem', color: 'var(--alert)', fontWeight: 500 }}>
+          ⚠ Save failed — your change was NOT saved: {saveError}
+        </div>
+      )}
 
       <hr className="rule" />
 
@@ -1246,7 +1271,7 @@ export default function ProductWorkspace() {
             <button
               className="btn btn-primary btn-sm"
               onClick={async () => {
-                await updateProduct(id, {
+                const { error } = await updateProduct(id, {
                   ecosystem_primary: ecosystem || null,
                   emotional_trigger: emotionalTrigger || null,
                   niche: niche || null,
@@ -1254,6 +1279,8 @@ export default function ProductWorkspace() {
                   live_title: liveTitle || null,
                   live_tags: liveTags || null,
                 });
+                if (error) { setSaveError(error.message); return; }
+                setSaveError('');
                 setFieldSaved('details');
                 setTimeout(() => setFieldSaved(''), 2000);
               }}

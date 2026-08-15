@@ -1,0 +1,34 @@
+-- Fix: products.stats_updated_at and products.printify_cost missing from live schema
+-- Run this in Supabase SQL Editor (not auto-applied)
+--
+-- Why: the app has been writing both columns for a long time and neither
+-- exists in the live database. PostgREST rejects an UPDATE atomically when
+-- any column in the payload doesn't exist (PGRST204), so every one of the
+-- three ProductWorkspace.jsx save paths that includes either field has been
+-- failing completely silently:
+--   1. LiveStats "Save Stats" -- sends stats_updated_at plus all ~19 stats
+--      fields (mo_sales, views, ad_spend, went_live_at, etc.) in one PATCH.
+--   2. The Printify Cost field's own onBlur autosave.
+--   3. The "Save Details" button -- bundles printify_cost together with
+--      ecosystem_primary/emotional_trigger/niche/live_title/live_tags in one
+--      PATCH, so that button has been failing on ALL SIX fields every time
+--      it's clicked, not just cost, since printify_cost is unconditionally
+--      part of the payload regardless of its value.
+-- None of this surfaced as an error because the three call sites never
+-- checked updateProduct()'s returned {error} -- fixed separately in
+-- ProductWorkspace.jsx (now shows a visible "Save failed" banner instead of
+-- silently proceeding to show "✓ Saved").
+--
+-- Confirmed via direct network inspection of the live PATCH request/response
+-- (PGRST204: "Could not find the 'stats_updated_at' column of 'products' in
+-- the schema cache"), reproduced on two separate products in two separate
+-- sessions, and independently confirmed here by grepping every migration
+-- file in this folder: neither column name appears in any of them, meaning
+-- one was never added in the first place.
+--
+-- Both columns nullable, no default -- matches every other *_at/numeric
+-- column added post-hoc in this app's migration history (see
+-- 20260809_experiments_schema_fix.sql's started_at/closed_at,
+-- 20260813_research_intelligence.sql's ctr/source_score).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stats_updated_at timestamptz;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS printify_cost numeric;
