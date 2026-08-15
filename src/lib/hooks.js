@@ -275,6 +275,75 @@ export async function markStorePolicyVerified(id, note) {
   }).eq('id', id);
 }
 
+// ─── Checkpoint Reviews (Milestone C3) ─────────────────────────────────────
+// Two intentionally separate write functions, not one function with a mode
+// flag — matches this file's own convention elsewhere (e.g.
+// archiveProductTemplate vs updateProductTemplate). Both accept an
+// already-built performanceSnapshot (from listingReviews.js's
+// buildPerformanceSnapshot(), called once by the caller when a review flow
+// opens) rather than building it here — guarantees the exact numbers the
+// AI reasoned over (for a real review) are the exact numbers persisted,
+// even if LiveStats gets edited again a minute later.
+
+export function useListingReviews(productId) {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!productId) { setReviews([]); setLoading(false); return; }
+    const { data } = await supabase
+      .from('listing_reviews')
+      .select('*')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false });
+    setReviews(data || []);
+    setLoading(false);
+  }, [productId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { reviews, loading, refetch: fetch };
+}
+
+export async function createListingReview({
+  productId, checkpointNumber, daysLiveAtReview, performanceSnapshot,
+  generationId, generationSnapshot,
+  aiRecommendation, aiReasoning, aiModel,
+  userDecision, userNotes,
+}) {
+  return supabase.from('listing_reviews').insert({
+    product_id: productId,
+    checkpoint_number: checkpointNumber,
+    status: 'reviewed',
+    days_live_at_review: daysLiveAtReview,
+    performance_snapshot: performanceSnapshot,
+    generation_id: generationId || null,
+    generation_snapshot: generationSnapshot || null,
+    ai_recommendation: aiRecommendation || null,
+    ai_reasoning: aiReasoning || null,
+    ai_model: aiModel || null,
+    user_decision: userDecision,
+    user_notes: userNotes || null,
+  }).select().single();
+}
+
+// Lightweight bypass — no AI call, ever (enforced by construction: this
+// function has no ai_* params at all). Still freezes a real stats snapshot
+// (cheap, mechanical, no interpretation involved) so a skipped checkpoint's
+// numbers-at-the-time remain visible later even though no judgment was
+// rendered on them.
+export async function skipListingReview({
+  productId, checkpointNumber, daysLiveAtReview, performanceSnapshot, userNotes,
+}) {
+  return supabase.from('listing_reviews').insert({
+    product_id: productId,
+    checkpoint_number: checkpointNumber,
+    status: 'skipped',
+    days_live_at_review: daysLiveAtReview,
+    performance_snapshot: performanceSnapshot,
+    user_notes: userNotes || null,
+  }).select().single();
+}
+
 // ─── Needs Attention ─────────────────────────────────────────────────────────
 
 export function getNeedsAttention(products) {

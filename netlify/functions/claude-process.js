@@ -1,3 +1,11 @@
+// Milestone C3 — same require()-from-a-Netlify-Function-into-src/lib
+// pattern already proven by generate-listing-v2.js's own
+// require('../../src/lib/productTruth.js'); works because netlify.toml
+// sets node_bundler = "esbuild". Single source of truth so this file's
+// actual API call and evaluate_checkpoint_review's persisted ai_model value
+// can never disagree with the UI's own copy of the same constants.
+const { CHECKPOINT_DECISION_KEYS, CHECKPOINT_AI_MODEL } = require('../../src/lib/listingReviews.js');
+
 const JSON_RULE = `\n\nCRITICAL: You must ALWAYS return valid JSON only. No explanations, no markdown, no conversational text. If you cannot extract information, return the JSON structure with empty arrays and a summary explaining what was missing. Never break out of JSON format for any reason.`;
 
 const SYSTEM_PROMPTS = {
@@ -131,6 +139,7 @@ const LIMITS = {
   keywords: 20_000,
   currentTitle: 200,
   notes: 5_000,
+  checkpointPayload: 20_000, // performance snapshot + generation snapshot + research evidence combined
   // Whole-request-body ceiling — must clear imageBase64 plus its JSON/text
   // overhead, or every image upload gets rejected here before the
   // type-specific (and more informative) imageBase64 check ever runs.
@@ -355,6 +364,113 @@ Only use "notable_shift" for a genuinely material difference — new evidence be
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed: toolUse.input }) };
     } catch (err) {
       return safeError(err, 'evaluate_keyword_evidence');
+    }
+  }
+
+  // ── Checkpoint Review — 30/60/90/120-day AI interpretation (Milestone C3) ──
+  // Structurally identical to evaluate_keyword_evidence: forced tool-use,
+  // Haiku, a tool schema with an enum-constrained recommendation + free-text
+  // reasoning, a prompt built entirely from real data the client already
+  // captured (performanceSnapshot, generationSnapshot, researchEvidence are
+  // all built client-side by listingReviews.js's pure functions from
+  // already-real, already-captured data — never invented here). Returns
+  // { parsed: toolUse.input } on success, a safeError() shape on failure —
+  // never writes to Supabase itself; the client saves the row only after
+  // the human picks and confirms her own decision.
+  if (type === 'evaluate_checkpoint_review') {
+    const { checkpointNumber, daysLive, performanceSnapshot, generationSnapshot, researchEvidence, stageGuidance } = payload || {};
+    if (!checkpointNumber || !performanceSnapshot) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Missing checkpointNumber or performanceSnapshot' }) };
+    }
+    if (JSON.stringify(payload).length > LIMITS.checkpointPayload) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Checkpoint payload too large' }) };
+    }
+
+    const fmtStat = (label, value, suffix = '') => value != null ? `${label}: ${value}${suffix}` : null;
+    const snapshotLines = [
+      fmtStat('Monthly sales', performanceSnapshot.mo_sales),
+      fmtStat('Monthly revenue', performanceSnapshot.mo_revenue, ' USD'),
+      fmtStat('Total sales', performanceSnapshot.total_sales),
+      fmtStat('Views', performanceSnapshot.views),
+      fmtStat('Favorites', performanceSnapshot.favorites),
+      fmtStat('Conversion rate', performanceSnapshot.conversion_rate, '%'),
+      fmtStat('Visibility score', performanceSnapshot.visibility_score, '%'),
+      fmtStat('Reviews total', performanceSnapshot.reviews),
+      fmtStat('Reviews this month', performanceSnapshot.mo_reviews),
+      fmtStat('Ad views', performanceSnapshot.ad_views),
+      fmtStat('Ad clicks', performanceSnapshot.ad_clicks),
+      fmtStat('Ad orders', performanceSnapshot.ad_orders),
+      fmtStat('Ad spend', performanceSnapshot.ad_spend, ' USD'),
+      fmtStat('Ad ROAS', performanceSnapshot.ad_roas),
+      performanceSnapshot.computed ? fmtStat('Net profit (computed)', performanceSnapshot.computed.net_profit, ' USD') : null,
+      performanceSnapshot.computed ? fmtStat('Margin (computed)', performanceSnapshot.computed.margin_pct, '%') : null,
+    ].filter(Boolean).join('\n');
+
+    const genBlock = generationSnapshot
+      ? `Title: "${generationSnapshot.title}"\nTags: ${(generationSnapshot.tags || []).join(', ')}\nPrimary Search Intent: "${generationSnapshot.primary_search_intent}" (status: ${generationSnapshot.primary_intent_status || 'unknown'})`
+      : 'No prior AI-generated listing on record for this product.';
+
+    const evidenceBlock = (researchEvidence || []).length
+      ? researchEvidence.map(k => `  - "${k.keyword}"${k.volume != null ? ` (vol ${k.volume})` : ''}${k.classification ? ` [${k.classification}]` : ''}`).join('\n')
+      : '  (no research evidence on record)';
+
+    const evaluateCheckpointTool = {
+      name: 'evaluate_checkpoint',
+      description: 'Interpret a product\'s frozen performance snapshot at a 30/60/90/120-day Etsy checkpoint and recommend what the real data suggests. Advisory interpretation only, never a final decision.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          recommendation: { type: 'string', enum: CHECKPOINT_DECISION_KEYS },
+          reasoning: { type: 'string' },
+        },
+        required: ['recommendation', 'reasoning'],
+      },
+    };
+
+    const prompt = `This is TCC (The Current Chapter)'s ${checkpointNumber}-day performance checkpoint for an Etsy listing. The listing has actually been live for ${daysLive} days.
+
+FROZEN PERFORMANCE SNAPSHOT (captured just now, for this checkpoint):
+${snapshotLines || '  (no stats recorded yet)'}
+
+PRIOR GENERATION CONTEXT (the listing strategy last generated for this product):
+${genBlock}
+
+CURRENT RESEARCH EVIDENCE (top researched keywords available for this product's collection):
+${evidenceBlock}
+
+KRISTEN'S OWN STANDING CHECKPOINT GUIDANCE (use whichever parts apply to a ${checkpointNumber}-day checkpoint — checkpoints apply regardless of the product's current workflow stage):
+Live-stage guidance: "${stageGuidance?.live || ''}"
+Reviewing-stage guidance: "${stageGuidance?.reviewing || ''}"
+
+Using ONLY the real data above, recommend exactly one of: no_action_needed (performing fine, no change warranted), update_seo (title/tags need updating), update_creative (hero image or mockups need refreshing), expand_line (consider a variant, companion product, or duplicating this line), kill_or_pause (rewrite significantly or retire this listing), or insufficient_data (too early or too sparse to support a real read). Only use insufficient_data when the data above is genuinely too thin — e.g. very few days live relative to ${checkpointNumber}, or stats still at or near zero — do not force a diagnosis onto sparse data. Do not invent sales trends, demand signals, or competitor data not shown above; cite only numbers actually given above.`;
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: CHECKPOINT_AI_MODEL,
+          max_tokens: 1000,
+          system: 'You are reviewing real Etsy performance data for TCC (The Current Chapter), a print-on-demand shop. Call evaluate_checkpoint with your recommendation. Never invent numbers not given to you.',
+          tools: [evaluateCheckpointTool],
+          tool_choice: { type: 'tool', name: 'evaluate_checkpoint' },
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('[claude-process] evaluate_checkpoint_review upstream error:', response.status, errText);
+        return { statusCode: 502, body: JSON.stringify({ error: 'Checkpoint review failed upstream. Please try again.' }) };
+      }
+      const data = await response.json();
+      const toolUse = (data.content || []).find(block => block.type === 'tool_use' && block.name === 'evaluate_checkpoint');
+      if (!toolUse) {
+        console.error('[claude-process] evaluate_checkpoint_review: no tool_use block:', JSON.stringify(data));
+        return { statusCode: 502, body: JSON.stringify({ error: 'Checkpoint review did not return structured data. Please try again.' }) };
+      }
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed: toolUse.input, model: CHECKPOINT_AI_MODEL }) };
+    } catch (err) {
+      return safeError(err, 'evaluate_checkpoint_review');
     }
   }
 

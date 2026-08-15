@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession, useConcept, useConcepts, useListingGenerations } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession, useConcept, useConcepts, useListingGenerations, useListingReviews } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
@@ -11,6 +11,7 @@ import ConfidenceSelector from '../components/ConfidenceSelector';
 import CollectionKnowledge from '../components/CollectionKnowledge';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
+import ReviewCheckpoints from '../components/ReviewCheckpoints';
 
 // ─── Stage Tracker (2-col grid, no overflow) ─────────────────────────────────
 
@@ -968,6 +969,7 @@ export default function ProductWorkspace() {
 
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
   const { generations: listingGenerations } = useListingGenerations(product?.id);
+  const { reviews: listingReviews, loading: reviewsLoading, refetch: refetchReviews } = useListingReviews(product?.id);
   const { playbooks } = usePlaybooks();
   const photoPlaybook = playbooks.find(p => p.slug === 'listing-photos');
   const seoPlaybook = playbooks.find(p => p.slug === 'seo-standards');
@@ -1121,6 +1123,17 @@ export default function ProductWorkspace() {
           <div style={{ marginBottom: 24 }}>
             <div className="section-label" style={{ marginBottom: 10 }}>Listing Stats</div>
             <LiveStats product={product} onSave={handleStatsSave} />
+          </div>
+          <hr className="rule" />
+          <div style={{ marginBottom: 24 }}>
+            <ReviewCheckpoints
+              product={product}
+              reviews={listingReviews}
+              loadingReviews={reviewsLoading}
+              onReviewSaved={refetchReviews}
+              generations={listingGenerations}
+              sessions={sessions}
+            />
           </div>
           <hr className="rule" />
         </>
