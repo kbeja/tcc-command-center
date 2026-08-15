@@ -336,7 +336,7 @@ if (!pb) return { error: 'Playbook not found' };
 ---
 
 ## TRC-010 products.stats_updated_at / printify_cost missing from live schema — silent save failures
-**Area:** Traceability · **Severity:** Critical · **Status:** open (code fix shipped 2026-08-15; schema migration still pending — see Fix step 1)
+**Area:** Traceability · **Severity:** Critical · **Status:** done — migration run by Kristen 2026-08-15, both save paths confirmed working live end-to-end post-migration (real "Updated today"/"✓ Saved" from persisted DB state, not local-only UI state)
 **File:** `src/pages/ProductWorkspace.jsx` (`handleStatsSave`, `handleFieldBlur`, the inline "Save Details" button handler)
 **Description:** `products.stats_updated_at` and `products.printify_cost` are written by the app but neither column exists in the live database (confirmed via direct network inspection of the real PATCH request/response, `PGRST204`, and independently by grepping every file in `supabase/migrations/` — neither name appears anywhere). PostgREST rejects the whole request atomically whenever either is in the payload. Three call sites ignored `updateProduct()`'s returned `{error}`, so this failed completely silently — "✓ Saved" showed while nothing persisted. Worst case found: the "Save Details" button bundles `printify_cost` together with `ecosystem_primary`/`emotional_trigger`/`niche`/`live_title`/`live_tags` in one PATCH, so that button silently failed on all six fields, every click, regardless of whether Printify Cost itself was being edited.
 **Fix:**
