@@ -11,13 +11,14 @@ import { nicheStyleGuides } from '../../data/collections';
 import { STAGES } from '../../data/stages';
 
 import { GENERATION_VERSION, BRAND_VOICE_FALLBACK } from './constants';
-import { buildGenerationContext, asArray, validateGeneratedListing } from './generation';
+import { buildGenerationContext, asArray, validateGeneratedListing, buildOutputFromGeneration, extractHistoryDisplay } from './generation';
 import InlineKeywordAdd from './InlineKeywordAdd';
 import KeywordEvidencePanel from './KeywordEvidencePanel';
 import Zone1Product from './Zone1Product';
 import Zone2SearchStrategy from './Zone2SearchStrategy';
 import Zone3Listing from './Zone3Listing';
 import Zone4Review from './Zone4Review';
+import VersionHistory from './VersionHistory';
 
 export default function ListingBuilder() {
   const [searchParams] = useSearchParams();
@@ -30,7 +31,10 @@ export default function ListingBuilder() {
   // sources/excluded/validation live only on the generation ledger, never
   // on the product row itself (see listingReadiness.js's header). Most
   // recent row only; see the hydration effect below for how/when it's used.
-  const { generations: pastGenerations } = useListingGenerations(productId);
+  // refetch destructured (Milestone C2) — previously fetched once on mount
+  // and never refreshed, so a same-session regenerate left this hook
+  // returning stale data; the new Version History section needs it live.
+  const { generations: pastGenerations, refetch: refetchGenerations } = useListingGenerations(productId);
   const latestGeneration = pastGenerations[0] || null;
   const { collections, refetch: refetchCollections } = useCollections();
   const { collections: collectionObjs, refetch: refetchCollectionObjs } = useCollectionObjects();
@@ -428,7 +432,10 @@ export default function ListingBuilder() {
   // no home yet — it's earmarked for Zone 2/ResearchEvidence.jsx (Milestone
   // B, next task), a short-lived gap, not a dropped requirement.
 
-  async function handleGenerate() {
+  // changeReason (Milestone C2) — optional, human-entered, never required.
+  // Threaded straight into createListingGeneration below; purely
+  // client-side text that never reaches the generation prompt itself.
+  async function handleGenerate(changeReason) {
     if (!form.collection) { setGenError('Please select a collection first.'); return; }
     setGenerating(true);
     setGenError('');
@@ -518,6 +525,7 @@ export default function ListingBuilder() {
         imagePrompts: asArray(listing.image_prompts),
         validationStatus: listing.validation?.status || null,
         validationWarnings: warnings,
+        changeReason: changeReason || null,
         model: data.model,
         inputTokens: data.usage?.input_tokens,
         outputTokens: data.usage?.output_tokens,
@@ -529,12 +537,32 @@ export default function ListingBuilder() {
         excludedKeywords: ctx.excludedKeywords,
       });
       if (genRow?.id && !productId) setPendingGenerationIds(ids => [...ids, genRow.id]);
+      // Milestone C2 — keeps Version History current after a same-session
+      // regenerate; previously this hook was fetched once on mount only.
+      if (genRow?.id) refetchGenerations();
 
       setOutput(listing);
     } catch (err) {
       setGenError(err.message);
     }
     setGenerating(false);
+  }
+
+  // Restore a past version (Milestone C2) — loads a stored
+  // listing_generations row back into the same draft state a fresh
+  // generation already populates. Writes NOTHING to the database: no
+  // createListingGeneration call, no pendingGenerationIds change. `form`
+  // (Product Truth) is deliberately never touched — restore only ever
+  // reloads output-shaped state, never rolls back product-level facts.
+  // setOutput below triggers the existing "output changed" effect, which
+  // already fills editTitle/editTags/editDesc/editPrompts/
+  // primarySearchIntent/primaryIntentStatus/researchGaps from it.
+  function handleRestoreVersion(generation) {
+    setOutput(buildOutputFromGeneration(generation));
+    const history = extractHistoryDisplay(generation);
+    setValidationWarnings(history.validationWarnings);
+    setResearchSourcesUsed(history.researchSourcesUsed);
+    setExcludedKeywordsDisplay(history.excludedKeywordsDisplay);
   }
 
   // Save as new product (standalone mode only)
@@ -653,13 +681,10 @@ export default function ListingBuilder() {
     if (latestGeneration.primary_search_intent) setPrimarySearchIntent(latestGeneration.primary_search_intent);
     if (latestGeneration.primary_intent_status) setPrimaryIntentStatus(latestGeneration.primary_intent_status);
     setResearchGaps(asArray(latestGeneration.research_gaps));
-    setValidationWarnings(asArray(latestGeneration.validation_warnings));
-    setResearchSourcesUsed(asArray(latestGeneration.research_sources_used));
-    setExcludedKeywordsDisplay(
-      (latestGeneration.listing_generation_keywords || [])
-        .filter(k => k.role === 'excluded')
-        .map(k => ({ keyword: k.keyword_text, reason: k.exclusion_reason }))
-    );
+    const history = extractHistoryDisplay(latestGeneration);
+    setValidationWarnings(history.validationWarnings);
+    setResearchSourcesUsed(history.researchSourcesUsed);
+    setExcludedKeywordsDisplay(history.excludedKeywordsDisplay);
   }, [output, latestGeneration]);
 
   const isLoading = productId && productLoading;
@@ -766,6 +791,12 @@ export default function ListingBuilder() {
         onSaveProduct={handleSaveProduct} canSaveProduct={!!form.productName.trim() && !!form.collection}
         onOpenProduct={() => navigate(`/products/${savedProductId}`)}
       />
+      <VersionHistory
+        generations={pastGenerations}
+        editTitle={editTitle} editTags={editTags} editDesc={editDesc} editPrompts={editPrompts} output={output}
+        generating={generating}
+        onRestore={handleRestoreVersion}
+      />
       {/* Bucket Coverage removed (Listing Intelligence Milestone A) — buckets
           are research metadata now, not a generation gate; this block's
           entire purpose was explaining a hard block that no longer exists.
@@ -780,7 +811,7 @@ export default function ListingBuilder() {
           <button
             className="btn btn-primary"
             style={{ width: '100%', padding: '14px', fontSize: '1rem' }}
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={generating || !form.collection}
           >
             {generating ? 'Generating listing…' : '✦ Generate Listing'}

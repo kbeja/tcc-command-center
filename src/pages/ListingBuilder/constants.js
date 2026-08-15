@@ -49,3 +49,19 @@ export const DESC_META = {
 };
 
 export const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
+
+// Was independently duplicated in both Zone2SearchStrategy.jsx and
+// Zone3Listing.jsx (Milestone B) — consolidated here (Milestone C2) rather
+// than adding a third copy for the new Version History cards.
+export const INTENT_STATUS_STYLE = {
+  validated: { bg: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
+  supported: { bg: 'rgba(232,168,124,0.2)', color: '#7a4a1e' },
+};
+
+// listing_generations.trigger — only these two values are ever written
+// (confirmed via full-repo grep, generation.js's own handleGenerate call
+// site), for Version History's collapsed-row label (Milestone C2).
+export const TRIGGER_LABELS = {
+  initial_generation: 'Initial generation',
+  manual_regenerate: 'Manual regenerate',
+};

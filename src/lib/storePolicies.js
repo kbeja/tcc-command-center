@@ -120,3 +120,35 @@ export function resolveEffectiveProductTruth(productTruth, policies) {
 
   return { effective, sources };
 }
+
+const POLICY_NOTE_LABELS = { production_time: 'Production time', shipping_policy: 'Shipping' };
+
+// Human-readable "why does this field say what it says" notes — same
+// POLICY_FIELD_MAP fields, one line each, omitted when the product
+// supplied its own value directly (nothing to explain). Takes ONLY the
+// `sources` half of resolveEffectiveProductTruth()'s return value.
+//
+// A live draft preview (Zone1Product.jsx) still calls
+// resolveEffectiveProductTruth() itself first, then this, since it needs
+// to preview against *currently active* policies. A version-history card
+// (Milestone C2) instead reads a *stored* listing_generations.product_truth_sources
+// value and must call this directly on it — never re-resolving against
+// live policies. A policy edited or archived later must never rewrite
+// what an old generation's card claims; re-resolving would do exactly
+// that, defeating the entire reason this column exists (see this file's
+// own header, and generation.js's rawProductTruth comment).
+export function formatProductTruthSourceNotes(sources) {
+  if (!sources) return [];
+  return Object.keys(POLICY_FIELD_MAP).map(field => {
+    const src = sources[field];
+    if (!src || src.source === 'product') return null;
+    const label = POLICY_NOTE_LABELS[field] || field;
+    if (src.source === 'store_policy') {
+      const names = (src.policies || [])
+        .map(p => `"${p.title || p.policy_type}"${p.last_verified ? ` (verified ${p.last_verified})` : ' (not yet verified)'}`)
+        .join(', ');
+      return { field, text: `${label} — using approved store policy ${names}.` };
+    }
+    return { field, text: `${label} — not set, no approved policy, this listing won't mention it.` };
+  }).filter(Boolean);
+}

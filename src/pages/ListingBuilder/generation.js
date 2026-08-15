@@ -178,3 +178,59 @@ export function validateGeneratedListing({ listing, productTruth, discussionPerm
 
   return warnings;
 }
+
+// Milestone C2 — reconstructs the exact shape handleGenerate's own
+// sanitize step produces for `output` (index.jsx), but from a stored
+// listing_generations row instead of a fresh API response. Powers
+// restoring a past version: setOutput(buildOutputFromGeneration(row))
+// feeds the same "output changed" effect a fresh generation already
+// triggers, so editTitle/editTags/editDesc/editPrompts/primarySearchIntent/
+// primaryIntentStatus/researchGaps all populate for free, with zero new
+// effect logic. Writes nothing to the database -- this is a pure shape
+// transform, called only from a client-side restore action.
+//
+// Column-name translation: the row stores validation as two flat columns
+// (validation_status/validation_warnings); `output` nests them under
+// `validation: {status, warnings}`. supporting_keywords is rebuilt from
+// the child listing_generation_keywords rows (role: 'supporting'),
+// renaming keyword_text -> keyword to match what ResearchEvidence.jsx
+// actually reads. Known, accepted gap: reconstructed entries never carry
+// `.confidence` (an AI-response-only field never persisted to that child
+// table) -- ConfidenceBadge already renders nothing for a missing
+// confidence, same as any other gap in that data.
+export function buildOutputFromGeneration(generation) {
+  return {
+    title: generation.title || '',
+    tags: asArray(generation.tags),
+    description: generation.description || {},
+    image_prompts: asArray(generation.image_prompts),
+    primary_search_intent: generation.primary_search_intent || '',
+    primary_intent_status: generation.primary_intent_status || '',
+    research_gaps: asArray(generation.research_gaps),
+    validation: {
+      status: generation.validation_status || null,
+      warnings: asArray(generation.validation_warnings),
+    },
+    supporting_keywords: (generation.listing_generation_keywords || [])
+      .filter(k => k.role === 'supporting')
+      .map(k => ({ keyword: k.keyword_text, relevance_category: k.relevance_category })),
+  };
+}
+
+// Milestone C2 — the same three-field derivation the existing-product
+// hydration effect (index.jsx) already computes from the latest ledger
+// row, lifted out verbatim so a second caller (restoring an OLDER row,
+// also Milestone C2) doesn't grow a second, potentially-drifting copy of
+// this transformation. Deliberately does NOT cover primary_search_intent/
+// primary_intent_status/research_gaps -- those flow through
+// buildOutputFromGeneration -> setOutput -> the existing "output changed"
+// effect instead, which already handles them.
+export function extractHistoryDisplay(generation) {
+  return {
+    validationWarnings: asArray(generation?.validation_warnings),
+    researchSourcesUsed: asArray(generation?.research_sources_used),
+    excludedKeywordsDisplay: (generation?.listing_generation_keywords || [])
+      .filter(k => k.role === 'excluded')
+      .map(k => ({ keyword: k.keyword_text, reason: k.exclusion_reason })),
+  };
+}

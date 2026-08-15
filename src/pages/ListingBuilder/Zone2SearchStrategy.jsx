@@ -1,10 +1,5 @@
-import { TITLE_STRATEGIES, LEGACY_TITLE_STRATEGY_LABELS } from './constants';
+import { TITLE_STRATEGIES, LEGACY_TITLE_STRATEGY_LABELS, INTENT_STATUS_STYLE } from './constants';
 import ResearchEvidence from './ResearchEvidence';
-
-const INTENT_STATUS_STYLE = {
-  validated: { bg: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
-  supported: { bg: 'rgba(232,168,124,0.2)', color: '#7a4a1e' },
-};
 
 // Zone 2 — Search Strategy (Milestone B). The page's center of gravity:
 // Primary Search Intent, Title Strategy (a search-strategy decision, not a

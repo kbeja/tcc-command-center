@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { appendProductNote } from '../../lib/hooks';
 import { hasUnsavedEdits } from './generation';
+import { ConfirmDiscardRow } from './shared';
 
 // "New Keyword Evidence" (Listing Intelligence Milestone A) — replaces the
 // old "apply to title & tags" patch flow. Deliberately never proposes a
@@ -27,6 +28,12 @@ export default function KeywordEvidencePanel({
   const [error, setError]                 = useState('');
   const [recordState, setRecordState]     = useState('idle'); // idle | saving | saved | copied
   const [confirmRegen, setConfirmRegen]   = useState(false);
+  // Milestone C2 — same optional, always-available (when Regenerate is
+  // itself offered) reason capture as Zone4Review.jsx. Pre-filled from the
+  // AI's own evidence-shift reasoning on a notable_shift result — visibly
+  // a suggestion the human approves, edits, or clears, never silently
+  // persisted as if she typed it unprompted (handleEvaluate seeds it below).
+  const [reason, setReason] = useState('');
 
   async function handleScreenshot(file) {
     setExtracting(true);
@@ -72,11 +79,12 @@ export default function KeywordEvidencePanel({
       try { data = JSON.parse(raw); } catch { setError(`Server error: ${raw.slice(0, 150)}`); setEvaluating(false); return; }
       if (!data.parsed) { setError(data.error || 'No output returned'); setEvaluating(false); return; }
       setResult(data.parsed);
+      if (data.parsed.recommendation === 'notable_shift') setReason(data.parsed.reasoning || '');
     } catch (err) { setError(err.message); }
     setEvaluating(false);
   }
 
-  function reset() { setOpen(false); setManualText(''); setExtracted([]); setResult(null); setError(''); setRecordState('idle'); setConfirmRegen(false); }
+  function reset() { setOpen(false); setManualText(''); setExtracted([]); setResult(null); setError(''); setRecordState('idle'); setConfirmRegen(false); setReason(''); }
 
   if (!open) {
     return (
@@ -116,7 +124,7 @@ export default function KeywordEvidencePanel({
     const unsavedEdits = hasUnsavedEdits({ editTitle, editTags, editDesc, editPrompts, output });
     function handleRegenerateClick() {
       if (unsavedEdits && !confirmRegen) { setConfirmRegen(true); return; }
-      onRegenerate();
+      onRegenerate(reason.trim() || null);
       reset();
     }
 
@@ -138,16 +146,27 @@ export default function KeywordEvidencePanel({
             This listing is live — recording for your next scheduled review is usually safer than changing SEO now.
           </div>
         )}
-        {confirmRegen ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.82rem' }}>
-            <span>Discard edits &amp; regenerate?</span>
-            <button onClick={handleRegenerateClick} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
-              Yes, regenerate
-            </button>
-            <button onClick={() => setConfirmRegen(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>
-              Cancel
-            </button>
+        {result.recommendation === 'notable_shift' && !confirmRegen && (
+          <div style={{ marginBottom: 8 }}>
+            <input
+              type="text"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Why regenerate? (optional)"
+              style={{ fontSize: '0.75rem', padding: '5px 8px', width: '100%', maxWidth: 360, display: 'block' }}
+            />
+            <div style={{ fontSize: '0.66rem', color: 'var(--charcoal-soft)', opacity: 0.7, marginTop: 2 }}>
+              Pre-filled from your evidence review — edit or clear.
+            </div>
           </div>
+        )}
+        {confirmRegen ? (
+          <ConfirmDiscardRow
+            promptText="Discard edits & regenerate?"
+            confirmLabel="Yes, regenerate"
+            onConfirm={handleRegenerateClick}
+            onCancel={() => setConfirmRegen(false)}
+          />
         ) : (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn btn-primary btn-sm" onClick={handleRecord} disabled={recordState === 'saving'}>

@@ -1,14 +1,9 @@
 import { useState } from 'react';
-import { DESC_META } from './constants';
+import { DESC_META, INTENT_STATUS_STYLE } from './constants';
 import { CopyButton, SectionHeader } from './shared';
 import Zone3Description from './Zone3Description';
 import Zone3Images from './Zone3Images';
 import Zone3Research from './Zone3Research';
-
-const INTENT_STATUS_STYLE = {
-  validated: { bg: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
-  supported: { bg: 'rgba(232,168,124,0.2)', color: '#7a4a1e' },
-};
 
 // Zone 3 — Listing (Milestone B). Tab bar owned locally (activeTab, default
 // 'listing', not lifted, not persisted) — copies the underline-tab pattern

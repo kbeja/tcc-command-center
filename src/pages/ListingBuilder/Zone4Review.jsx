@@ -1,19 +1,8 @@
 import { useState } from 'react';
 import { computeListingReadiness } from '../../lib/listingReadiness';
 import { hasUnsavedEdits } from './generation';
+import { HEADLINE_LABEL, HEADLINE_DOT_COLOR, Dot, ConfirmDiscardRow } from './shared';
 
-const HEADLINE_LABEL = {
-  not_generated: 'Not Generated Yet',
-  ready: 'Ready',
-  ready_with_caution: 'Ready with Caution',
-  needs_research: 'Needs Research',
-};
-const HEADLINE_DOT_COLOR = {
-  not_generated: 'var(--charcoal-soft)',
-  ready: '#2d6b3c',
-  ready_with_caution: '#7a4a1e',
-  needs_research: '#7a2b2b',
-};
 const STATE_DOT_COLOR = { ok: '#2d6b3c', caution: '#7a4a1e', attention: '#7a2b2b', pending: 'var(--charcoal-soft)' };
 const DIMENSION_LABEL = {
   product_truth: 'Product Truth',
@@ -22,10 +11,6 @@ const DIMENSION_LABEL = {
   compatibility: 'Compatibility',
   generation_validation: 'Generation Check',
 };
-
-function Dot({ color }) {
-  return <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />;
-}
 
 // Consolidates what used to be three scattered pieces (the 6-pill Research
 // Readiness wall, the red Validation Warnings box, the Excluded Keywords
@@ -42,6 +27,12 @@ export default function Zone4Review({
   savedProductId, saving, saveStage, onSaveStageChange, saveStages, onSaveProduct, canSaveProduct, onOpenProduct,
 }) {
   const [confirmRegen, setConfirmRegen] = useState(false);
+  // Milestone C2 — always available, never required, never blocking (her
+  // own words). Independent of the unsaved-edits confirm below: read at
+  // the moment Regenerate is actually clicked, whether that's immediate
+  // or after confirming a discard, and persisted to change_reason only
+  // when non-blank.
+  const [reason, setReason] = useState('');
 
   const hasGenerated = !!output || !!latestGeneration;
   const readiness = computeListingReadiness({
@@ -54,7 +45,7 @@ export default function Zone4Review({
   function handleRegenerateClick() {
     if (unsavedEdits && !confirmRegen) { setConfirmRegen(true); return; }
     setConfirmRegen(false);
-    onRegenerate();
+    onRegenerate(reason.trim() || null);
   }
 
   const hydratedLabel = !output && latestGeneration
@@ -118,20 +109,23 @@ export default function Zone4Review({
           second, redundant generate button sitting right above it. */}
       {hasGenerated && (
         <>
+          <input
+            type="text"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Why regenerate? (optional)"
+            style={{ fontSize: '0.75rem', padding: '5px 8px', width: '100%', maxWidth: 360, marginBottom: 8, display: 'block' }}
+          />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: productId || !savedProductId ? 16 : 0 }}>
             {output && <button className="btn btn-ghost btn-sm" onClick={onEditSetup}>← Edit setup</button>}
             {confirmRegen ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.82rem' }}>
-                <span>Discard edits &amp; regenerate?</span>
-                <button onClick={handleRegenerateClick} disabled={generating}
-                  style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
-                  {generating ? 'Generating…' : 'Yes, regenerate'}
-                </button>
-                <button onClick={() => setConfirmRegen(false)}
-                  style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  Cancel
-                </button>
-              </div>
+              <ConfirmDiscardRow
+                promptText="Discard edits & regenerate?"
+                confirmLabel="Yes, regenerate"
+                onConfirm={handleRegenerateClick}
+                onCancel={() => setConfirmRegen(false)}
+                generating={generating}
+              />
             ) : (
               <button className="btn btn-primary btn-sm" onClick={handleRegenerateClick} disabled={generating || !hasCollection}>
                 {generating ? 'Generating…' : output ? '↺ Regenerate' : '✦ Generate New Version'}

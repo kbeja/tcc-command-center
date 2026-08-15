@@ -1,6 +1,26 @@
 import { useState } from 'react';
 import { appendProductNote } from '../../lib/hooks';
 
+// Readiness headline vocabulary (Milestone B) — moved here from
+// Zone4Review.jsx (Milestone C2) so the new Version History cards can
+// render the same validation-status badge without a second copy.
+export const HEADLINE_LABEL = {
+  not_generated: 'Not Generated Yet',
+  ready: 'Ready',
+  ready_with_caution: 'Ready with Caution',
+  needs_research: 'Needs Research',
+};
+export const HEADLINE_DOT_COLOR = {
+  not_generated: 'var(--charcoal-soft)',
+  ready: '#2d6b3c',
+  ready_with_caution: '#7a4a1e',
+  needs_research: '#7a2b2b',
+};
+
+export function Dot({ color }) {
+  return <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />;
+}
+
 export function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -52,6 +72,31 @@ export function SectionHeader({ title }) {
 // "unconfirmed," and defaulting an unconfirmed fact to false would assert
 // "not available" for something nobody ever actually checked, which is
 // exactly the false confidence Product Truth exists to prevent.
+// Purely presentational discard-confirm row (Milestone C2) — was
+// independently duplicated identically in Zone4Review.jsx and
+// KeywordEvidencePanel.jsx; a third near-identical need (restoring a past
+// version, also destructive to unsaved edits) is what tipped this into a
+// shared component rather than a third copy. Knows nothing about *why*
+// the caller is confirming (regenerate vs. restore) or about change-reason
+// capture, which stays entirely separate per Kristen's own instruction —
+// each caller still owns its own confirmRegen/unsavedEdits gate exactly as
+// before; only the JSX inside that branch becomes this component.
+export function ConfirmDiscardRow({ promptText, confirmLabel, onConfirm, onCancel, generating }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.82rem' }}>
+      <span>{promptText}</span>
+      <button onClick={onConfirm} disabled={generating}
+        style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
+        {generating ? 'Generating…' : confirmLabel}
+      </button>
+      <button onClick={onCancel}
+        style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 export function TriState({ label, value, onChange }) {
   const opts = [{ key: null, label: 'Unknown' }, { key: true, label: 'Yes' }, { key: false, label: 'No' }];
   return (

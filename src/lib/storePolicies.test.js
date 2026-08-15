@@ -6,7 +6,7 @@
 // function's own 17 tests meaningful, not just that resolveEffectiveProductTruth
 // looks right in isolation.
 import { describe, it, expect } from 'vitest';
-import { resolveEffectiveProductTruth, isPolicyGenerationEligible, POLICY_FIELD_MAP } from './storePolicies.js';
+import { resolveEffectiveProductTruth, isPolicyGenerationEligible, POLICY_FIELD_MAP, formatProductTruthSourceNotes } from './storePolicies.js';
 import { computeDiscussionPermissions } from './productTruth.js';
 
 function pt(overrides) {
@@ -174,5 +174,53 @@ describe('fields outside POLICY_FIELD_MAP pass through untouched', () => {
     expect(effective.material).toBeNull();
     expect(effective.size_range).toBe('S-3XL');
     expect(effective.blank_brand).toBe('comfort_colors');
+  });
+});
+
+// Milestone C2 — formatProductTruthSourceNotes() is the pure formatter a
+// version-history card calls directly on a STORED sources value (never
+// re-resolving against live policies, see the function's own header).
+// These tests operate on plain `sources` objects, not full resolve() calls
+// — proof the formatter's contract holds on its own, independent of
+// resolution timing.
+describe('formatProductTruthSourceNotes', () => {
+  it('a store_policy-sourced field renders the expected sentence', () => {
+    const notes = formatProductTruthSourceNotes({
+      shipping_policy: { source: 'store_policy', policies: [{ id: 'p1', policy_type: 'shipping', title: 'Standard US Shipping', last_verified: '2026-07-02' }] },
+    });
+    expect(notes).toEqual([
+      { field: 'shipping_policy', text: 'Shipping — using approved store policy "Standard US Shipping" (verified 2026-07-02).' },
+    ]);
+  });
+
+  it('a store_policy source with no last_verified renders "not yet verified"', () => {
+    const notes = formatProductTruthSourceNotes({
+      production_time: { source: 'store_policy', policies: [{ id: 'p1', policy_type: 'production_time', title: null, last_verified: null }] },
+    });
+    expect(notes[0].text).toBe('Production time — using approved store policy "production_time" (not yet verified).');
+  });
+
+  it('a product-sourced field is omitted entirely', () => {
+    const notes = formatProductTruthSourceNotes({ shipping_policy: { source: 'product' } });
+    expect(notes).toEqual([]);
+  });
+
+  it('an unset field renders the "won\'t mention it" sentence', () => {
+    const notes = formatProductTruthSourceNotes({ production_time: { source: 'unset' } });
+    expect(notes).toEqual([
+      { field: 'production_time', text: 'Production time — not set, no approved policy, this listing won\'t mention it.' },
+    ]);
+  });
+
+  it('null input returns an empty array', () => {
+    expect(formatProductTruthSourceNotes(null)).toEqual([]);
+  });
+
+  it('undefined input returns an empty array', () => {
+    expect(formatProductTruthSourceNotes(undefined)).toEqual([]);
+  });
+
+  it('an empty object returns an empty array — both mapped fields simply absent, not an error', () => {
+    expect(formatProductTruthSourceNotes({})).toEqual([]);
   });
 });

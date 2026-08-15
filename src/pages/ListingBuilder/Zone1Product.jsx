@@ -1,11 +1,9 @@
 import { PRODUCT_FORMATS, BLANK_BRANDS } from '../../lib/productTruth';
-import { POLICY_FIELD_MAP, resolveEffectiveProductTruth } from '../../lib/storePolicies';
+import { resolveEffectiveProductTruth, formatProductTruthSourceNotes } from '../../lib/storePolicies';
 import { buildProductTruth } from './generation';
 import { TriState } from './shared';
 import CollectionPicker from './CollectionPicker';
 import TemplateMatchBar from './TemplateMatchBar';
-
-const POLICY_NOTE_LABELS = { production_time: 'Production time', shipping_policy: 'Shipping' };
 
 // Live, display-only preview of what generation would actually resolve —
 // same resolveEffectiveProductTruth() generation.js calls for real, run
@@ -16,18 +14,7 @@ const POLICY_NOTE_LABELS = { production_time: 'Production time', shipping_policy
 // protect (see storePolicies.js's own header).
 function PolicyResolutionNotes({ productTruth, approvedPolicies }) {
   const { sources } = resolveEffectiveProductTruth(productTruth, approvedPolicies || []);
-  const notes = Object.keys(POLICY_FIELD_MAP).map(field => {
-    const src = sources[field];
-    if (!src || src.source === 'product') return null;
-    const label = POLICY_NOTE_LABELS[field] || field;
-    if (src.source === 'store_policy') {
-      const names = src.policies
-        .map(p => `"${p.title || p.policy_type}"${p.last_verified ? ` (verified ${p.last_verified})` : ' (not yet verified)'}`)
-        .join(', ');
-      return { field, text: `${label} — using approved store policy ${names}.` };
-    }
-    return { field, text: `${label} — not set, no approved policy, this listing won't mention it.` };
-  }).filter(Boolean);
+  const notes = formatProductTruthSourceNotes(sources);
 
   if (notes.length === 0) return null;
   return (
