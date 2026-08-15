@@ -10,7 +10,7 @@
     {
       "name": "tcc-netlify-dev",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["netlify", "dev"],
+      "runtimeArgs": ["netlify", "dev", "-f", "netlify/functions"],
       "port": 8888
     }
   ]

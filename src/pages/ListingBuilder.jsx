@@ -1,35 +1,40 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts, createProduct, updateProduct, createCollection, createResearchSession } from '../lib/hooks';
+import {
+  useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts,
+  createProduct, updateProduct, createCollection, createResearchSession,
+  createListingGeneration, linkGenerationsToProduct,
+} from '../lib/hooks';
 import { resizeImageForUpload } from '../lib/image';
 import { nicheStyleGuides } from '../data/collections';
 import { STAGES } from '../data/stages';
+import {
+  PRODUCT_FORMATS, BLANK_BRANDS, checkFormatCompatibility, checkBrandMention,
+  computeDiscussionPermissions, FORMAT_TAXONOMY_VERSION,
+} from '../lib/productTruth';
 
-const SEO_STANDARDS_FALLBACK = `TCC SEO STANDARDS v2 — 3-Bucket Keyword Framework (Taylor Posada method)
+// Listing Intelligence Milestone A — bumped when generate-listing-v2.js's
+// prompt/schema or productTruth.js's taxonomy changes meaningfully. One
+// combined version (not tracked separately) since they change together in
+// practice — see productTruth.js's own FORMAT_TAXONOMY_VERSION comment.
+const GENERATION_VERSION = `milestone-a-${FORMAT_TAXONOMY_VERSION}`;
 
-KEYWORD BUCKETS
-Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE goes first in title — if multiple B1s exist, use the highest volume one first. Remaining B1s fill title space after B3 or go in tags.
-Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. Where most keywords live. This is the real depth of a listing — expect the most usable keywords here.
-Bucket 3 — Bestseller (Broad): High volume, medium-to-high competition. Category terms, seasonal language, and buyer-intent phrases ("gift for her", "birthday gift", "booktok gift") all fold into Bucket 3 — they are content within it, not a separate tier.
+const TITLE_STRATEGIES = [
+  { key: 'buyer_clear', label: 'Buyer Clear' },
+  { key: 'expanded_keyword_test', label: 'Expanded Keyword Test' },
+  { key: 'manual', label: 'Manual' },
+];
 
-BALANCE RULE: all three buckets must have real representation in both title and tags — not just ordered correctly, but genuinely covered. A listing missing any bucket is incomplete.
-
-TITLE STRUCTURE — ORDER IS FIXED
-[Bucket 1] , [Bucket 2] , [Bucket 3]
-• Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
-• First 30–50 characters must contain the Bucket 1 phrase
-• Title Case Throughout, target 130–140 characters — fill unused space with additional keyword phrases
-• CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift"
-• Overlap check: if two keywords significantly overlap (e.g. "SLP grad" + "SLP grad student"), use the longer phrase — Etsy direct-matches the shorter within it, so both is redundant
-
-TAG RULES
-• Bucket 1 phrase repeats exactly in tags — intentional, not a mistake
-• Bucket 2 phrase also repeats exactly in tags — same rule as B1
-• Bucket 3: reinforce with adjacent phrasing, do NOT restate title terms verbatim
-
-DESCRIPTION — 6-SECTION STRUCTURE
-1. SEO Opener  2. Product Details  3. Ordering Steps  4. Cross-Sell  5. Shipping  6. Brand Voice Closer`;
+// Display-only labels for values the migration backfilled onto older
+// products — never added to TITLE_STRATEGIES, so they're never offered as
+// a live pick, but a loaded old product's value still needs to be legible
+// as *something* rather than showing 3 unhighlighted buttons and nothing
+// else (confirmed live: that's exactly what happened before this existed).
+const LEGACY_TITLE_STRATEGY_LABELS = {
+  legacy_keyword_rich: 'Keyword Rich',
+  legacy_short_clean: 'Short & Clean',
+};
 
 const BRAND_VOICE_FALLBACK = `THE THREE GEARS
 Aspirational: "You already know who you are. This is just the shirt that proves it."
@@ -44,12 +49,16 @@ She's not surviving motherhood as a brand. She just lives it.
 ❌ No "Every moment is precious" / "You are enough" / "You've got this"
 ❌ No wistful past-tense ("Remember when…") — she lives in the present tense`;
 
+// "SEO Opener" renamed to "Listing Opener" (Milestone A) — the old hint
+// explicitly asked for "keyword-dense" copy, which is exactly the framing
+// this rebuild removes; the new prompt (generate-listing-v2.js) never
+// instructs keyword density for this section.
 const DESC_META = {
-  seo_opener:        { label: 'SEO Opener',         hint: '2 sentences, keyword-dense, naturally phrased' },
+  opener:             { label: 'Listing Opener',    hint: 'Warm, specific, natural — not keyword-dense filler' },
   product_details:   { label: 'Product Details',    hint: 'Size, color, material, format, what\'s included' },
   ordering_steps:    { label: 'Ordering Steps',     hint: 'How to order, customize, or download' },
   cross_sell:        { label: 'Cross-Sell',         hint: 'Shop our [collection] for more designs like this…' },
-  shipping:          { label: 'Shipping',           hint: 'Standard shipping policy language' },
+  shipping:          { label: 'Shipping',           hint: 'Only shown if a shipping policy is confirmed in Product Truth' },
   brand_voice_closer:{ label: 'Brand Voice Closer', hint: '1–2 sentences, TCC voice, no Hallmark energy' },
 };
 
@@ -66,11 +75,13 @@ function CopyButton({ text }) {
   );
 }
 
+// flags: research_gaps shape, [{severity, message}] — Listing Intelligence
+// Milestone A (was a plain string array before).
 function SaveFlagsButton({ flags, productId }) {
   const [state, setState] = useState('idle'); // idle | saving | saved | copied
   if (!flags?.length) return null;
 
-  const flagText = `--- Listing Builder Flags ---\n${flags.map(f => `⚠ ${f}`).join('\n')}`;
+  const flagText = `--- Listing Builder Research Gaps ---\n${flags.map(f => `[${f.severity}] ${f.message}`).join('\n')}`;
 
   async function handleSave() {
     if (!productId) {
@@ -95,13 +106,21 @@ function SaveFlagsButton({ flags, productId }) {
   );
 }
 
-function KeywordPatchPanel({ currentTitle, currentTags, researchFlags, onApply }) {
+// "New Keyword Evidence" (Listing Intelligence Milestone A) — replaces the
+// old "apply to title & tags" patch flow. Deliberately never proposes a
+// title/tag rewrite at all anymore: it compares new evidence against the
+// CURRENT Primary Search Intent and returns a recommendation only
+// (no_change / consider_at_next_review / notable_shift). If the evidence
+// genuinely changes the strategy, that's a real regenerate through the
+// Generate button, not a quiet patch — this stops new research from
+// encouraging immediate, unreviewed listing edits outside any cadence.
+function KeywordPatchPanel({ currentPrimaryIntent, currentPrimaryIntentStatus }) {
   const [open, setOpen]                   = useState(false);
   const [manualText, setManualText]       = useState('');
   const [extracted, setExtracted]         = useState([]);
   const [extracting, setExtracting]       = useState(false);
-  const [patching, setPatching]           = useState(false);
-  const [proposal, setProposal]           = useState(null);
+  const [evaluating, setEvaluating]       = useState(false);
+  const [result, setResult]               = useState(null);
   const [error, setError]                 = useState('');
 
   async function handleScreenshot(file) {
@@ -134,59 +153,61 @@ function KeywordPatchPanel({ currentTitle, currentTags, researchFlags, onApply }
   const keywords = extracted.length > 0 ? extracted : parseManual();
   const hasInput = extracted.length > 0 || manualText.trim().length > 0;
 
-  async function handlePatch() {
-    setPatching(true);
+  async function handleEvaluate() {
+    setEvaluating(true);
     setError('');
     try {
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'patch_listing_keywords', payload: { currentTitle, currentTags, newKeywords: keywords, researchFlags } }),
+        body: JSON.stringify({ type: 'evaluate_keyword_evidence', payload: { currentPrimaryIntent, currentPrimaryIntentStatus, newKeywords: keywords } }),
       });
       const raw = await res.text();
       let data;
-      try { data = JSON.parse(raw); } catch { setError(`Server error: ${raw.slice(0, 150)}`); setPatching(false); return; }
-      if (!data.parsed) { setError(data.error || 'No output returned'); setPatching(false); return; }
-      setProposal(data.parsed);
+      try { data = JSON.parse(raw); } catch { setError(`Server error: ${raw.slice(0, 150)}`); setEvaluating(false); return; }
+      if (!data.parsed) { setError(data.error || 'No output returned'); setEvaluating(false); return; }
+      setResult(data.parsed);
     } catch (err) { setError(err.message); }
-    setPatching(false);
+    setEvaluating(false);
   }
 
-  function reset() { setOpen(false); setManualText(''); setExtracted([]); setProposal(null); setError(''); }
+  function reset() { setOpen(false); setManualText(''); setExtracted([]); setResult(null); setError(''); }
 
   if (!open) {
     return (
       <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, fontSize: '0.75rem' }} onClick={() => setOpen(true)}>
-        + Found new keywords? Apply to title & tags →
+        + Found new keyword evidence?
       </button>
     );
   }
 
-  if (proposal) {
-    const titleChanged = proposal.title !== currentTitle;
-    const tagsChanged  = JSON.stringify(proposal.tags) !== JSON.stringify(currentTags);
-    const anyChange    = titleChanged || tagsChanged;
+  const RECOMMENDATION_LABEL = { no_change: 'No change recommended', consider_at_next_review: 'Consider at next scheduled review', notable_shift: 'Notable shift — worth a real regeneration' };
+  const RECOMMENDATION_COLOR = { no_change: '#2d6b3c', consider_at_next_review: '#7a4a1e', notable_shift: '#8b3a3a' };
+
+  if (result) {
     return (
-      <div style={{ marginTop: 12, background: 'rgba(124,175,138,0.08)', border: '1px solid rgba(124,175,138,0.3)', borderRadius: 4, padding: '12px 14px' }}>
-        <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2d6b3c', marginBottom: 6 }}>Proposed Update</div>
-        <div style={{ fontSize: '0.82rem', color: '#2d6b3c', lineHeight: 1.6, marginBottom: 10 }}>{proposal.changes}</div>
-        {anyChange ? (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={() => { onApply(proposal.title, proposal.tags); reset(); }}>Accept changes</button>
-            <button className="btn btn-ghost btn-sm" onClick={reset}>Dismiss</button>
+      <div style={{ marginTop: 12, background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 4, padding: '12px 14px' }}>
+        <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: RECOMMENDATION_COLOR[result.recommendation] || 'var(--charcoal-soft)', marginBottom: 6 }}>
+          {RECOMMENDATION_LABEL[result.recommendation] || result.recommendation}
+        </div>
+        <div style={{ fontSize: '0.82rem', color: 'var(--charcoal-soft)', lineHeight: 1.6, marginBottom: result.notable_keywords?.length ? 10 : 0 }}>{result.reasoning}</div>
+        {result.notable_keywords?.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+            {result.notable_keywords.map((k, i) => (
+              <div key={i} style={{ fontSize: '0.75rem' }}><strong>{k.keyword}</strong> — {k.note}</div>
+            ))}
           </div>
-        ) : (
-          <button className="btn btn-ghost btn-sm" onClick={reset}>OK</button>
         )}
+        <button className="btn btn-ghost btn-sm" onClick={reset}>OK</button>
       </div>
     );
   }
 
   return (
     <div style={{ marginTop: 12, background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 4, padding: '12px 14px' }}>
-      <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 10 }}>Apply New Keywords</div>
+      <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 10 }}>New Keyword Evidence</div>
       {extracted.length > 0 ? (
-        <div style={{ fontSize: '0.78rem', color: '#2d6b3c', marginBottom: 10 }}>✓ {extracted.length} keywords extracted — ready to apply</div>
+        <div style={{ fontSize: '0.78rem', color: '#2d6b3c', marginBottom: 10 }}>✓ {extracted.length} keywords extracted — ready to evaluate</div>
       ) : (
         <>
           <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 6 }}>Upload an Everbee screenshot or enter keywords manually (keyword | volume | competition | score):</div>
@@ -205,8 +226,8 @@ function KeywordPatchPanel({ currentTitle, currentTags, researchFlags, onApply }
       )}
       {error && <div style={{ fontSize: '0.75rem', color: '#c97b7b', marginBottom: 8 }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={handlePatch} disabled={patching || !hasInput}>
-          {patching ? 'Applying…' : 'Apply to title & tags →'}
+        <button className="btn btn-primary btn-sm" onClick={handleEvaluate} disabled={evaluating || !hasInput}>
+          {evaluating ? 'Evaluating…' : 'Compare against current strategy →'}
         </button>
         <button className="btn btn-ghost btn-sm" onClick={reset}>Cancel</button>
       </div>
@@ -220,40 +241,148 @@ function SectionHeader({ title }) {
   );
 }
 
-function computeBucketWarnings(keywords, sessions) {
-  const usable = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard');
-  if (usable.length === 0) {
-    return [{ severity: 'high', msg: 'No validated keywords — run research before generating.' }];
-  }
-
-  const b1 = usable.filter(k => k.bucket === 1);
-  const b2 = usable.filter(k => k.bucket === 2);
-  const b3 = usable.filter(k => k.bucket === 3);
-  const unclassified = usable.filter(k => !k.bucket);
-  const warnings = [];
-
-  if (b1.length === 0) {
-    warnings.push({ severity: 'high', msg: 'No Bucket 1 keyword (high volume, low competition). Keep researching — this is your unicorn and it\'s scarce by design.' });
-  }
-  if (b2.length === 0) {
-    warnings.push({ severity: 'high', msg: 'No Bucket 2 keywords (reach/supporting). These are the bulk of a listing — more research needed.' });
-  }
-  if (b3.length === 0 && usable.length >= 3) {
-    warnings.push({ severity: 'medium', msg: 'No Bucket 3 keywords (scalability). Add broad category terms and buyer-intent phrases (gift for her, birthday gift, etc.).' });
-  }
-  if (unclassified.length > 0) {
-    warnings.push({ severity: 'medium', msg: `${unclassified.length} keyword(s) not yet bucket-classified. Run the SQL migration or edit keywords manually to assign buckets.` });
-  }
-
-  const seasonalSessions = (sessions || []).filter(s => s.seasonal);
-  if (seasonalSessions.length > 0 && b1.length > 0) {
-    warnings.push({ severity: 'low', msg: `${seasonalSessions.length} seasonal research session(s) in use — verify keyword spikes fall within the next 2–3 months before publishing.` });
-  }
-
-  return warnings;
+// Unknown/Yes/No — never a plain checkbox. A checkbox can't represent
+// "unconfirmed," and defaulting an unconfirmed fact to false would assert
+// "not available" for something nobody ever actually checked, which is
+// exactly the false confidence Product Truth exists to prevent.
+function TriState({ label, value, onChange }) {
+  const opts = [{ key: null, label: 'Unknown' }, { key: true, label: 'Yes' }, { key: false, label: 'No' }];
+  return (
+    <div>
+      <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 3 }}>{label}</div>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {opts.map(o => (
+          <button key={String(o.key)} type="button" onClick={() => onChange(o.key)}
+            style={{
+              fontSize: '0.68rem', padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+              background: value === o.key ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.1)',
+              color: value === o.key ? '#fff' : '#2d6b3c',
+              border: `1px solid rgba(124,175,138,${value === o.key ? '0.9' : '0.25'})`,
+              fontWeight: value === o.key ? 600 : 400,
+            }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept }) {
+// Product Truth — Listing Intelligence Milestone A. Collapsed by default
+// once a format is confirmed (avoids permanently thickening an already
+// busy page — the full 4-zone declutter is Milestone B's job, this just
+// needs to be functional); open by default the first time, since an unset
+// product_format silently disables the whole Compatibility Gate.
+function ProductTruthSection({ form, setField }) {
+  const [open, setOpen] = useState(!form.productFormat);
+  return (
+    <div style={{ marginBottom: 12, border: '1px solid rgba(43,41,38,0.1)', borderRadius: 4, padding: '10px 12px', background: 'var(--warm-white)' }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--charcoal-soft)' }}>
+          Product Truth {form.productFormat ? `— ${form.productFormat}` : '— format not set'}
+        </span>
+        <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', opacity: 0.5 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <label className="form-label">Format</label>
+              <select value={form.productFormat} onChange={e => setField('productFormat', e.target.value)} style={{ fontSize: '0.78rem' }}>
+                <option value="">— Unset —</option>
+                {PRODUCT_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Blank / Brand</label>
+              <select value={form.blankBrand} onChange={e => setField('blankBrand', e.target.value)} style={{ fontSize: '0.78rem' }}>
+                <option value="">— Unset —</option>
+                {BLANK_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Blank / Model</label>
+              <input value={form.blankModel} onChange={e => setField('blankModel', e.target.value)} placeholder="e.g. Comfort Colors 1717" style={{ fontSize: '0.78rem' }} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Garment Color</label>
+              <input value={form.garmentColor} onChange={e => setField('garmentColor', e.target.value)} placeholder="e.g. Pepper" style={{ fontSize: '0.78rem' }} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Available Colors <span style={{ fontWeight: 400, opacity: 0.5 }}>(comma-separated)</span></label>
+              <input
+                value={(form.availableColors || []).join(', ')}
+                onChange={e => setField('availableColors', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                placeholder="e.g. Black, White, Pepper" style={{ fontSize: '0.78rem' }} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Size Range</label>
+              <input value={form.sizeRange} onChange={e => setField('sizeRange', e.target.value)} placeholder="e.g. S–3XL" style={{ fontSize: '0.78rem' }} />
+            </div>
+          </div>
+          <div className="form-group" style={{ margin: '0 0 10px' }}>
+            <label className="form-label">Material</label>
+            <input value={form.material} onChange={e => setField('material', e.target.value)} placeholder="e.g. 100% ring-spun cotton" style={{ fontSize: '0.78rem' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <TriState label="Personalization available" value={form.personalizationAvailable} onChange={v => setField('personalizationAvailable', v)} />
+            <TriState label="Customization available" value={form.customizationAvailable} onChange={v => setField('customizationAvailable', v)} />
+            <TriState label="Gift wrap available" value={form.giftWrapAvailable} onChange={v => setField('giftWrapAvailable', v)} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Production Time</label>
+              <input value={form.productionTime} onChange={e => setField('productionTime', e.target.value)} placeholder="e.g. 2–3 business days" style={{ fontSize: '0.78rem' }} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Shipping Policy</label>
+              <input value={form.shippingPolicy} onChange={e => setField('shippingPolicy', e.target.value)} placeholder="e.g. USPS, 5–7 days domestic" style={{ fontSize: '0.78rem' }} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Fulfillment Provider</label>
+              <input value={form.fulfillmentProvider} onChange={e => setField('fulfillmentProvider', e.target.value)} placeholder="e.g. Printify" style={{ fontSize: '0.78rem' }} />
+            </div>
+          </div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', opacity: 0.7, marginTop: 10, lineHeight: 1.5 }}>
+            Unset fields are never guessed at generation time — a listing with no shipping policy set simply won't mention shipping, rather than inventing one.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Turns form state into the canonical Product Truth object -- the thing
+// that overrides everything else. Every field nullable; unset stays
+// unset, never inferred. See src/lib/productTruth.js's header for why
+// this exists (Listing Intelligence Milestone A).
+function buildProductTruth(form) {
+  return {
+    product_format: form.productFormat || null,
+    blank_brand: form.blankBrand || null,
+    blank_model: form.blankModel || null,
+    garment_color: form.garmentColor || null,
+    available_colors: form.availableColors?.length ? form.availableColors : null,
+    size_range: form.sizeRange || null,
+    material: form.material || null,
+    personalization_available: form.personalizationAvailable,
+    customization_available: form.customizationAvailable,
+    gift_wrap_available: form.giftWrapAvailable,
+    production_time: form.productionTime || null,
+    shipping_policy: form.shippingPolicy || null,
+    fulfillment_provider: form.fulfillmentProvider || null,
+  };
+}
+
+// Replaces the old buildContext() text-blob builder. Returns a structured
+// payload for generate-listing-v2.js instead of one giant prompt string —
+// the deterministic Product Compatibility Gate (excluding format-
+// incompatible keywords before Claude ever sees them, not just annotating
+// them in prompt text) lives here too. See src/lib/productTruth.js.
+function buildGenerationContext({ form, keywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept }) {
   // Misspelling variants are excluded everywhere now — title, description, AND tags.
   // Etsy's search normalizes misspellings to the correct spelling itself, so a tag
   // slot (1 of only 13) spent on a misspelled variant is redundant, not helpful.
@@ -261,198 +390,112 @@ function buildContext({ form, keywords, styleGuide, brandStyleGuide, season, seo
   // just never fed into generation.
   const usable    = keywords.filter(k => !k.tags_only && k.tag_type !== 'discard' && !k.is_misspelling_variant);
 
-  const b1All = usable.filter(k => k.bucket === 1 && k.tag_type !== 'watch');
-  const b2 = usable.filter(k => k.bucket === 2 && k.tag_type !== 'watch');
-  const b3 = usable.filter(k => k.bucket === 3 && k.tag_type !== 'watch');
-  const unclassified = usable.filter(k => !k.bucket && k.tag_type !== 'watch');
-  // B1 leads the title, so it's the one slot where a pooled/generic term (shared
-  // across every listing that touches this collection) actively hurts relevance —
-  // a Halloween listing shouldn't lead with a generic "gifted mama" just because
-  // it's the highest-volume B1 available somewhere in the pool. Prefer this
-  // listing's own collection; only fall back to pooled B1s if it has none of its own,
-  // and say so explicitly so a fallback pick doesn't look like a confident choice.
-  const b1Primary = b1All.filter(k => k._fromPrimaryCollection);
-  const b1 = b1Primary.length ? b1Primary : b1All;
-  const b1IsPooledFallback = !b1Primary.length && b1All.length > 0;
-
-  // Watch-status keywords (promising, not yet fully vetted) are real research —
-  // demoting them below confirmed ("use") keywords is right, but they still belong
-  // to a bucket and can be exactly what a listing needs (e.g. an apparel-specific
-  // B3 term). Keep them grouped by bucket instead of one flat list sorted only by
-  // score, or a well-bucketed but low-scored keyword silently never surfaces.
-  const watchAll = keywords.filter(k => k.tag_type === 'watch' && !k.tags_only && !k.is_misspelling_variant);
-  const watchB1 = watchAll.filter(k => k.bucket === 1);
-  const watchB2 = watchAll.filter(k => k.bucket === 2);
-  const watchB3 = watchAll.filter(k => k.bucket === 3);
-  const watchUnclassified = watchAll.filter(k => !k.bucket);
-
-  const byScore = arr => [...arr].sort((a, b) => (b.score || 0) - (a.score || 0));
-
-  // Nothing today cross-checks a keyword's own text against this listing's actual
-  // product format — a "comfort colors tee" keyword reads as generically fine to
-  // the model even when the product is a crewneck, and it has no way to know that
-  // conflicts. Flag it inline instead of silently letting a mismatched format slip
-  // into a title verbatim. Longest terms first so "tote bag"/"tank top" match before
-  // the shorter "tote"/"tank" would.
-  const FORMAT_TERMS = [
-    'crewneck sweatshirt', 'crewneck', 'sweatshirt', 'hoodie', 'sweater',
-    'tank top', 'tank', 't-shirt', 'tshirt', 'tee shirt', 'tee', 'shirt',
-    'tote bag', 'tote', 'mug', 'sticker', 'ornament', 'blanket',
-    'beanie', 'hat', 'phone case', 'notebook', 'journal', 'poster', 'print',
-  ].sort((a, b) => b.length - a.length);
-  // Blank/garment brands TCC actually sources from. Unlike format, a brand not
-  // being named in Product Type is NOT evidence against a keyword that mentions
-  // one — she just may not have typed it — so this only ever flags a conflict
-  // when she's named a DIFFERENT brand than the keyword does, never on silence.
-  const BRAND_TERMS = ['comfort colors', 'gildan', 'bella+canvas', 'bella canvas', 'next level'];
-  const matchTerms = (text, termList) => {
-    const lower = (text || '').toLowerCase();
-    const found = [];
-    for (const term of termList) {
-      if (lower.includes(term) && !found.some(f => f.includes(term))) found.push(term);
+  // Deterministic Product Compatibility Gate — the one part of this
+  // pipeline that must never depend on the AI behaving correctly. Anything
+  // incompatible with the product's own format is excluded HERE, before
+  // Claude ever sees it, not just annotated in prompt text a model could
+  // ignore (which is exactly what this file's old FORMAT_TERMS advisory
+  // tag was, and exactly why it didn't prevent the original bug — see
+  // src/lib/productTruth.js's own header).
+  const productTruth = buildProductTruth(form);
+  const discussionPermissions = computeDiscussionPermissions(productTruth);
+  const compatibleKeywords = [];
+  const excludedKeywords = [];
+  for (const k of usable) {
+    const result = checkFormatCompatibility(k.keyword, productTruth.product_format);
+    if (result === 'incompatible') {
+      excludedKeywords.push({
+        keyword: k.keyword,
+        keywordId: k.id,
+        reason: `Conflicts with product format${productTruth.product_format ? ` (${productTruth.product_format})` : ''}`,
+        volume: k.volume ?? null, competition: k.competition ?? null, score: k.score ?? null,
+      });
+    } else {
+      compatibleKeywords.push(k);
     }
-    return found;
+  }
+  const keywordPool = compatibleKeywords.map(k => ({
+    keyword: k.keyword, keywordId: k.id, volume: k.volume ?? null, competition: k.competition ?? null,
+    score: k.score ?? null, source: k._source || null, bucket: k.bucket ?? null,
+  }));
+  const researchSourcesUsed = [...new Set(compatibleKeywords.map(k => k._source).filter(Boolean))];
+
+  const conceptContext = linkedConcept ? [
+    linkedConcept.design_direction && `Design Direction: ${linkedConcept.design_direction}`,
+    linkedConcept.visual_style && `Visual Style: ${linkedConcept.visual_style}`,
+    linkedConcept.color_palette && `Color Palette: ${linkedConcept.color_palette}`,
+    linkedConcept.target_customer && `Target Customer: ${linkedConcept.target_customer}`,
+    (linkedConcept.mood_keywords || []).length && `Mood Keywords: ${linkedConcept.mood_keywords.join(', ')}`,
+    linkedConcept.emotional_trigger && `Emotional Trigger: ${linkedConcept.emotional_trigger}`,
+  ].filter(Boolean).join('\n') || null : null;
+
+  const collectionContext = [
+    `Collection: ${allCollectionNames.length > 1 ? allCollectionNames.join(' + ') : (form.collection || '—')}`,
+    allCollectionNames.length > 1 ? 'Note: keywords are pooled from multiple collections — use only what fits this specific product.' : null,
+    form.niche && `Sub-niche: ${form.niche}`,
+    season ? `Occasion/season: ${season} — this is a seasonal product, not evergreen` : 'Occasion/season: evergreen',
+    form.notes && `Notes: ${form.notes}`,
+  ].filter(Boolean).join('\n');
+
+  const styleGuideText = [
+    brandStyleGuide && `Brand-wide (always applies):\n${brandStyleGuide}`,
+    styleGuide && `Collection-specific:\n${styleGuide}`,
+  ].filter(Boolean).join('\n\n') || null;
+
+  return {
+    productTruth, discussionPermissions, keywordPool, excludedKeywords, researchSourcesUsed,
+    collectionContext, conceptContext, styleGuide: styleGuideText,
+    brandVoice: brandVoice || null, photoStandards: photoStandards || null, imageAnalysis: imageAnalysis || null,
   };
-  // Full explanation lives once in the KEYWORDS header below — keep the
-  // per-keyword tag terse since it repeats on every flagged line and output
-  // length is what actually costs generation time.
-  const productFormatTerms = matchTerms(form.productType, FORMAT_TERMS);
-  const productBrandTerms = matchTerms(form.productType, BRAND_TERMS);
-  const typeConflictNote = keyword => {
-    const formatConflicts = matchTerms(keyword, FORMAT_TERMS)
-      .filter(t => !productFormatTerms.some(p => p.includes(t) || t.includes(p)));
-    const brandConflicts = productBrandTerms.length
-      ? matchTerms(keyword, BRAND_TERMS).filter(t => !productBrandTerms.includes(t))
-      : [];
-    const all = [...formatConflicts, ...brandConflicts];
-    return all.length ? ` [format: ${all.join(', ')}]` : '';
-  };
-
-  const fmtKw = k =>
-    `  "${k.keyword}"` +
-    (k.volume      != null ? ` (vol: ${Number(k.volume).toLocaleString()}` : '') +
-    (k.competition != null ? `, comp: ${Number(k.competition).toLocaleString()}` : '') +
-    (k.score       != null ? `, score: ${Number(k.score).toLocaleString()}` : '') +
-    (k.volume      != null ? ')' : '') +
-    typeConflictNote(k.keyword);
-
-  // Title style A/B test: "keyword_rich" is the original cram-to-140-chars
-  // behavior; "short_clean" matches Etsy's current stated search guidance
-  // (short, natural titles — phrase position doesn't affect ranking per their
-  // own docs). Kristen wants this run as a real trackable comparison against
-  // Shop Stats rather than a guess, so the choice gets stamped onto the saved
-  // product record (title_style column) — see handleSaveEdits/handleSaveProduct.
-  const titleStyle = form.titleStyle === 'short_clean' ? 'short_clean' : 'keyword_rich';
-  const titleFormatRules = titleStyle === 'short_clean'
-    ? `  - SHORT & CLEAN STYLE (active test): write a natural, concise title a real shopper would say out loud — Title Case, B1 first, then only the B2/B3 phrases that genuinely belong. Do NOT pad with extra comma-separated phrases just to use more characters; stop once it reads like a real product name. Still under Etsy's 140-char hard limit, but do not treat 140 as a target.
-  - CORRECT: "Morally Gray Enthusiast Shirt, Dark Romance Book Lover Gift" (stops naturally, no padding)
-  - WRONG: tacking on more keyword phrases after the title already reads complete, just to fill space`
-    : `  - Title Case Throughout, MUST be as close to 140 characters as possible — target 130–140. A short title wastes indexing space. Keep adding keyword phrases until you hit the limit.
-  - After placing B1 , B2 , B3 — if characters remain, append additional keyword phrases from the list separated by commas until you reach 130–140 chars. Prioritize phrases that add new unique words not already in the title.
-  - CORRECT: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift, Dark Romance Book Tee, Romantasy Reader"
-  - WRONG: "Morally Gray Enthusiast Shirt, Fantasy Reader Shirt, Book Lover Gift" (too short — unused character budget)`;
-
-  return `Generate a complete Etsy listing for TCC (The Current Chapter).
-
-━━━ TCC SEO STANDARDS v2 — 3-BUCKET SYSTEM — FOLLOW EXACTLY ━━━
-BUCKET DEFINITIONS:
-  Bucket 1 — Visibility (Unicorn): High volume, LOW competition. Primary search intent. ONE goes FIRST in title and tags. If multiple B1 keywords exist, pick the one with the highest volume. If volume is equal, pick the one with the lowest competition. The remaining B1 keywords should be used later in the title (after the B2/B3 boundary) to fill character space, or in tags.
-  Bucket 2 — Reach (Supporting): High-to-medium volume, medium-to-low competition. The bulk of a listing's depth. Most keywords live here.
-  Bucket 3 — Bestseller (Broad): High volume, medium-to-HIGH competition. Category terms, seasonal language ("Fall", "Halloween"), and buyer-intent phrases ("gift for her", "birthday gift") all belong in Bucket 3 — they are CONTENT within it, not separate tiers.
-
-TITLE FORMAT — ORDER IS FIXED:
-  [Bucket 1] , [Bucket 2] , [Bucket 3]
-  - Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
-  - First 30–50 characters must contain the Bucket 1 phrase
-${titleFormatRules}
-  - WORD DEDUPLICATION — critical: once a word appears in a phrase in the title, do NOT add that word again as a standalone term or in a separate phrase. Example: if "Mahjong Shirt" is in the title, the word "Mahjong" is already indexed by Etsy — adding "Mahjong Gift" separately would only be worthwhile if the FULL phrase "Mahjong Gift" is not already covered. Pick the phrases that together cover the most unique word surface area. No redundant single-word repeats.
-  - OVERLAP CHECK: if two keywords significantly overlap (e.g. "SLP grad" and "SLP grad student"), use the longer phrase only — Etsy direct-matches the shorter within it
-
-TAG RULES:
-  - Bucket 1 phrase: repeat exactly in tags — INTENTIONAL, not an error
-  - Bucket 2 phrases: also repeat exactly in tags — same rule as B1
-  - Bucket 3: reinforce with adjacent/variant phrasing (e.g. "birthday gift" → "birthday gifts for her"), do NOT restate title terms verbatim
-  - Fill ALL 13 tag slots: after B1, B2, B3 are placed, fill remaining slots with the highest-scoring unused keyword fragments from the list — prioritize phrases not already covered word-for-word in the title
-  - Each tag: 18–20 characters, max 20
-
-BALANCE REQUIREMENT: all three buckets must have real representation in both title and tags.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PRODUCT:
-Name: ${form.productName || 'Untitled product'}
-Product Type: ${form.productType || 'print-on-demand item'}
-${productBrandTerms.length ? `Blank/Brand: ${productBrandTerms.join(', ')} — state in product_details; treat brand-matching keywords below as real B2/B3 candidates.\n` : ''}Collection: ${(allCollectionNames && allCollectionNames.length > 1) ? allCollectionNames.join(' + ') : (form.collection || '—')}${(allCollectionNames && allCollectionNames.length > 1) ? '\nNote: Keywords are pooled from multiple collections — pick only the ones relevant to this specific product.' : ''}
-Sub-niche: ${form.niche || '—'}
-${season ? `Occasion/Season: ${season} — this is a seasonal product, not evergreen` : 'Occasion/Season: evergreen (no season tagged)'}
-${form.anchorKeyword ? `ANCHOR KEYWORD (B1 — lead with this in title and first tag): "${form.anchorKeyword}"` : b1IsPooledFallback ? 'ANCHOR KEYWORD: not set — no B1 of its own; Bucket 1 below is pooled/generic. Only lead with one if it fits the Product Type; otherwise flag the gap in research_flags rather than force a generic lead term.' : 'ANCHOR KEYWORD: not set — choose the strongest B1 from the list below'}
-${form.notes ? `Notes: ${form.notes}` : ''}
-
-${linkedConcept ? `CONCEPT BRIEF (from linked concept "${linkedConcept.name}") — creative direction only, to inform tone, target customer framing, and word choice in the description. NOT additional SEO keywords — title and tags still come only from the KEYWORDS list below.
-${linkedConcept.design_direction ? `Design Direction: ${linkedConcept.design_direction}\n` : ''}${linkedConcept.visual_style ? `Visual Style: ${linkedConcept.visual_style}\n` : ''}${linkedConcept.color_palette ? `Color Palette: ${linkedConcept.color_palette}\n` : ''}${linkedConcept.target_customer ? `Target Customer: ${linkedConcept.target_customer}\n` : ''}${(linkedConcept.mood_keywords || []).length ? `Mood Keywords: ${linkedConcept.mood_keywords.join(', ')}\n` : ''}${linkedConcept.emotional_trigger ? `Emotional Trigger: ${linkedConcept.emotional_trigger}\n` : ''}` : ''}
-${imageAnalysis ? `DESIGN IMAGE ANALYSIS:\n${imageAnalysis}\n` : ''}
-KEYWORDS — ONLY USE KEYWORDS FROM THIS LIST. DO NOT invent, substitute, or add any keyword not shown here.
-[format: X] = names a product format that may not match this listing's Product Type ("${form.productType || 'unset'}") — prefer an unmarked/matching variant for the title; a conflicting one is tags-only, never stated as fact in the description.
-
-Bucket 1 — Visibility (high vol, low comp — your unicorn)${b1IsPooledFallback ? ' — POOLED, not specific to this collection' : ''}:
-${byScore(b1).map(fmtKw).join('\n') || '  [none — do not invent B1 keywords; leave B1 slot empty or flag it]'}
-
-Bucket 2 — Reach (high-med vol, med-low comp — supporting keywords):
-${byScore(b2).map(fmtKw).join('\n') || '  [none]'}
-
-Bucket 3 — Bestseller (high vol, high comp — broad + seasonal + buyer-intent):
-${byScore(b3).map(fmtKw).join('\n') || '  [none — do not invent B3 keywords]'}
-
-${unclassified.length ? `Unclassified (assign to the bucket that best fits their metrics, then use them):\n${byScore(unclassified).map(fmtKw).join('\n')}\n` : ''}
-Watch keywords — lower confidence, grouped by bucket. Use one only if it's a genuinely better fit than the confirmed list above, not just to pad coverage.
-${watchB1.length ? `  Bucket 1:\n${byScore(watchB1).map(fmtKw).join('\n')}\n` : ''}${watchB2.length ? `  Bucket 2:\n${byScore(watchB2).map(fmtKw).join('\n')}\n` : ''}${watchB3.length ? `  Bucket 3:\n${byScore(watchB3).map(fmtKw).join('\n')}\n` : ''}${watchUnclassified.length ? `  Unclassified:\n${byScore(watchUnclassified).map(fmtKw).join('\n')}\n` : ''}${!watchAll.length ? '  [none]' : ''}
-
-STYLE GUIDE:
-${[
-  brandStyleGuide ? `Brand-wide (always applies):\n${brandStyleGuide}` : '',
-  styleGuide ? `Collection-specific:\n${styleGuide}` : '',
-].filter(Boolean).join('\n\n') || '— No style guide. Infer aesthetic from design image and niche.'}
-
-SEO STANDARDS:
-${seoStandards}
-
-BRAND VOICE:
-${brandVoice}
-
-${photoStandards ? `LISTING PHOTO STANDARDS:\n${photoStandards}\n` : ''}
-STRICT RULE: Every keyword used in the title or tags must appear verbatim in the keyword list above. No exceptions. Do not generate, paraphrase, or substitute any keyword not explicitly listed.
-
-Generate now. Return ONLY this JSON — no markdown, no text outside the object:
-{
-  "title": "string — [B1] , [B2] , [B3] comma format, Title Case, 130–140 chars (fill unused space with more keyword phrases)",
-  "tags": ["string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string"],
-  "description": {
-    "seo_opener": "string",
-    "product_details": "string",
-    "ordering_steps": "string",
-    "cross_sell": "string",
-    "shipping": "string",
-    "brand_voice_closer": "string — MUST end with: 'The Current Chapter- for the current chapter and every chapter in between.' Use this exact phrase verbatim as the final sentence."
-  },
-  "image_prompts": [
-    {"slot": 1, "type": "Main product shot", "prompt": "string — detailed ChatGPT image prompt"},
-    {"slot": 2, "type": "Lifestyle — worn/in use", "prompt": "string"},
-    {"slot": 3, "type": "Flat lay", "prompt": "string"},
-    {"slot": 4, "type": "Detail / closeup", "prompt": "string"},
-    {"slot": 5, "type": "Gift context", "prompt": "string"},
-    {"slot": 6, "type": "Brand aesthetic / mood", "prompt": "string"}
-  ],
-  "bucket_assignment": {"b1": "string — the bucket 1 keyword used", "b2": ["strings"], "b3": ["strings"]},
-  "research_flags": ["string — missing bucket coverage, balance issues, overlap candidates, or anything that needs more research"]
 }
 
-REQUIREMENTS:
-- Title: [B1] , [B2] , [B3] comma order, max 140 chars, Title Case, B1 in first 30–50 chars
-- Tags: exactly 13, each max 20 chars, B1 repeats intentionally, B2–3 reinforce not duplicate
-- Balance: all three buckets represented in both title and tags
-- Each description section distinct — not one paragraph split arbitrarily${productBrandTerms.length ? `\n- Blank/Brand (${productBrandTerms.join(', ')}) MUST appear as a factual statement in product_details` : ''}
-- brand_voice_closer MUST end with the exact phrase: "The Current Chapter- for the current chapter and every chapter in between."
-- Image prompts: specific enough for ChatGPT — include product type, colors, setting, lighting, demographic, angle${season ? `. This is a ${season} product — work ${season}-appropriate props, setting, and color accents into the lifestyle, gift-context, and brand-aesthetic slots specifically (not the main product shot or size reference) without covering or altering the core design graphic itself` : ''}
-- research_flags: flag any missing bucket, balance gap, overlap to combine, or keywords needing validation`;
+// Forced tool-use makes the model return a properly-typed array almost
+// always, but not always — a live generation run returned research_gaps as
+// a malformed JSON-in-a-string instead of the schema's actual array, which
+// crashed the page on a bare `field || []` (truthy strings skip that
+// fallback; whatever .array-method got called on the string next threw).
+// Every AI-sourced field this file treats as an array goes through this
+// first, not just a falsy check.
+function asArray(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+// Defense-in-depth checks re-run against the AI's actual output, on top of
+// (not instead of) the deterministic pre-filter and permission-based
+// prompt instructions upstream — catches the case where free-text
+// generation undoes upstream safety despite clean inputs. Never blocks the
+// result; returns warnings for the user to review.
+function validateGeneratedListing({ listing, productTruth, discussionPermissions, keywordPool }) {
+  const warnings = [];
+  if (!listing) return warnings;
+
+  const titleAndTags = `${listing.title || ''} ${asArray(listing.tags).join(' ')}`;
+  if (productTruth.product_format && checkFormatCompatibility(titleAndTags, productTruth.product_format) === 'incompatible') {
+    warnings.push('Generated title/tags may reference a conflicting product format — review before publishing.');
+  }
+
+  if (listing.primary_intent_status === 'validated') {
+    const claimed = (listing.primary_intent_matched_keyword || listing.primary_search_intent || '').trim().toLowerCase();
+    const realMatch = keywordPool.some(k => k.keyword.trim().toLowerCase() === claimed);
+    if (!realMatch) warnings.push('Primary Search Intent was marked "validated" but doesn\'t exactly match a researched keyword — treat as unconfirmed and review.');
+  }
+
+  const descText = JSON.stringify(listing.description || {});
+  if (!discussionPermissions.shipping && (listing.description?.shipping || '').trim()) warnings.push('Shipping was a forbidden topic (no shipping_policy set) but the description has shipping content.');
+  if (!discussionPermissions.personalization && /personali[sz]/i.test(descText)) warnings.push('Personalization was forbidden but may be mentioned — review.');
+  if (!discussionPermissions.customization && /customi[sz]/i.test(descText)) warnings.push('Customization was forbidden but may be mentioned — review.');
+  if (!discussionPermissions.gift_wrap && /gift.?wrap/i.test(descText)) warnings.push('Gift wrapping was forbidden but may be mentioned — review.');
+  if (productTruth.blank_brand && checkBrandMention(descText, productTruth.blank_brand).length) {
+    warnings.push(`Description may reference a different blank brand than confirmed (${productTruth.blank_brand}) — review.`);
+  }
+
+  if ((listing.title || '').length > 140) warnings.push('Title exceeds 140 characters.');
+  const tags = asArray(listing.tags);
+  if (tags.length > 13) warnings.push('More than 13 tags returned.');
+  if (tags.some(t => t.length > 20)) warnings.push('One or more tags exceed 20 characters.');
+  if (new Set(tags.map(t => t.toLowerCase())).size !== tags.length) warnings.push('Duplicate tags detected.');
+
+  return warnings;
 }
 
 // ─── Collection picker with inline add ───────────────────────────────────────
@@ -774,8 +817,16 @@ export default function ListingBuilder() {
     productName: conceptPushData?.productName || '',
     collection: '', niche: '',
     productType: conceptPushData?.productType || '',
-    emotionalTrigger: '', notes: '', anchorKeyword: '',
-    titleStyle: 'keyword_rich',
+    emotionalTrigger: '', notes: '',
+    // Product Truth (Listing Intelligence Milestone A) — every field
+    // nullable/empty until confirmed; the 3 booleans use null (not false)
+    // for "unknown" so an unconfirmed fact is never treated as a
+    // confirmed no. See src/lib/productTruth.js.
+    productFormat: '', blankBrand: '', blankModel: '', garmentColor: '',
+    availableColors: [], sizeRange: '', material: '',
+    personalizationAvailable: null, customizationAvailable: null, giftWrapAvailable: null,
+    productionTime: '', shippingPolicy: '', fulfillmentProvider: '',
+    titleStrategy: 'buyer_clear',
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -794,7 +845,21 @@ export default function ListingBuilder() {
       collection:       product.collection || '',
       niche:            product.niche || '',
       emotionalTrigger: product.emotional_trigger || '',
-      titleStyle:       product.title_style || 'keyword_rich',
+      productFormat: product.product_format || '', blankBrand: product.blank_brand || '',
+      blankModel: product.blank_model || '', garmentColor: product.garment_color || '',
+      availableColors: product.available_colors || [], sizeRange: product.size_range || '',
+      material: product.material || '',
+      personalizationAvailable: product.personalization_available ?? null,
+      customizationAvailable: product.customization_available ?? null,
+      giftWrapAvailable: product.gift_wrap_available ?? null,
+      productionTime: product.production_time || '', shippingPolicy: product.shipping_policy || '',
+      fulfillmentProvider: product.fulfillment_provider || '',
+      // Only overwrite the live 'buyer_clear' default if this product was
+      // actually generated under the new taxonomy — a legacy value (or one
+      // of the 2 backfilled legacy_* strings) intentionally doesn't match
+      // any of the 3 picker options, so the picker just shows none
+      // selected rather than silently relabeling old history.
+      titleStrategy: product.title_strategy || 'buyer_clear',
     }));
     if (product.concept_id) setLinkedConceptId(product.concept_id);
     if (product.live_title) {
@@ -823,6 +888,20 @@ export default function ListingBuilder() {
   const [editTags, setEditTags]     = useState([]);
   const [editDesc, setEditDesc]     = useState({});
   const [editPrompts, setEditPrompts] = useState([]);
+  // Listing Intelligence Milestone A — Primary Search Intent replaces the
+  // old anchorKeyword. Populated from generation output (like editTitle/
+  // editTags), not a pre-generation input the user picks from a B1 pool —
+  // the AI proposes it as part of generation, the human stays the backstop
+  // by editing it directly afterward, same trust model as title/tags.
+  const [primarySearchIntent, setPrimarySearchIntent] = useState('');
+  const [primaryIntentStatus, setPrimaryIntentStatus] = useState('');
+  const [researchGaps, setResearchGaps] = useState([]);
+  const [excludedKeywordsDisplay, setExcludedKeywordsDisplay] = useState([]);
+  const [validationWarnings, setValidationWarnings] = useState([]);
+  // listing_generations row ids created this session that don't have a real
+  // product_id yet (a new listing generates before it's saved) — linked to
+  // the real product the moment handleSaveProduct() succeeds.
+  const [pendingGenerationIds, setPendingGenerationIds] = useState([]);
 
   // ── Auto-draft (new listings only) ──────────────────────────────────────────
   const DRAFT_KEY = 'tcc_listing_draft';
@@ -854,9 +933,8 @@ export default function ListingBuilder() {
   // Design image half of the concept-push hand-off — the text fields
   // (productName/productType) are already in form's initial state above;
   // this only needs an effect because analysis requires an async call.
-  // Deliberately does NOT set anchorKeyword or collection — those stay
-  // blank, so the real title still gets built from whatever B1/B2/B3
-  // keywords she picks here, not the concept's own guess.
+  // Deliberately does NOT set collection — that stays blank, a real human
+  // choice, not inherited silently from the concept.
   const conceptPushImageAppliedRef = useRef(false);
   useEffect(() => {
     if (!conceptPushData?.imageBase64 || conceptPushImageAppliedRef.current) return;
@@ -959,7 +1037,7 @@ export default function ListingBuilder() {
       for (const k of (s.keywords || [])) {
         const key = `${k.keyword?.toLowerCase()}|${k.tags_only ? 'tags' : k.tag_type}`;
         const ex = map.get(key);
-        if (!ex || (k.score || 0) > (ex.score || 0)) map.set(key, { ...k, _fromPrimaryCollection: fromPrimaryCollection });
+        if (!ex || (k.score || 0) > (ex.score || 0)) map.set(key, { ...k, _fromPrimaryCollection: fromPrimaryCollection, _source: s.source });
       }
     }
     return [...map.values()];
@@ -969,68 +1047,16 @@ export default function ListingBuilder() {
   const watchKws = allKeywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
   const totalUsable = useKws.length + watchKws.length;
 
-  // Bucket coverage — used both for readiness and as a generation gate.
-  // Misspelling variants are excluded here (not just from the generation prompt) —
-  // they must never anchor a title per SEO standards, even if high-volume, so they
-  // can't be auto-picked, can't appear as a manual B1 chip, and don't count toward
-  // bucket coverage. They're still valid, usable keywords — just tags-only ones.
-  const usableForBuckets = allKeywords.filter(k => !k.tags_only && k.tag_type !== 'discard' && !k.is_misspelling_variant);
-  const b1Keywords = usableForBuckets.filter(k => k.bucket === 1);
-  const b2Keywords = usableForBuckets.filter(k => k.bucket === 2);
-  const b3Keywords = usableForBuckets.filter(k => k.bucket === 3);
-  // B1 keywords specific to this listing's own collection(s) — the only ones
-  // eligible to auto-lead the title. Bucket *coverage* still counts pooled
-  // keywords, and the manual picker below still shows pooled B1s as options,
-  // but a pooled term (e.g. "gifted mama" from General) is generic by
-  // definition — it can be a fine anchor if this listing's own research is
-  // thin, but that's a deliberate human call, never a silent auto-pick.
-  const primaryB1Keywords = b1Keywords.filter(k => k._fromPrimaryCollection);
-  // Unbucketed with vol+comp provisionally satisfy coverage gates
-  const provisionalKws = usableForBuckets.filter(k => !k.bucket && k.volume && k.competition);
-  const hasProvisionalCoverage = provisionalKws.length >= 3;
-  // True classification, as opposed to the provisional vol/comp fallback above —
-  // anchor auto-select and the generation prompt's B1/B2/B3 sections both need
-  // real bucket tags, not just "enough scored keywords to probably cover all three."
-  const bucketsFullyClassified = !!(b1Keywords.length && b2Keywords.length && b3Keywords.length);
-
-  const missingBuckets = [
-    ...(!b1Keywords.length && !hasProvisionalCoverage ? ['Bucket 1 (Visibility — high vol, low comp)'] : []),
-    ...(!b2Keywords.length && !hasProvisionalCoverage ? ['Bucket 2 (Reach — supporting keywords)'] : []),
-    ...(!b3Keywords.length && !hasProvisionalCoverage ? ['Bucket 3 (Bestseller — broad + buyer-intent)'] : []),
-  ];
-
-  // Auto-select the top-volume B1 candidate as the anchor once, per collection,
-  // so "No anchor keyword set" doesn't sit warning-red while a perfectly good
-  // candidate is already showing right above it. User can still override by
-  // clicking another chip, or clear it — once tried for a collection, it's
-  // never re-imposed (respects a deliberate clear).
-  //
-  // Only ever auto-picks from this collection's OWN B1s — never a pooled/
-  // global one. A pooled B1 can be high-volume and low-competition while
-  // being totally generic ("gifted mama" fits every Mom-adjacent listing,
-  // Halloween included) — good SEO metrics, wrong product. If this
-  // collection has no B1 of its own, that's a real research gap; auto-
-  // selecting a pooled term would paper over it instead of surfacing it.
-  // She can still pick one manually from the picker below if she judges
-  // it genuinely fits.
-  const autoAnchorTriedRef = useRef(new Set());
-  useEffect(() => {
-    if (!form.collection || form.anchorKeyword) return;
-    if (autoAnchorTriedRef.current.has(form.collection)) return;
-    const topB1 = primaryB1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0))[0];
-    if (topB1) {
-      autoAnchorTriedRef.current.add(form.collection);
-      setField('anchorKeyword', topB1.keyword);
-    }
-  }, [form.collection, form.anchorKeyword, primaryB1Keywords]);
-
-  // Playbooks
+  // Playbooks. seo-standards is deliberately no longer fetched/used here —
+  // Listing Intelligence Milestone A replaced the old bucket-ordering rules
+  // it encoded with generate-listing-v2.js's own prompt; passing that old
+  // playbook content through would just reintroduce the rules this rebuild
+  // removes. The playbook itself is untouched in Knowledge — just not read
+  // by generation anymore.
   const photoPlaybook      = playbooks.find(p => p.slug === 'listing-photos');
-  const seoPlaybook        = playbooks.find(p => p.slug === 'seo-standards');
   const brandVoicePlaybook = playbooks.find(p => p.slug === 'brand-voice');
   const designPlaybook     = playbooks.find(p => p.slug === 'design-standards');
 
-  const seoStandards   = seoPlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || SEO_STANDARDS_FALLBACK;
   const brandVoice     = brandVoicePlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || BRAND_VOICE_FALLBACK;
   const photoStandards = photoPlaybook?.playbook_sections?.map(s => s.body).join('\n\n') || '';
   // Brand-wide style guide (Knowledge → Playbooks → Design Standards) — applies
@@ -1108,13 +1134,9 @@ export default function ListingBuilder() {
   // Readiness checks
   const readiness = [
     {
-      label: bucketsFullyClassified
-        ? `${totalUsable} usable keywords — B1/B2/B3 classified`
-        : hasProvisionalCoverage
-          ? `${totalUsable} usable keywords — buckets not yet classified (provisional)`
-          : `${totalUsable} usable keyword${totalUsable !== 1 ? 's' : ''}`,
-      ok: bucketsFullyClassified,
-      warn: !bucketsFullyClassified,
+      label: `${totalUsable} researched keyword${totalUsable !== 1 ? 's' : ''} available`,
+      ok: totalUsable > 0,
+      warn: totalUsable === 0,
     },
     {
       label: keywordsStale
@@ -1134,13 +1156,18 @@ export default function ListingBuilder() {
       warn: !brandStyleGuide,
     },
     {
-      label: form.anchorKeyword
-        ? `Anchor: "${form.anchorKeyword}"`
-        : hasProvisionalCoverage && !b1Keywords.length
-          ? 'No anchor set — no keyword classified as Bucket 1 yet'
-          : 'No anchor keyword set',
-      ok: !!form.anchorKeyword,
-      warn: !form.anchorKeyword,
+      // Product Truth's product_format is what the deterministic Compatibility
+      // Gate checks against — without it, format-incompatible keywords can't
+      // be excluded at all (checkFormatCompatibility() returns 'unknown', not
+      // 'incompatible', when there's nothing to compare against).
+      label: form.productFormat ? `Product format: ${form.productFormat}` : 'Product format not set — compatibility checks disabled',
+      ok: !!form.productFormat,
+      warn: !form.productFormat,
+    },
+    {
+      label: primarySearchIntent ? `Primary Search Intent: "${primarySearchIntent}"` : 'Not yet generated',
+      ok: !!primarySearchIntent,
+      warn: false,
     },
     {
       label: analyzing
@@ -1153,14 +1180,9 @@ export default function ListingBuilder() {
     },
   ];
   const hasWarnings = readiness.some(r => r.warn);
-  const bucketWarnings = form.collection ? computeBucketWarnings(allKeywords, sessions) : [];
 
   async function handleGenerate() {
     if (!form.collection) { setGenError('Please select a collection first.'); return; }
-    if (missingBuckets.length > 0) {
-      setGenError(`Cannot generate — missing keywords for:\n• ${missingBuckets.join('\n• ')}\n\nDo more research in the Explore tab and add keywords to your collection before generating.`);
-      return;
-    }
     setGenerating(true);
     setGenError('');
     setOutput(null);
@@ -1173,11 +1195,16 @@ export default function ListingBuilder() {
         const { data } = await supabase.from('concepts').select('*').eq('id', linkedConceptId).single();
         freshLinkedConcept = data || null;
       }
-      const context = buildContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, seoStandards, brandVoice, photoStandards, imageAnalysis, activeSessions, allCollectionNames, linkedConcept: freshLinkedConcept });
-      const res = await fetch('/.netlify/functions/claude-process', {
+      const ctx = buildGenerationContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept: freshLinkedConcept });
+      const res = await fetch('/.netlify/functions/generate-listing-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'generate_listing', payload: { imageBase64: imageBase64 || null, mediaType: imageMediaType, context } }),
+        body: JSON.stringify({
+          context: ctx,
+          imageBase64: imageBase64 || null,
+          mediaType: imageMediaType,
+          titleStrategy: form.titleStrategy,
+        }),
       });
       const rawText = await res.text();
       let data;
@@ -1188,8 +1215,73 @@ export default function ListingBuilder() {
         setGenerating(false);
         return;
       }
-      if (!data.parsed) { setGenError(`Generation failed — ${data.error || data.raw?.slice(0, 200) || 'no output returned'}`); setGenerating(false); return; }
-      setOutput(data.parsed);
+      if (!res.ok || !data.listing) { setGenError(`Generation failed — ${data.error || 'no output returned'}`); setGenerating(false); return; }
+
+      // Sanitize once, at the source, rather than trusting each downstream
+      // reader to guard itself — this same object becomes `output` state
+      // (setOutput below) and later a saved draft, so every consumer from
+      // here on, including the draft-restore path, inherits the fix.
+      const listing = {
+        ...data.listing,
+        tags: asArray(data.listing.tags),
+        research_gaps: asArray(data.listing.research_gaps),
+        supporting_keywords: asArray(data.listing.supporting_keywords),
+        image_prompts: asArray(data.listing.image_prompts),
+        validation: { ...data.listing.validation, warnings: asArray(data.listing.validation?.warnings) },
+      };
+      const warnings = [
+        ...asArray(listing.validation?.warnings),
+        ...validateGeneratedListing({ listing, productTruth: ctx.productTruth, discussionPermissions: ctx.discussionPermissions, keywordPool: ctx.keywordPool }),
+      ];
+      setValidationWarnings(warnings);
+      setResearchGaps(asArray(listing.research_gaps));
+      setExcludedKeywordsDisplay(ctx.excludedKeywords || []);
+
+      const matchedKeyword = listing.primary_intent_matched_keyword
+        ? ctx.keywordPool.find(k => k.keyword.trim().toLowerCase() === listing.primary_intent_matched_keyword.trim().toLowerCase())
+        : null;
+      setPrimarySearchIntent(listing.primary_search_intent || '');
+      setPrimaryIntentStatus(listing.primary_intent_status || '');
+
+      // Persist the generation ledger row immediately — before the listing
+      // is ever saved as a product. A new listing generates before any
+      // product row exists (productId is null throughout drafting), so this
+      // inserts with product_id: null and gets linked once handleSaveProduct
+      // succeeds (see pendingGenerationIds below) — otherwise every pre-save
+      // attempt (comparing a few generations before deciding) would be
+      // silently unlogged, losing exactly the history a later phase's
+      // learning work would want most.
+      const { data: genRow } = await createListingGeneration({
+        productId: productId || null,
+        generationVersion: GENERATION_VERSION,
+        trigger: output ? 'manual_regenerate' : 'initial_generation',
+        primarySearchIntent: listing.primary_search_intent,
+        primarySearchIntentKeywordId: matchedKeyword?.keywordId || null,
+        primaryIntentStatus: listing.primary_intent_status,
+        researchSourcesUsed: ctx.researchSourcesUsed,
+        researchGaps: asArray(listing.research_gaps),
+        productTruthSnapshot: ctx.productTruth,
+        discussionPermissions: ctx.discussionPermissions,
+        titleStrategy: form.titleStrategy,
+        title: listing.title,
+        tags: asArray(listing.tags),
+        description: listing.description,
+        imagePrompts: asArray(listing.image_prompts),
+        validationStatus: listing.validation?.status || null,
+        validationWarnings: warnings,
+        model: data.model,
+        inputTokens: data.usage?.input_tokens,
+        outputTokens: data.usage?.output_tokens,
+        supportingKeywords: asArray(listing.supporting_keywords).map(k => ({
+          keyword: k.keyword,
+          keywordId: ctx.keywordPool.find(p => p.keyword.trim().toLowerCase() === (k.source_keyword || k.keyword).trim().toLowerCase())?.keywordId || null,
+          relevanceCategory: k.relevance_category,
+        })),
+        excludedKeywords: ctx.excludedKeywords,
+      });
+      if (genRow?.id && !productId) setPendingGenerationIds(ids => [...ids, genRow.id]);
+
+      setOutput(listing);
     } catch (err) {
       setGenError(err.message);
     }
@@ -1202,13 +1294,36 @@ export default function ListingBuilder() {
   const [savedProductId, setSavedProductId] = useState(null);
   const [saveEditsState, setSaveEditsState] = useState('idle');
 
+  // Shared Product Truth + title_strategy field mapping for both save paths
+  // below. title_style (the old 2-value column) is deliberately never
+  // written by either — it stays untouched historical data; title_strategy
+  // is the only field new code writes going forward.
+  function productTruthUpdates() {
+    return {
+      product_format: form.productFormat || null,
+      blank_brand: form.blankBrand || null,
+      blank_model: form.blankModel || null,
+      garment_color: form.garmentColor || null,
+      available_colors: form.availableColors?.length ? form.availableColors : null,
+      size_range: form.sizeRange || null,
+      material: form.material || null,
+      personalization_available: form.personalizationAvailable,
+      customization_available: form.customizationAvailable,
+      gift_wrap_available: form.giftWrapAvailable,
+      production_time: form.productionTime || null,
+      shipping_policy: form.shippingPolicy || null,
+      fulfillment_provider: form.fulfillmentProvider || null,
+      title_strategy: form.titleStrategy || 'buyer_clear',
+    };
+  }
+
   async function handleSaveEdits() {
     setSaveEditsState('saving');
     const updates = {
       live_title: editTitle || null,
       live_tags: editTags.filter(Boolean).join(', ') || null,
-      title_style: form.titleStyle || 'keyword_rich',
       concept_id: linkedConceptId || null,
+      ...productTruthUpdates(),
     };
     if (Object.keys(editDesc).length > 0) {
       updates.generated_description = editDesc;
@@ -1232,26 +1347,39 @@ export default function ListingBuilder() {
       stage:             saveStage,
       live_title:        editTitle || null,
       live_tags:         editTags.filter(Boolean).join(', ') || null,
-      title_style:       form.titleStyle || 'keyword_rich',
       concept_id:        linkedConceptId || null,
       stage_updated_at:  new Date().toISOString(),
+      ...productTruthUpdates(),
       ...(Object.keys(editDesc).length > 0 ? { generated_description: editDesc } : {}),
       ...(editPrompts.length > 0 ? { generated_image_prompts: editPrompts } : {}),
     });
     setSaving(false);
     if (!error && data?.id) {
       setSavedProductId(data.id);
+      // Link this session's pre-save generation(s) — logged with
+      // product_id: null since no product existed yet at generation time
+      // (see handleGenerate) — to the real product that now exists.
+      if (pendingGenerationIds.length) {
+        await linkGenerationsToProduct(pendingGenerationIds, data.id);
+        setPendingGenerationIds([]);
+      }
       clearDraft();
     }
   }
 
-  // Editable output state (initialized from generated output)
+  // Editable output state (initialized from generated output). Also covers
+  // the draft-restore path (a refreshed browser tab sets `output` directly
+  // from localStorage, bypassing handleGenerate) — redundant-but-harmless
+  // when coming from handleGenerate, which already sets these directly.
   useEffect(() => {
     if (!output) return;
     setEditTitle(output.title || '');
-    setEditTags(output.tags ? [...output.tags] : []);
+    setEditTags(asArray(output.tags).map(t => t));
     setEditDesc(output.description ? { ...output.description } : {});
-    setEditPrompts(output.image_prompts ? output.image_prompts.map(p => ({ ...p })) : []);
+    setEditPrompts(asArray(output.image_prompts).map(p => ({ ...p })));
+    if (output.primary_search_intent) setPrimarySearchIntent(output.primary_search_intent);
+    if (output.primary_intent_status) setPrimaryIntentStatus(output.primary_intent_status);
+    if (output.research_gaps) setResearchGaps(asArray(output.research_gaps));
     if (output.title && !form.productName) setField('productName', output.title);
   }, [output]);
 
@@ -1305,10 +1433,18 @@ export default function ListingBuilder() {
             <input value={form.productName} onChange={e => setField('productName', e.target.value)} placeholder="e.g. Animal Meme Crewneck" />
           </div>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Product Type</label>
+            <label className="form-label">Product Type <span style={{ fontWeight: 400, opacity: 0.5 }}>(free text, for your own reference)</span></label>
             <input value={form.productType} onChange={e => setField('productType', e.target.value)} placeholder="e.g. crewneck sweatshirt, tote bag, mug" />
           </div>
         </div>
+
+        {/* ── PRODUCT TRUTH — Listing Intelligence Milestone A ──────────
+            The thing keyword data may never override. product_format is
+            what the deterministic Compatibility Gate checks every keyword
+            against before generation — this is what stops another "hockey
+            mom sweatshirt on a T-shirt" from happening. Unset fields stay
+            unset; nothing here is ever inferred. */}
+        <ProductTruthSection form={form} setField={setField} />
 
         {/* Row 2: Collection chips from DB */}
         <CollectionPicker
@@ -1373,43 +1509,29 @@ export default function ListingBuilder() {
           </div>
         )}
 
-        {/* B1 anchor picker — only this collection's own B1s are offered as
-            clickable anchors. A pooled/generic term (shared with every other
-            listing that touches this collection) isn't a real anchor candidate
-            even if it's technically B1-bucketed and high-volume — it's not
-            specific to this product. */}
-        {(() => {
-          if (!b1Keywords.length) return null;
-          return (
-            <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Anchor Keyword (B1) <span style={{ fontWeight: 400, opacity: 0.5 }}>— leads the title</span></label>
-              {primaryB1Keywords.length ? (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                  {primaryB1Keywords.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0)).map(k => (
-                    <button key={k.id} type="button"
-                      onClick={() => setField('anchorKeyword', form.anchorKeyword === k.keyword ? '' : k.keyword)}
-                      style={{
-                        fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                        background: form.anchorKeyword === k.keyword ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.12)',
-                        color: form.anchorKeyword === k.keyword ? '#fff' : '#2d6b3c',
-                        border: `1px solid rgba(124,175,138,${form.anchorKeyword === k.keyword ? '0.9' : '0.3'})`,
-                        fontWeight: form.anchorKeyword === k.keyword ? 600 : 400,
-                      }}>
-                      {k.keyword}
-                      {k.volume && <span style={{ opacity: 0.7, marginLeft: 4 }}>· {Number(k.volume).toLocaleString()}</span>}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginTop: 4, lineHeight: 1.5 }}>
-                  No B1 keyword specific to this collection — {b1Keywords.length} pooled B1{b1Keywords.length !== 1 ? 's' : ''} exist (shared with other listings) but are intentionally left out here, since a generic term isn't a real anchor for this product. Add collection-specific research, or type one below if you're confident it fits.
-                </div>
+        {/* Primary Search Intent — replaces the old B1 anchor picker.
+            Proposed by generation itself (see handleGenerate), not picked
+            from a bucket pool beforehand — the human stays the backstop by
+            editing it directly here afterward, same trust model as the
+            title/tags fields below. */}
+        {(primarySearchIntent || output) && (
+          <div style={{ marginBottom: 12 }}>
+            <label className="form-label">
+              Primary Search Intent
+              {primaryIntentStatus && (
+                <span style={{
+                  marginLeft: 8, fontSize: '0.65rem', padding: '1px 7px', borderRadius: 10, textTransform: 'capitalize',
+                  background: primaryIntentStatus === 'validated' ? 'rgba(124,175,138,0.2)' : primaryIntentStatus === 'supported' ? 'rgba(232,168,124,0.2)' : 'rgba(43,41,38,0.08)',
+                  color: primaryIntentStatus === 'validated' ? '#2d6b3c' : primaryIntentStatus === 'supported' ? '#7a4a1e' : 'var(--charcoal-soft)',
+                }}>
+                  {primaryIntentStatus}
+                </span>
               )}
-              <input value={form.anchorKeyword} onChange={e => setField('anchorKeyword', e.target.value)}
-                style={{ marginTop: 6, fontSize: '0.78rem' }} placeholder="Or type a custom anchor…" />
-            </div>
-          );
-        })()}
+            </label>
+            <input value={primarySearchIntent} onChange={e => { setPrimarySearchIntent(e.target.value); setPrimaryIntentStatus(''); }}
+              style={{ fontSize: '0.82rem' }} placeholder="Generated after you click Generate Listing — editable" />
+          </div>
+        )}
 
         {/* Sub-niche + Notes */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -1423,20 +1545,26 @@ export default function ListingBuilder() {
           </div>
         </div>
 
-        {/* Title Style A/B toggle */}
+        {/* Title Strategy — replaces the old 2-value Title Style toggle.
+            Only the 3 live strategies are ever offered as buttons here;
+            legacy_keyword_rich/legacy_short_clean exist only as backfilled
+            historical values on older products (see the migration) and are
+            deliberately not selectable — clicking a button can never land on
+            one, and loading an old product doesn't silently relabel its
+            value into a live choice. But the value must still remain
+            *readable* (Kristen's explicit requirement) rather than just
+            showing 3 unhighlighted buttons with no indication anything
+            historical is even set — the note below covers that. */}
         <div style={{ marginTop: 12 }}>
           <label className="form-label">
-            Title Style <span style={{ fontWeight: 400, opacity: 0.5 }}>— saved with the listing so you can compare Shop Stats later</span>
+            Title Strategy <span style={{ fontWeight: 400, opacity: 0.5 }}>— saved with the listing so you can compare performance later</span>
           </label>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-            {[
-              { key: 'keyword_rich', label: 'Keyword-Rich (130–140 chars)' },
-              { key: 'short_clean', label: "Short & Clean (Etsy's current guidance)" },
-            ].map(opt => {
-              const active = (form.titleStyle || 'keyword_rich') === opt.key;
+            {TITLE_STRATEGIES.map(opt => {
+              const active = form.titleStrategy === opt.key;
               return (
                 <button key={opt.key} type="button"
-                  onClick={() => setField('titleStyle', opt.key)}
+                  onClick={() => setField('titleStrategy', opt.key)}
                   style={{
                     fontSize: '0.72rem', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
                     background: active ? 'rgba(124,175,138,0.9)' : 'rgba(124,175,138,0.12)',
@@ -1449,6 +1577,11 @@ export default function ListingBuilder() {
               );
             })}
           </div>
+          {form.titleStrategy && LEGACY_TITLE_STRATEGY_LABELS[form.titleStrategy] && (
+            <div style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: 4 }}>
+              Current: {LEGACY_TITLE_STRATEGY_LABELS[form.titleStrategy]} (legacy — historical value, not selectable above; pick a strategy to replace it)
+            </div>
+          )}
         </div>
 
         {/* Linked Concept (Phase 10) */}
@@ -1564,51 +1697,14 @@ export default function ListingBuilder() {
         </div>
         {hasWarnings && (
           <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginTop: 8 }}>
-            Missing bucket keywords will block generation — do more research first.
-          </div>
-        )}
-        {form.collection && (
-          <div style={{ marginTop: 12, borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 10 }}>
-            <div style={{ fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: missingBuckets.length ? '#8b3a3a' : bucketsFullyClassified ? '#2d6b3c' : '#7a4a1e', marginBottom: 6 }}>
-              Bucket Coverage
-            </div>
-            {missingBuckets.length > 0 ? (
-              <div>
-                {missingBuckets.map((b, i) => (
-                  <div key={i} style={{
-                    fontSize: '0.75rem', color: '#8b3a3a', padding: '5px 10px', marginBottom: 4,
-                    borderRadius: 4, background: 'rgba(201,123,123,0.1)', border: '1px solid rgba(201,123,123,0.25)',
-                  }}>
-                    ✗ No keywords for {b} — do more research before generating
-                  </div>
-                ))}
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => navigate(`/research?collection=${encodeURIComponent(form.collection)}`)}
-                  >
-                    Research {form.collection} →
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => navigate(`/research`)}
-                  >
-                    Open Research
-                  </button>
-                </div>
-              </div>
-            ) : bucketsFullyClassified ? (
-              <div style={{ fontSize: '0.75rem', color: '#2d6b3c', padding: '5px 10px', borderRadius: 4, background: 'rgba(124,175,138,0.1)', border: '1px solid rgba(124,175,138,0.25)' }}>
-                ✓ All three buckets classified — ready to generate
-              </div>
-            ) : (
-              <div style={{ fontSize: '0.75rem', color: '#7a4a1e', padding: '5px 10px', borderRadius: 4, background: 'rgba(232,168,124,0.15)', border: '1px solid rgba(232,168,124,0.3)' }}>
-                ⚠ No keywords explicitly bucket-classified yet — generating from {provisionalKws.length} unclassified keyword{provisionalKws.length !== 1 ? 's' : ''} with volume/competition data. The AI will assign buckets at generation time; classify B1/B2/B3 in Research first for a stronger anchor keyword and more reliable results.
-              </div>
-            )}
+            Generation is never blocked by thin research — these are things worth checking, not requirements.
           </div>
         )}
       </div>
+      {/* Bucket Coverage removed (Listing Intelligence Milestone A) — buckets
+          are research metadata now, not a generation gate; this block's
+          entire purpose was explaining a hard block that no longer exists.
+          Bucket display stays exactly as-is in Research/KeywordDetail. */}
 
       {/* ── INLINE KEYWORD ADD ──────────────────────────────────── */}
       {form.collection && <InlineKeywordAdd collection={form.collection} sessions={sessions} onSaved={refetchSessions} />}
@@ -1658,26 +1754,60 @@ export default function ListingBuilder() {
             </div>
           )}
 
-          {/* Research flags */}
-          {output?.research_flags?.length > 0 && (
-            <div style={{ background: 'rgba(232,168,124,0.1)', border: '1px solid rgba(232,168,124,0.3)', borderRadius: 4, padding: '10px 14px', marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a4a1e' }}>Research Gaps Flagged</div>
-                <SaveFlagsButton flags={output.research_flags} productId={productId || savedProductId} />
-              </div>
-              {output.research_flags.map((f, i) => (
-                <div key={i} style={{ fontSize: '0.78rem', color: '#7a4a1e', lineHeight: 1.6 }}>⚠ {f}</div>
+          {/* Validation warnings — the deterministic post-generation checks
+              (format re-check, unsupported-claim scan, validated-status
+              verification, tag/title mechanics) plus whatever the AI itself
+              flagged. Never blocks the result; review before publishing. */}
+          {validationWarnings.length > 0 && (
+            <div style={{ background: 'rgba(201,123,123,0.08)', border: '1px solid rgba(201,123,123,0.25)', borderRadius: 4, padding: '10px 14px', marginBottom: 20 }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#8b3a3a', marginBottom: 6 }}>Review Before Publishing</div>
+              {validationWarnings.map((w, i) => (
+                <div key={i} style={{ fontSize: '0.78rem', color: '#8b3a3a', lineHeight: 1.6 }}>⚠ {w}</div>
               ))}
             </div>
+          )}
+
+          {/* Research Gaps — severity-styled (critical / research_opportunity /
+              optional_test), replaces the old flat research_flags string list. */}
+          {researchGaps.length > 0 && (
+            <div style={{ background: 'rgba(232,168,124,0.1)', border: '1px solid rgba(232,168,124,0.3)', borderRadius: 4, padding: '10px 14px', marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7a4a1e' }}>Research Gaps</div>
+                <SaveFlagsButton flags={researchGaps} productId={productId || savedProductId} />
+              </div>
+              {researchGaps.map((g, i) => (
+                <div key={i} style={{ fontSize: '0.78rem', color: g.severity === 'critical' ? '#8b3a3a' : '#7a4a1e', lineHeight: 1.6 }}>
+                  <span style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', marginRight: 6 }}>{g.severity?.replace(/_/g, ' ')}</span>
+                  {g.message}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Excluded Keywords — format-incompatible keywords the
+              deterministic Compatibility Gate removed before generation ever
+              saw them, shown with why, so a thin-looking keyword pool has a
+              visible explanation instead of just looking sparse. */}
+          {excludedKeywordsDisplay.length > 0 && (
+            <details style={{ marginBottom: 20 }}>
+              <summary style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
+                {excludedKeywordsDisplay.length} keyword{excludedKeywordsDisplay.length !== 1 ? 's' : ''} excluded — view
+              </summary>
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {excludedKeywordsDisplay.map((k, i) => (
+                  <div key={i} style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)' }}>
+                    <strong>{k.keyword}</strong> — {k.reason}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
 
           {/* Keyword patch panel — show whenever we have a listing (new or existing) */}
           {(editTitle || editTags.length > 0) && (
             <KeywordPatchPanel
-              currentTitle={editTitle}
-              currentTags={editTags}
-              researchFlags={output?.research_flags || []}
-              onApply={(title, tags) => { setEditTitle(title); setEditTags(tags); }}
+              currentPrimaryIntent={primarySearchIntent}
+              currentPrimaryIntentStatus={primaryIntentStatus}
             />
           )}
 
@@ -1799,7 +1929,7 @@ export default function ListingBuilder() {
               <textarea
                 value={editDesc[key] || ''}
                 onChange={e => setEditDesc(d => ({ ...d, [key]: e.target.value }))}
-                rows={key === 'seo_opener' ? 3 : 2}
+                rows={key === 'opener' ? 3 : 2}
                 style={{ width: '100%', fontSize: '0.85rem', lineHeight: 1.6 }}
               />
             </div>

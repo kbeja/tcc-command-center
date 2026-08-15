@@ -269,129 +269,65 @@ exports.handler = async (event) => {
     }
   }
 
-  // ── Generate complete Etsy listing ──
-  if (type === 'generate_listing') {
-    const { imageBase64, mediaType, context } = payload || {};
-    if (!context) return { statusCode: 400, body: JSON.stringify({ error: 'No context provided' }) };
-    if (typeof context !== 'string' || context.length > LIMITS.content) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Context too large' }) };
-    }
-    if (imageBase64 && imageBase64.length > LIMITS.imageBase64) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Image too large (max 6MB)' }) };
-    }
-    console.log(`[claude-process] generate_listing: context.length=${context.length} chars, hasImage=${!!imageBase64}`);
-    const t0 = Date.now();
-    try {
-      const userContent = [
-        ...(imageBase64 ? [{ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/png', data: imageBase64 } }] : []),
-        { type: 'text', text: context },
-      ];
-      // Use streaming to avoid inactivity timeout on long generations
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.CLAUDE_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-beta': 'messages-2023-12-15',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 3000,
-          stream: true,
-          system: 'You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop. Generate complete, optimized Etsy listings following TCC SEO Standards v2: 3-bucket keyword framework (Bucket 1 = Visibility/unicorn, Bucket 2 = Reach/supporting, Bucket 3 = Scalability/broad+seasonal+buyer-intent), comma-separated title format ([B1] , [B2] , [B3]), tag rule: B1 AND B2 phrases repeat exactly in tags, B3 uses adjacent phrasing only. CRITICAL: Return ONLY valid JSON — no markdown fences, no explanation, no text before or after the JSON object.',
-          messages: [{ role: 'user', content: userContent }],
-        }),
-      });
+  // ── generate_listing removed (Listing Intelligence Milestone A) ──
+  // Replaced by netlify/functions/generate-listing-v2.js — a separate file,
+  // real forced tool-use, Sonnet — not a case here. The old prompt baked
+  // the rigid B1/B2/B3 bucket rules in verbatim (bucket-ordering, 130-140
+  // char padding target, verbatim-only keywords) with no format-vs-keyword
+  // check at all; that's the literal mechanism that once assigned "hockey
+  // mom sweatshirt" to a T-shirt listing. See generate-listing-v2.js's own
+  // header comment for the replacement design.
 
-      console.log(`[claude-process] generate_listing: response headers at +${Date.now() - t0}ms, status=${response.status}`);
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('[claude-process] generate_listing upstream error:', response.status, errText);
-        return { statusCode: 502, body: JSON.stringify({ error: 'Listing generation failed. Please try again.' }) };
-      }
-
-      // Collect the full streamed text
-      let fullText = '';
-      let chunkCount = 0;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunkCount++;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const evt = JSON.parse(data);
-            if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-              fullText += evt.delta.text;
-            }
-          } catch { /* skip malformed lines */ }
-        }
-      }
-      console.log(`[claude-process] generate_listing: stream done at +${Date.now() - t0}ms, chunks=${chunkCount}, fullText.length=${fullText.length}`);
-
-      const match = fullText.match(/\{[\s\S]*\}/);
-      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: fullText, parsed: null }) };
-      try {
-        const parsed = JSON.parse(stripTrailingCommas(match[0]));
-        return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
-      } catch (parseErr) {
-        console.error('[claude-process] generate_listing JSON parse failed:', parseErr.message);
-        return { statusCode: 200, body: JSON.stringify({ raw: fullText, parsed: null }) };
-      }
-    } catch (err) {
-      return safeError(err, 'generate_listing');
-    }
-  }
-
-  // ── Patch title & tags with new keyword research ──
-  if (type === 'patch_listing_keywords') {
-    const { currentTitle, currentTags, newKeywords, researchFlags } = payload || {};
-    if (!currentTitle || !currentTags) return { statusCode: 400, body: JSON.stringify({ error: 'Missing listing data' }) };
-    if (typeof currentTitle !== 'string' || currentTitle.length > LIMITS.currentTitle) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Title too long' }) };
-    }
-    if (!Array.isArray(currentTags) || currentTags.some(t => typeof t !== 'string' || t.length > 25)) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Invalid tags' }) };
+  // ── New Keyword Evidence — compare against current listing strategy ──
+  // Replaces the old "patch_listing_keywords" (rewrite title/tags
+  // immediately when new keywords appear). That encouraged folding new
+  // research straight into a live listing outside any review cadence; this
+  // returns a RECOMMENDATION only ("no_change" / "consider_at_next_review"
+  // / "notable_shift") and never proposes a rewritten title/tags at all —
+  // if the shop owner decides new evidence genuinely changes the strategy,
+  // that's a real regeneration through generate-listing-v2.js, not a quiet
+  // patch. Uses real forced tool-use, matching generate-listing-v2.js and
+  // analyze-visual.js rather than this file's older regex-scrape pattern.
+  if (type === 'evaluate_keyword_evidence') {
+    const { currentPrimaryIntent, currentPrimaryIntentStatus, newKeywords } = payload || {};
+    if (!currentPrimaryIntent) return { statusCode: 400, body: JSON.stringify({ error: 'No current Primary Search Intent provided' }) };
+    if (typeof currentPrimaryIntent !== 'string' || currentPrimaryIntent.length > LIMITS.currentTitle) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Primary Search Intent too long' }) };
     }
     const kwList = (newKeywords || []).map(k =>
-      `  "${k.keyword}"${k.score ? ` (score: ${k.score}` : ''}${k.competition != null ? `, comp: ${k.competition}` : ''}${k.score ? ')' : ''}`
-    ).join('\n') || '  [none provided]';
-    const prompt = `Update an Etsy listing's title and tags with newly discovered keywords, following TCC SEO Standards v2.
+      `  - "${k.keyword}"${k.volume != null ? ` (vol ${k.volume}` : ''}${k.competition != null ? `, comp ${k.competition}` : ''}${k.volume != null ? ')' : ''}`
+    ).join('\n') || '  (none provided)';
+    const evaluateTool = {
+      name: 'evaluate_evidence',
+      description: 'Compare newly found keyword evidence against the listing\'s current Primary Search Intent and recommend whether it changes anything.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          recommendation: { type: 'string', enum: ['no_change', 'consider_at_next_review', 'notable_shift'] },
+          reasoning: { type: 'string' },
+          notable_keywords: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { keyword: { type: 'string' }, note: { type: 'string' } },
+              required: ['keyword', 'note'],
+            },
+          },
+        },
+        required: ['recommendation', 'reasoning'],
+      },
+    };
+    const prompt = `A listing's current Primary Search Intent is "${currentPrimaryIntent}" (status: ${currentPrimaryIntentStatus || 'unknown'}).
 
-TITLE FORMAT — 3-BUCKET COMMA STRUCTURE:
-[Bucket 1 Visibility] , [Bucket 2 Reach] , [Bucket 3 Scalability]
-- Comma ( , ) marks every bucket boundary — NOT pipes, NOT dashes
-- Bucket 1 = high volume, low competition (unicorn — the rarest, most valuable)
-- Bucket 3 includes seasonal and buyer-intent language ("gift for her", "birthday gift")
-- Title Case Throughout Every Word, max 140 characters
-- TAG RULE: B1 and B2 phrases repeat exactly in tags; B3 uses adjacent phrasing only
-- BALANCE: all three buckets must have representation in both title and tags
-
-CURRENT TITLE:
-${currentTitle}
-
-CURRENT TAGS (13):
-${(currentTags || []).map((t, i) => `  ${i + 1}. "${t}"`).join('\n')}
-
-NEW KEYWORDS FOUND:
+NEW KEYWORD EVIDENCE FOUND:
 ${kwList}
 
-${researchFlags?.length ? `CONTEXT (what prompted this research):\n${researchFlags.map(f => `  - ${f}`).join('\n')}` : ''}
+Compare this new evidence against the current Primary Search Intent. Do NOT propose a new title or tags — this is an evidence review, not a rewrite. Recommend one of:
+- "no_change": the current intent is still clearly the right choice.
+- "consider_at_next_review": the new evidence is interesting but not urgent — worth a look at the next scheduled SEO review, not an immediate edit.
+- "notable_shift": the new evidence meaningfully outperforms or better matches the product than the current intent, and the shop owner should consider a real regeneration soon.
 
-Only make changes if a new keyword clearly improves the title or replaces a weaker tag. Keep changes minimal and intentional. If nothing is an improvement, return the current values unchanged.
-
-Return ONLY this JSON:
-{
-  "title": "string",
-  "tags": ["string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string", "string"],
-  "changes": "1-2 sentences: what changed and why, or 'No changes — existing keywords are already optimal'"
-}`;
+Only use "notable_shift" for a genuinely material difference — new evidence being merely present is not itself a reason to recommend a change.`;
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -399,18 +335,26 @@ Return ONLY this JSON:
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 800,
-          system: 'You are an Etsy SEO specialist. Update listings with new keyword data. Return ONLY valid JSON — no markdown, no explanation.',
+          system: 'You are an Etsy SEO specialist reviewing new keyword evidence against an existing listing strategy for TCC (The Current Chapter). Call evaluate_evidence with your recommendation.',
+          tools: [evaluateTool],
+          tool_choice: { type: 'tool', name: 'evaluate_evidence' },
           messages: [{ role: 'user', content: prompt }],
         }),
       });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('[claude-process] evaluate_keyword_evidence upstream error:', response.status, errText);
+        return { statusCode: 502, body: JSON.stringify({ error: 'Evidence review failed upstream. Please try again.' }) };
+      }
       const data = await response.json();
-      const text = data.content?.[0]?.text || '';
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) return { statusCode: 200, body: JSON.stringify({ raw: text, parsed: null }) };
-      const parsed = JSON.parse(match[0]);
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed }) };
+      const toolUse = (data.content || []).find(block => block.type === 'tool_use' && block.name === 'evaluate_evidence');
+      if (!toolUse) {
+        console.error('[claude-process] evaluate_keyword_evidence: no tool_use block:', JSON.stringify(data));
+        return { statusCode: 502, body: JSON.stringify({ error: 'Evidence review did not return structured data. Please try again.' }) };
+      }
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed: toolUse.input }) };
     } catch (err) {
-      return safeError(err, 'patch_listing_keywords');
+      return safeError(err, 'evaluate_keyword_evidence');
     }
   }
 

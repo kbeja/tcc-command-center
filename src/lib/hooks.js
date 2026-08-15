@@ -76,6 +76,107 @@ export async function createProduct(product) {
   return { data, error };
 }
 
+// ─── Listing Intelligence (Milestone A) ────────────────────────────────────
+// listing_generations is append-only (one row per generation/regeneration,
+// never overwritten) — mirrors visual_profiles' shape from Phase 20, for
+// the same reason: a mutable single-row-per-product design would destroy
+// exactly the history (how many attempts before landing on a final
+// listing, what Product Truth looked like at generation time) a later
+// phase's performance-learning work will want the moment a listing is
+// regenerated.
+
+// Inserts one listing_generations row plus its listing_generation_keywords
+// children (supporting + excluded) — mirrors exactly how Phase 20's
+// analyzeListing() persists a visual_profiles row plus its
+// competitor_listing_tags children. productId may be null: a new listing
+// generates before any product row exists (handleGenerate() in
+// ListingBuilder.jsx has no productId dependency, and comparing a few
+// attempts before ever saving is the normal path, not an edge case) — see
+// linkGenerationsToProduct() below for how an unlinked row gets connected
+// once the listing is actually saved.
+export async function createListingGeneration({
+  productId, generationVersion, trigger, primarySearchIntent, primarySearchIntentKeywordId,
+  primaryIntentStatus, researchSourcesUsed, researchGaps, productTruthSnapshot, discussionPermissions,
+  titleStrategy, title, tags, description, imagePrompts, validationStatus, validationWarnings,
+  model, inputTokens, outputTokens, changeReason, performanceSnapshot,
+  supportingKeywords, excludedKeywords,
+}) {
+  const { data: row, error } = await supabase.from('listing_generations').insert({
+    product_id: productId || null,
+    generation_version: generationVersion || null,
+    trigger: trigger || null,
+    primary_search_intent: primarySearchIntent || null,
+    primary_search_intent_keyword_id: primarySearchIntentKeywordId || null,
+    primary_intent_status: primaryIntentStatus || null,
+    research_sources_used: researchSourcesUsed || null,
+    research_gaps: researchGaps || null,
+    product_truth_snapshot: productTruthSnapshot || null,
+    discussion_permissions: discussionPermissions || null,
+    title_strategy: titleStrategy || null,
+    title: title || null,
+    tags: tags || null,
+    description: description || null,
+    image_prompts: imagePrompts || null,
+    validation_status: validationStatus || null,
+    validation_warnings: validationWarnings || null,
+    model: model || null,
+    input_tokens: inputTokens ?? null,
+    output_tokens: outputTokens ?? null,
+    change_reason: changeReason || null,
+    performance_snapshot_at_generation: performanceSnapshot || null,
+  }).select().single();
+  if (error || !row) return { data: null, error };
+
+  const keywordRows = [
+    ...(supportingKeywords || []).map(k => ({
+      generation_id: row.id, keyword_id: k.keywordId || null, keyword_text: k.keyword,
+      role: 'supporting', relevance_category: k.relevanceCategory || null,
+      volume: k.volume ?? null, competition: k.competition ?? null, score: k.score ?? null,
+    })),
+    ...(excludedKeywords || []).map(k => ({
+      generation_id: row.id, keyword_id: k.keywordId || null, keyword_text: k.keyword,
+      role: 'excluded', exclusion_reason: k.reason || null,
+      volume: k.volume ?? null, competition: k.competition ?? null, score: k.score ?? null,
+    })),
+  ];
+  if (keywordRows.length) {
+    const { error: kwError } = await supabase.from('listing_generation_keywords').insert(keywordRows);
+    if (kwError) console.error('[createListingGeneration] keyword rows failed:', kwError);
+  }
+
+  return { data: row, error: null };
+}
+
+// Links this session's not-yet-saved generation rows to a real product once
+// handleSaveProduct() creates one.
+export async function linkGenerationsToProduct(generationIds, productId) {
+  if (!generationIds?.length) return { error: null };
+  return supabase.from('listing_generations').update({ product_id: productId }).in('id', generationIds);
+}
+
+// Full generation history for one product, most recent first — the
+// append-only ledger a later phase will build version-history/performance-
+// learning UI on top of. Not paginated — a single product's regeneration
+// count is realistically small.
+export function useListingGenerations(productId) {
+  const [generations, setGenerations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    if (!productId) { setGenerations([]); setLoading(false); return; }
+    const { data } = await supabase
+      .from('listing_generations')
+      .select('*, listing_generation_keywords(*)')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false });
+    setGenerations(data || []);
+    setLoading(false);
+  }, [productId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { generations, loading, refetch: fetch };
+}
+
 // ─── Needs Attention ─────────────────────────────────────────────────────────
 
 export function getNeedsAttention(products) {
