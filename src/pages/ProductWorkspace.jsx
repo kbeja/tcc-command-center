@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession, useConcept, useConcepts } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession, useConcept, useConcepts, useListingGenerations } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
 import { buildContextHeader } from '../lib/context';
+import { assignBucketsToList, ClassificationBadge, ConfidenceBadge, TrendIndicator, DisagreementFlag, SEOStatusBadge } from '../lib/keywords.jsx';
+import { evaluateListingSEO } from '../lib/listingSEO.js';
 import ConfidenceSelector from '../components/ConfidenceSelector';
 import CollectionKnowledge from '../components/CollectionKnowledge';
 import ResearchSessionCard from '../components/ResearchSessionCard';
@@ -579,65 +581,79 @@ function parseKeywordCSV(text) {
   return rows;
 }
 
-function opportunityScore(k) {
-  const score = k.score || 0;
-  const comp = k.competition ?? null;
-  if (comp === null) return score;
-  // Penalise high competition: divide by log of competition+2 so the penalty
-  // is meaningful but doesn't obliterate a high-volume keyword with moderate comp
-  return score / Math.log2((comp || 0) + 2);
-}
-
-function computeGaps(keywords, title, tags) {
-  const haystack = `${title || ''} ${tags || ''}`.toLowerCase();
-  return keywords
-    .filter(k => k.tag_type !== 'discard')
-    .map(k => ({ ...k, inListing: haystack.includes(k.keyword.toLowerCase()), oppScore: opportunityScore(k) }))
-    .sort((a, b) => b.oppScore - a.oppScore);
-}
-
-function KeywordGapRow({ k }) {
+// Real classification/confidence/trend/disagreement badges when the row has
+// them (a real researched or generation-linked keyword); a plain row when
+// it doesn't (e.g. a raw manual-import row before it's ever been matched
+// against real evidence). showExclusionReason renders the real logged
+// reason from Milestone A's listing_generation_keywords instead of ranking
+// metrics — only meaningful for the Excluded group.
+function KeywordGapRow({ k, showExclusionReason }) {
   const lowComp = k.competition != null && k.competition < 500;
   const compColor = k.competition == null ? 'var(--charcoal-soft)'
     : k.competition < 500 ? '#2d6b3c'
     : k.competition > 10000 ? 'var(--alert)'
     : 'var(--charcoal-soft)';
   return (
-    <div style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.78rem', alignItems: 'center' }}>
-      <span style={{ flex: 1 }}>{k.keyword}</span>
-      {lowComp && (
-        <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', whiteSpace: 'nowrap', fontWeight: 500 }}>low comp</span>
+    <div style={{ padding: '5px 0', borderBottom: '1px solid rgba(43,41,38,0.06)', fontSize: '0.78rem' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {k.primary && <span title="Primary search intent" style={{ fontSize: '0.7rem' }}>★</span>}
+        <span style={{ flex: 1 }}>{k.keyword}</span>
+        <ClassificationBadge classification={k.classification} />
+        <ConfidenceBadge confidence={k.confidence} />
+        <TrendIndicator trend={k.trend_classification} />
+        <DisagreementFlag flag={k.disagreement_flag} />
+        {lowComp && (
+          <span style={{ fontSize: '0.6rem', padding: '1px 6px', borderRadius: 10, background: 'rgba(124,175,138,0.2)', color: '#2d6b3c', whiteSpace: 'nowrap', fontWeight: 500 }}>low comp</span>
+        )}
+        {k.volume != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 54, textAlign: 'right' }}>vol {k.volume.toLocaleString()}</span>}
+        {k.competition != null && <span style={{ color: compColor, fontSize: '0.68rem', minWidth: 66, textAlign: 'right' }}>comp {k.competition.toLocaleString()}</span>}
+        {k.score != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 72, textAlign: 'right' }}>score {k.score.toLocaleString()}</span>}
+      </div>
+      {showExclusionReason && k.exclusionReason && (
+        <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', paddingLeft: 20, marginTop: 1 }}>↳ {k.exclusionReason}</div>
       )}
-      {k.volume != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 54, textAlign: 'right' }}>vol {k.volume.toLocaleString()}</span>}
-      {k.competition != null && <span style={{ color: compColor, fontSize: '0.68rem', minWidth: 66, textAlign: 'right' }}>comp {k.competition.toLocaleString()}</span>}
-      {k.score != null && <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.68rem', minWidth: 72, textAlign: 'right' }}>score {k.score.toLocaleString()}</span>}
     </div>
   );
 }
 
-function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditComplete }) {
+function KeywordAuditSection({ product, sessions, generations, collectionObj, liveTitle, liveTags, onAuditComplete }) {
   const [auditRows, setAuditRows] = useState(null);
   const [screenshotExtracting, setScreenshotExtracting] = useState(false);
   const [auditSaving, setAuditSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [pasteHint, setPasteHint] = useState(false);
+  const [manualImportOpen, setManualImportOpen] = useState(null); // null = default to (no real research yet)
 
-  const auditSessions = sessions
-    .filter(s => s.product_id === product.id)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const latestAudit = auditSessions[0];
-  const latestKeywords = latestAudit?.keywords || [];
-  const gapResults = (liveTitle || liveTags) && latestKeywords.length
-    ? computeGaps(latestKeywords, liveTitle, liveTags)
-    : [];
-  const gaps = gapResults.filter(k => !k.inListing);
-  const using = gapResults.filter(k => k.inListing);
+  const latestGeneration = generations?.[0] || null;
+  const hasLiveListing = !!(liveTitle || liveTags);
 
-  const lastAuditDate = product.last_keyword_audit || latestAudit?.date || null;
-  const cadenceDays = lastAuditDate
-    ? Math.floor((Date.now() - new Date(lastAuditDate).getTime()) / 86400000)
+  // Pure JS over already-fetched data — memoized because this page
+  // re-renders on every keystroke in several unrelated fields (Notes,
+  // Details) that have nothing to do with the audit.
+  const seo = useMemo(() => evaluateListingSEO({
+    sessions,
+    isSeasonalProduct: product.portfolio_level === 'Seasonal',
+    latestGeneration,
+    title: liveTitle,
+    tags: liveTags,
+    productFormat: product.product_format,
+    hasLiveListing,
+    lastVerified: collectionObj?.last_verified || null,
+    lastAuditDate: product.last_keyword_audit || null,
+  }), [sessions, product.portfolio_level, latestGeneration, liveTitle, liveTags, product.product_format, hasLiveListing, collectionObj?.last_verified, product.last_keyword_audit]);
+
+  const { pool, relevance, gapAnalysis, status, dimensions } = seo;
+  const { gaps, excludedGaps, opportunities, using } = gapAnalysis;
+  const historicalDimension = dimensions.find(d => d.key === 'historical_context');
+  const freshnessDimension = dimensions.find(d => d.key === 'freshness');
+  const showManualImport = manualImportOpen === null ? pool.length === 0 : manualImportOpen;
+
+  // Manual-audit-only cadence badge — the original 15-day target, now only
+  // the prominent freshness signal when there's no real collection research
+  // to fall back on (see freshnessDimension above for that case).
+  const manualCadenceDays = product.last_keyword_audit
+    ? Math.floor((Date.now() - new Date(product.last_keyword_audit).getTime()) / 86400000)
     : null;
-  const isDue = cadenceDays === null || cadenceDays >= 15;
+  const manualIsDue = manualCadenceDays === null || manualCadenceDays >= 15;
 
   useEffect(() => {
     if (screenshotExtracting) return;
@@ -716,7 +732,10 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
         product_id: product.id,
         seasonal: false,
       },
-      auditRows.filter(r => r.keyword.trim())
+      // assignBucketsToList: same bucket/low-quality-text treatment every
+      // other import path (CSV, Everbee) already gets — manual audit rows
+      // never had it before.
+      assignBucketsToList(auditRows.filter(r => r.keyword.trim()))
     );
     await updateProduct(product.id, { last_keyword_audit: today() });
     setAuditRows(null);
@@ -730,22 +749,59 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
         <div className="section-label" style={{ margin: 0 }}>Keyword Audit</div>
-        {cadenceDays !== null ? (
-          <span style={{
-            fontSize: '0.68rem', padding: '2px 9px', borderRadius: 20, fontWeight: 500,
-            background: isDue ? 'rgba(201,123,123,0.15)' : 'rgba(124,175,138,0.15)',
-            color: isDue ? 'var(--alert)' : '#2d6b3c',
-          }}>
-            {isDue ? `⚠ Due — last audited ${cadenceDays}d ago` : `✓ Audited ${cadenceDays}d ago`}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <SEOStatusBadge status={status} />
+          {pool.length > 0 && freshnessDimension ? (
+            <span style={{
+              fontSize: '0.68rem', padding: '2px 9px', borderRadius: 20, fontWeight: 500,
+              background: freshnessDimension.state === 'good' ? 'rgba(124,175,138,0.15)' : 'rgba(201,123,123,0.15)',
+              color: freshnessDimension.state === 'good' ? '#2d6b3c' : 'var(--alert)',
+            }}>
+              {freshnessDimension.detail}
+            </span>
+          ) : pool.length === 0 && manualCadenceDays !== null ? (
+            <span style={{
+              fontSize: '0.68rem', padding: '2px 9px', borderRadius: 20, fontWeight: 500,
+              background: manualIsDue ? 'rgba(201,123,123,0.15)' : 'rgba(124,175,138,0.15)',
+              color: manualIsDue ? 'var(--alert)' : '#2d6b3c',
+            }}>
+              {manualIsDue ? `⚠ Due — last audited ${manualCadenceDays}d ago` : `✓ Audited ${manualCadenceDays}d ago`}
+            </span>
+          ) : pool.length === 0 ? (
+            <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>Target: every 15 days</span>
+          ) : null}
+        </div>
+      </div>
+
+      {dimensions.length > 0 && (
+        <details style={{ marginBottom: 10 }}>
+          <summary style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>Why this status?</summary>
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {dimensions.map(d => (
+              <div key={d.key} style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+                <strong style={{ color: d.state === 'bad' ? 'var(--alert)' : d.state === 'good' ? '#2d6b3c' : 'inherit' }}>
+                  {d.informational ? 'ℹ' : d.state === 'good' ? '✓' : d.state === 'caution' ? '⚠' : '✕'}
+                </strong>{' '}{d.detail}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      <div style={{ marginBottom: 10 }}>
+        <button className="btn btn-ghost btn-sm" onClick={() => setManualImportOpen(!showManualImport)}>
+          {showManualImport ? '− Manual import' : '+ Add supplemental keywords manually'}
+        </button>
+        {pool.length > 0 && !showManualImport && (
+          <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 8 }}>
+            {pool.length} real researched keyword{pool.length === 1 ? '' : 's'} found — manual import is optional.
           </span>
-        ) : (
-          <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>Target: every 15–20 days</span>
         )}
       </div>
 
-      {auditRows ? (
+      {showManualImport && (auditRows ? (
         <div>
           <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
             {auditRows?.length} keywords — review before saving. Ctrl+V to paste another screenshot and merge.
@@ -787,7 +843,7 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
             border: dragOver ? '2px dashed var(--dusty-rose)' : '2px dashed transparent',
             borderRadius: 4,
             padding: dragOver ? '10px 12px' : '0',
-            marginBottom: gapResults.length ? 14 : 0,
+            marginBottom: 14,
             transition: 'all 0.12s',
             background: dragOver ? 'var(--rose-faint)' : 'transparent',
           }}
@@ -817,41 +873,74 @@ function KeywordAuditSection({ product, sessions, liveTitle, liveTags, onAuditCo
             </div>
           )}
         </div>
+      ))}
+
+      {gaps.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Listing Gaps</div>
+          {gaps[0] && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(232,168,124,0.12)', border: '1px solid rgba(232,168,124,0.35)', borderRadius: 4, marginBottom: 8 }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7a4a1e' }}>Top gap:</span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{gaps[0].keyword}</span>
+              {gaps[0].volume && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>vol {gaps[0].volume.toLocaleString()}</span>}
+              {gaps[0].competition && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>· comp {gaps[0].competition.toLocaleString()}</span>}
+              <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 'auto' }}>Add to title/tags →</span>
+            </div>
+          )}
+          <div style={{ fontSize: '0.7rem', color: 'var(--alert)', fontWeight: 500, marginBottom: 6 }}>
+            ⚠ {gaps.length} real keyword{gaps.length !== 1 ? 's' : ''} missing from your title or tags:
+          </div>
+          {gaps.slice(0, 12).map((k, i) => <KeywordGapRow key={i} k={k} />)}
+          {gaps.length > 12 && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>+{gaps.length - 12} more</div>}
+        </div>
+      )}
+      {gaps.length === 0 && relevance.hasRelevanceData && relevance.relevant.length > 0 && (
+        <div style={{ fontSize: '0.78rem', color: '#2d6b3c', marginTop: 10 }}>✓ No Listing Gaps — every real supporting keyword is in your title or tags.</div>
       )}
 
-      {gapResults.length > 0 && !auditRows && (
-        <div style={{ marginTop: 10 }}>
-          <div className="eyebrow" style={{ marginBottom: 8 }}>Gap Analysis — {latestAudit.date}</div>
-          {gaps.length > 0 ? (
-            <div style={{ marginBottom: 10 }}>
-              {gaps[0] && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(232,168,124,0.12)', border: '1px solid rgba(232,168,124,0.35)', borderRadius: 4, marginBottom: 8 }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7a4a1e' }}>Top opportunity:</span>
-                  <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>{gaps[0].keyword}</span>
-                  {gaps[0].volume && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>vol {gaps[0].volume.toLocaleString()}</span>}
-                  {gaps[0].competition && <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)' }}>· comp {gaps[0].competition.toLocaleString()}</span>}
-                  <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 'auto' }}>Add to title/tags →</span>
-                </div>
-              )}
-              <div style={{ fontSize: '0.7rem', color: 'var(--alert)', fontWeight: 500, marginBottom: 6 }}>
-                ⚠ {gaps.length} keyword{gaps.length !== 1 ? 's' : ''} not in your title or tags:
-              </div>
-              {gaps.slice(0, 12).map((k, i) => <KeywordGapRow key={i} k={k} />)}
-              {gaps.length > 12 && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>+{gaps.length - 12} more</div>}
+      {opportunities.length > 0 && (
+        <details style={{ marginTop: 10 }} open={!relevance.hasRelevanceData}>
+          <summary style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', cursor: 'pointer', fontWeight: 600 }}>
+            Potential Research Opportunities ({opportunities.length})
+          </summary>
+          {!relevance.hasRelevanceData && (
+            <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', fontStyle: 'italic', margin: '6px 0' }}>
+              No product-specific relevance data yet — these are collection keywords worth considering, not confirmed gaps. Run this listing through Listing Builder for a real gap analysis.
             </div>
-          ) : (
-            <div style={{ fontSize: '0.78rem', color: '#2d6b3c' }}>✓ All audited keywords appear in your title or tags.</div>
           )}
-          {using.length > 0 && (
-            <details style={{ marginTop: 6 }}>
-              <summary style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
-                ✓ Already using ({using.length})
-              </summary>
-              <div style={{ marginTop: 4 }}>
-                {using.map((k, i) => <KeywordGapRow key={i} k={k} />)}
-              </div>
-            </details>
-          )}
+          <div style={{ marginTop: 4 }}>
+            {opportunities.slice(0, 20).map((k, i) => <KeywordGapRow key={i} k={k} />)}
+            {opportunities.length > 20 && <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>+{opportunities.length - 20} more</div>}
+          </div>
+        </details>
+      )}
+
+      {excludedGaps.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
+            Excluded ({excludedGaps.length})
+          </summary>
+          <div style={{ marginTop: 4 }}>
+            {excludedGaps.map((k, i) => <KeywordGapRow key={i} k={k} showExclusionReason />)}
+          </div>
+        </details>
+      )}
+
+      {using.length > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
+            ✓ Already using ({using.length})
+          </summary>
+          <div style={{ marginTop: 4 }}>
+            {using.map((k, i) => <KeywordGapRow key={i} k={k} />)}
+          </div>
+        </details>
+      )}
+
+      {historicalDimension && (
+        <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(43,41,38,0.04)', border: '1px solid rgba(43,41,38,0.1)', borderRadius: 4 }}>
+          <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', fontWeight: 600, marginBottom: 2 }}>Historical context</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>{historicalDimension.detail}</div>
         </div>
       )}
     </div>
@@ -878,6 +967,7 @@ export default function ProductWorkspace() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
+  const { generations: listingGenerations } = useListingGenerations(product?.id);
   const { playbooks } = usePlaybooks();
   const photoPlaybook = playbooks.find(p => p.slug === 'listing-photos');
   const seoPlaybook = playbooks.find(p => p.slug === 'seo-standards');
@@ -1250,6 +1340,8 @@ export default function ProductWorkspace() {
         <KeywordAuditSection
           product={product}
           sessions={sessions}
+          generations={listingGenerations}
+          collectionObj={collectionObj}
           liveTitle={liveTitle}
           liveTags={liveTags}
           onAuditComplete={() => { refetch(); refetchSessions(); }}

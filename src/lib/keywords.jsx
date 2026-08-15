@@ -174,3 +174,40 @@ export function DisagreementFlag({ flag, style }) {
     </span>
   );
 }
+
+// ─── Phase 21 — Listing SEO composite status ────────────────────────────────
+// Same 3-color house language as everything above (green/amber/red), not a
+// new visual vocabulary — Strong reuses the same green as Strong Unicorn/
+// Evergreen/Validated, Weak the same red as Suspect/Reject.
+export const SEO_STATUS_STYLE = {
+  'Strong':          { bg: 'rgba(124,175,138,0.18)', color: '#2d6b3c', border: 'rgba(124,175,138,0.35)' },
+  'Needs Attention': { bg: 'rgba(232,168,124,0.2)',  color: '#7a4a1e', border: 'rgba(232,168,124,0.4)' },
+  'Weak':            { bg: 'rgba(201,123,123,0.15)', color: '#7a2b2b', border: 'rgba(201,123,123,0.35)' },
+};
+
+// `status` is null when listingSEO.js had nothing real to evaluate (no live
+// listing, or no keyword evidence yet) — renders a neutral "not enough
+// data" chip rather than silently showing nothing or guessing a color.
+export function SEOStatusBadge({ status, style }) {
+  if (!status) {
+    return (
+      <span style={{
+        fontSize: '0.68rem', fontWeight: 600, padding: '2px 9px', borderRadius: 20,
+        background: 'rgba(43,41,38,0.08)', color: 'var(--charcoal-soft)',
+        border: '1px solid rgba(43,41,38,0.15)', whiteSpace: 'nowrap', ...style,
+      }}>
+        Not enough data yet
+      </span>
+    );
+  }
+  const s = SEO_STATUS_STYLE[status] || SEO_STATUS_STYLE['Needs Attention'];
+  return (
+    <span style={{
+      fontSize: '0.68rem', fontWeight: 600, padding: '2px 9px', borderRadius: 20,
+      background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      whiteSpace: 'nowrap', ...style,
+    }}>
+      {status}
+    </span>
+  );
+}
