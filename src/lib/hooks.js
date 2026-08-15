@@ -109,7 +109,7 @@ export async function createListingGeneration({
   productId, generationVersion, trigger, primarySearchIntent, primarySearchIntentKeywordId,
   primaryIntentStatus, researchSourcesUsed, researchGaps, productTruthSnapshot, discussionPermissions,
   titleStrategy, title, tags, description, imagePrompts, validationStatus, validationWarnings,
-  model, inputTokens, outputTokens, changeReason, performanceSnapshot,
+  model, inputTokens, outputTokens, changeReason, performanceSnapshot, productTruthSources,
   supportingKeywords, excludedKeywords,
 }) {
   const { data: row, error } = await supabase.from('listing_generations').insert({
@@ -135,6 +135,11 @@ export async function createListingGeneration({
     output_tokens: outputTokens ?? null,
     change_reason: changeReason || null,
     performance_snapshot_at_generation: performanceSnapshot || null,
+    // Milestone C1 — which layer each policy-eligible Product Truth field
+    // actually came from at generation time (product row vs. a named/dated
+    // store policy). See src/lib/storePolicies.js's header for why this
+    // travels as a value snapshot, never reconstructed from live tables.
+    product_truth_sources: productTruthSources || null,
   }).select().single();
   if (error || !row) return { data: null, error };
 
@@ -186,6 +191,88 @@ export function useListingGenerations(productId) {
 
   useEffect(() => { fetch(); }, [fetch]);
   return { generations, loading, refetch: fetch };
+}
+
+// ─── Verified Libraries (Milestone C1) ─────────────────────────────────────
+// Product Templates and Store Policies — reference data, rarely written,
+// applied/resolved by Listing Builder (see src/lib/productTemplates.js and
+// src/lib/storePolicies.js for the actual matching/resolution logic; these
+// are plain CRUD + archive, same shape as useExperiments/createExperiment
+// and useConcepts/archiveConcept elsewhere in this file).
+
+export function useProductTemplates(statusFilter = 'active') {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('product_templates').select('*').order('name');
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+    const { data } = await q;
+    setTemplates(data || []);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { templates, loading, refetch: fetch };
+}
+
+export async function createProductTemplate(fields) {
+  return supabase.from('product_templates').insert([{ ...fields, status: 'active' }]).select().single();
+}
+
+// Never stamps last_verified — editing wording isn't re-checking the spec
+// against Printify, and that distinction is the entire point of the
+// provenance block. Only markProductTemplateVerified() sets it.
+export async function updateProductTemplate(id, updates) {
+  return supabase.from('product_templates').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+export async function archiveProductTemplate(id) {
+  return updateProductTemplate(id, { status: 'archived' });
+}
+
+export async function markProductTemplateVerified(id, note) {
+  return supabase.from('product_templates').update({
+    last_verified: new Date().toISOString().slice(0, 10),
+    verification_note: note || null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
+}
+
+export function useStorePolicies(statusFilter = 'active') {
+  const [policies, setPolicies] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('store_policies').select('*').order('policy_type');
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+    const { data } = await q;
+    setPolicies(data || []);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { policies, loading, refetch: fetch };
+}
+
+export async function createStorePolicy(fields) {
+  return supabase.from('store_policies').insert([{ ...fields, status: 'active' }]).select().single();
+}
+
+export async function updateStorePolicy(id, updates) {
+  return supabase.from('store_policies').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
+}
+
+export async function archiveStorePolicy(id) {
+  return updateStorePolicy(id, { status: 'archived' });
+}
+
+export async function markStorePolicyVerified(id, note) {
+  return supabase.from('store_policies').update({
+    last_verified: new Date().toISOString().slice(0, 10),
+    verification_note: note || null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
 }
 
 // ─── Needs Attention ─────────────────────────────────────────────────────────

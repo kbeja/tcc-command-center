@@ -1,6 +1,41 @@
 import { PRODUCT_FORMATS, BLANK_BRANDS } from '../../lib/productTruth';
+import { POLICY_FIELD_MAP, resolveEffectiveProductTruth } from '../../lib/storePolicies';
+import { buildProductTruth } from './generation';
 import { TriState } from './shared';
 import CollectionPicker from './CollectionPicker';
+import TemplateMatchBar from './TemplateMatchBar';
+
+const POLICY_NOTE_LABELS = { production_time: 'Production time', shipping_policy: 'Shipping' };
+
+// Live, display-only preview of what generation would actually resolve —
+// same resolveEffectiveProductTruth() generation.js calls for real, run
+// again here purely for feedback. Never written into any input's value;
+// if resolved text landed in form.shippingPolicy, the next save would
+// persist store-policy text as if it were a confirmed product-specific
+// fact, permanently destroying the provenance this feature exists to
+// protect (see storePolicies.js's own header).
+function PolicyResolutionNotes({ productTruth, approvedPolicies }) {
+  const { sources } = resolveEffectiveProductTruth(productTruth, approvedPolicies || []);
+  const notes = Object.keys(POLICY_FIELD_MAP).map(field => {
+    const src = sources[field];
+    if (!src || src.source === 'product') return null;
+    const label = POLICY_NOTE_LABELS[field] || field;
+    if (src.source === 'store_policy') {
+      const names = src.policies
+        .map(p => `"${p.title || p.policy_type}"${p.last_verified ? ` (verified ${p.last_verified})` : ' (not yet verified)'}`)
+        .join(', ');
+      return { field, text: `${label} — using approved store policy ${names}.` };
+    }
+    return { field, text: `${label} — not set, no approved policy, this listing won't mention it.` };
+  }).filter(Boolean);
+
+  if (notes.length === 0) return null;
+  return (
+    <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', margin: '8px 0', lineHeight: 1.6 }}>
+      {notes.map(n => <div key={n.field}>ℹ {n.text}</div>)}
+    </div>
+  );
+}
 
 // Collapsed summary line — omits unconfirmed tri-states rather than
 // asserting them. null (unconfirmed) is dropped entirely, never rendered
@@ -32,7 +67,9 @@ export default function Zone1Product({
   linkedConcept, pickableConcepts, onUnlinkConcept, onLinkConcept,
   imagePreview, analyzing, imageAnalysis, onImageAnalysisChange, imageAnalysisError,
   onUploadFile, onRetryAnalysis,
+  templates, approvedPolicies,
 }) {
+  const productTruth = buildProductTruth(form);
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <button type="button" onClick={onToggle}
@@ -88,6 +125,14 @@ export default function Zone1Product({
               <input value={form.blankModel} onChange={e => setField('blankModel', e.target.value)} placeholder="e.g. Comfort Colors 1717" style={{ fontSize: '0.78rem' }} />
             </div>
           </div>
+
+          <TemplateMatchBar
+            productTruth={productTruth}
+            appliedTemplateId={form.productTemplateId}
+            setField={setField}
+            templates={templates}
+          />
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label">Garment Color</label>
@@ -128,6 +173,7 @@ export default function Zone1Product({
               <input value={form.fulfillmentProvider} onChange={e => setField('fulfillmentProvider', e.target.value)} placeholder="e.g. Printify" style={{ fontSize: '0.78rem' }} />
             </div>
           </div>
+          <PolicyResolutionNotes productTruth={productTruth} approvedPolicies={approvedPolicies} />
           <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', opacity: 0.7, margin: '10px 0 16px', lineHeight: 1.5 }}>
             Unset fields are never guessed at generation time — a listing with no shipping policy set simply won't mention shipping, rather than inventing one.
           </div>

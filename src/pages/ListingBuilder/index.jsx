@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import {
   useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts,
   useListingGenerations, createProduct, updateProduct, createListingGeneration, linkGenerationsToProduct,
+  useStorePolicies, useProductTemplates,
 } from '../../lib/hooks';
 import { resizeImageForUpload } from '../../lib/image';
 import { nicheStyleGuides } from '../../data/collections';
@@ -35,6 +36,14 @@ export default function ListingBuilder() {
   const { collections: collectionObjs, refetch: refetchCollectionObjs } = useCollectionObjects();
   const { chapters } = useChapters();
   const { playbooks } = usePlaybooks();
+  // Approved Store Policy Library (Milestone C1) — active only; generation
+  // resolves the effective Product Truth from these via
+  // resolveEffectiveProductTruth(), see generation.js's buildGenerationContext.
+  const { policies: approvedPolicies } = useStorePolicies('active');
+  // Product Template Library (Milestone C1) — active only; Zone1Product's
+  // TemplateMatchBar matches/diffs against these. Never read by generation
+  // itself — applying a template only ever writes into form via setField.
+  const { templates: productTemplates } = useProductTemplates('active');
 
   // Linked Concept (Phase 10) — set automatically when arriving via a fresh
   // push (conceptId from the URL) or when an existing product already has
@@ -76,6 +85,9 @@ export default function ListingBuilder() {
     availableColors: [], sizeRange: '', material: '',
     personalizationAvailable: null, customizationAvailable: null, giftWrapAvailable: null,
     productionTime: '', shippingPolicy: '', fulfillmentProvider: '',
+    // Provenance only (Milestone C1) — records that a human explicitly
+    // applied this template via TemplateMatchBar; never read by generation.
+    productTemplateId: null,
     titleStrategy: 'buyer_clear',
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -104,6 +116,7 @@ export default function ListingBuilder() {
       giftWrapAvailable: product.gift_wrap_available ?? null,
       productionTime: product.production_time || '', shippingPolicy: product.shipping_policy || '',
       fulfillmentProvider: product.fulfillment_provider || '',
+      productTemplateId: product.product_template_id || null,
       // Only overwrite the live 'buyer_clear' default if this product was
       // actually generated under the new taxonomy — a legacy value (or one
       // of the 2 backfilled legacy_* strings) intentionally doesn't match
@@ -429,7 +442,7 @@ export default function ListingBuilder() {
         const { data } = await supabase.from('concepts').select('*').eq('id', linkedConceptId).single();
         freshLinkedConcept = data || null;
       }
-      const ctx = buildGenerationContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept: freshLinkedConcept });
+      const ctx = buildGenerationContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept: freshLinkedConcept, approvedPolicies });
       const res = await fetch('/.netlify/functions/generate-listing-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -495,7 +508,8 @@ export default function ListingBuilder() {
         primaryIntentStatus: listing.primary_intent_status,
         researchSourcesUsed: ctx.researchSourcesUsed,
         researchGaps: asArray(listing.research_gaps),
-        productTruthSnapshot: ctx.productTruth,
+        productTruthSnapshot: ctx.rawProductTruth,
+        productTruthSources: ctx.productTruthSources,
         discussionPermissions: ctx.discussionPermissions,
         titleStrategy: form.titleStrategy,
         title: listing.title,
@@ -548,6 +562,7 @@ export default function ListingBuilder() {
       production_time: form.productionTime || null,
       shipping_policy: form.shippingPolicy || null,
       fulfillment_provider: form.fulfillmentProvider || null,
+      product_template_id: form.productTemplateId || null,
       title_strategy: form.titleStrategy || 'buyer_clear',
     };
   }
@@ -703,6 +718,7 @@ export default function ListingBuilder() {
         imagePreview={imagePreview} analyzing={analyzing} imageAnalysis={imageAnalysis}
         onImageAnalysisChange={setImageAnalysis} imageAnalysisError={imageAnalysisError}
         onUploadFile={handleImage} onRetryAnalysis={() => analyzeImage(imageBase64, imageMediaType)}
+        templates={productTemplates} approvedPolicies={approvedPolicies}
       />
 
       {/* ── ZONE 2: SEARCH STRATEGY (Milestone B) ───────────────────

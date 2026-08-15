@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import {
   useKnowledgeInbox, createInboxItem, updateInboxItem,
   usePlaybooks, updatePlaybookSection,
   usePendingUpdates, createPendingUpdate, approvePendingUpdate, rejectPendingUpdate,
   useExperiments, createExperiment, updateExperiment, closeExperiment,
   runCodexMigrationIfNeeded,
-} from '../lib/hooks';
-import { processWithClaude } from '../lib/claude';
+} from '../../lib/hooks';
+import { processWithClaude } from '../../lib/claude';
+import ProductTemplatesTab from './ProductTemplatesTab';
+import StorePoliciesTab from './StorePoliciesTab';
 
-const TABS = ['Inbox', 'Updates', 'Playbooks', 'Experiments', 'Proven Results'];
+const TABS = ['Inbox', 'Updates', 'Playbooks', 'Experiments', 'Proven Results', 'Templates', 'Policies'];
 
 const INPUT_TYPES = [
   { key: 'session_summary', label: 'Session Summary', placeholder: 'Paste Claude/ChatGPT session summary…' },
@@ -1017,6 +1019,8 @@ export default function Knowledge() {
       )}
       {activeTab === 'Experiments' && <ExperimentsTab />}
       {activeTab === 'Proven Results' && <ProvenResultsTab />}
+      {activeTab === 'Templates' && <ProductTemplatesTab />}
+      {activeTab === 'Policies' && <StorePoliciesTab />}
     </div>
   );
 }

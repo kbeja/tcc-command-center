@@ -1,4 +1,5 @@
 import { checkFormatCompatibility, checkBrandMention, computeDiscussionPermissions } from '../../lib/productTruth';
+import { resolveEffectiveProductTruth } from '../../lib/storePolicies';
 
 // Turns form state into the canonical Product Truth object -- the thing
 // that overrides everything else. Every field nullable; unset stays
@@ -27,7 +28,7 @@ export function buildProductTruth(form) {
 // the deterministic Product Compatibility Gate (excluding format-
 // incompatible keywords before Claude ever sees them, not just annotating
 // them in prompt text) lives here too. See src/lib/productTruth.js.
-export function buildGenerationContext({ form, keywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept }) {
+export function buildGenerationContext({ form, keywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept, approvedPolicies }) {
   // Misspelling variants are excluded everywhere now — title, description, AND tags.
   // Etsy's search normalizes misspellings to the correct spelling itself, so a tag
   // slot (1 of only 13) spent on a misspelled variant is redundant, not helpful.
@@ -42,7 +43,21 @@ export function buildGenerationContext({ form, keywords, styleGuide, brandStyleG
   // ignore (which is exactly what this file's old FORMAT_TERMS advisory
   // tag was, and exactly why it didn't prevent the original bug — see
   // src/lib/productTruth.js's own header).
-  const productTruth = buildProductTruth(form);
+  //
+  // rawProductTruth is the product's own confirmed facts only — untouched,
+  // and what gets saved as listing_generations.product_truth_snapshot (the
+  // Product Truth object exactly as Milestone A defined it). productTruth
+  // below is the *effective* object — rawProductTruth with any still-unset
+  // policy-eligible field filled from an approved store policy (Milestone
+  // C1, see src/lib/storePolicies.js) — and is what computeDiscussionPermissions,
+  // the compatibility gate, and the AI prompt itself all see from here on.
+  // Resolving before the permission check (not after) is what guarantees a
+  // policy can never grant permission to discuss a topic without also
+  // supplying the fact — see storePolicies.js's own header for why that
+  // matters. generate-listing-v2.js needs no changes for this: it already
+  // renders whatever context.productTruth contains.
+  const rawProductTruth = buildProductTruth(form);
+  const { effective: productTruth, sources: productTruthSources } = resolveEffectiveProductTruth(rawProductTruth, approvedPolicies || []);
   const discussionPermissions = computeDiscussionPermissions(productTruth);
   const compatibleKeywords = [];
   const excludedKeywords = [];
@@ -88,7 +103,7 @@ export function buildGenerationContext({ form, keywords, styleGuide, brandStyleG
   ].filter(Boolean).join('\n\n') || null;
 
   return {
-    productTruth, discussionPermissions, keywordPool, excludedKeywords, researchSourcesUsed,
+    productTruth, rawProductTruth, productTruthSources, discussionPermissions, keywordPool, excludedKeywords, researchSourcesUsed,
     collectionContext, conceptContext, styleGuide: styleGuideText,
     brandVoice: brandVoice || null, photoStandards: photoStandards || null, imageAnalysis: imageAnalysis || null,
   };
