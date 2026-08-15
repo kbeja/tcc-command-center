@@ -99,18 +99,36 @@ function DriftFlag({ productTruth, template, setField }) {
 // diff-and-pick table (fill rows pre-checked, differs rows pre-unchecked)
 // rather than a one-click "use this" — the non-destructive guarantee is the
 // checkbox default, not a warning someone can click past.
+//
+// The default is recomputed fresh every render from live productTruth,
+// not frozen in state at mount — the product's fields are usually still
+// being typed when a match first appears (e.g. Format/Brand/Model land
+// before Material), so a once-only snapshot would freeze "fill" as the
+// default for a field that becomes "differs" moments later, defeating the
+// whole pre-unchecked guarantee. Only the user's own explicit clicks
+// (manualChecked, keyed by templateId:field so switching templates via
+// the picker below never leaks one template's choices into another's)
+// override that live default.
 function MatchSuggestion({ productTruth, matches, setField }) {
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
+  const [manualChecked, setManualChecked] = useState({});
   const match = matches[Math.min(index, matches.length - 1)];
   const template = match.template;
   const actionableRows = diffTemplate(productTruth, template).filter(r => r.state !== 'same');
-  const [checked, setChecked] = useState(() => Object.fromEntries(actionableRows.map(r => [r.field, r.state === 'fill'])));
+  const checked = Object.fromEntries(actionableRows.map(r => {
+    const key = `${template.id}:${r.field}`;
+    return [r.field, key in manualChecked ? manualChecked[key] : r.state === 'fill'];
+  }));
 
-  useEffect(() => {
-    setChecked(Object.fromEntries(diffTemplate(productTruth, template).filter(r => r.state !== 'same').map(r => [r.field, r.state === 'fill'])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template.id]);
+  function setChecked(updater) {
+    const next = typeof updater === 'function' ? updater(checked) : updater;
+    setManualChecked(prev => {
+      const merged = { ...prev };
+      for (const [field, value] of Object.entries(next)) merged[`${template.id}:${field}`] = value;
+      return merged;
+    });
+  }
 
   const days = template.last_verified ? Math.floor((Date.now() - new Date(template.last_verified).getTime()) / 86400000) : null;
   const isDue = days === null || days >= TEMPLATE_VERIFY_DUE_DAYS;
