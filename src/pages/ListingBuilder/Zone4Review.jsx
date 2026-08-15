@@ -1,0 +1,179 @@
+import { useState } from 'react';
+import { computeListingReadiness } from '../../lib/listingReadiness';
+import { hasUnsavedEdits } from './generation';
+
+const HEADLINE_LABEL = {
+  not_generated: 'Not Generated Yet',
+  ready: 'Ready',
+  ready_with_caution: 'Ready with Caution',
+  needs_research: 'Needs Research',
+};
+const HEADLINE_DOT_COLOR = {
+  not_generated: 'var(--charcoal-soft)',
+  ready: '#2d6b3c',
+  ready_with_caution: '#7a4a1e',
+  needs_research: '#7a2b2b',
+};
+const STATE_DOT_COLOR = { ok: '#2d6b3c', caution: '#7a4a1e', attention: '#7a2b2b', pending: 'var(--charcoal-soft)' };
+const DIMENSION_LABEL = {
+  product_truth: 'Product Truth',
+  search_intent: 'Search Intent',
+  evidence: 'Evidence',
+  compatibility: 'Compatibility',
+  generation_validation: 'Generation Check',
+};
+
+function Dot({ color }) {
+  return <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />;
+}
+
+// Consolidates what used to be three scattered pieces (the 6-pill Research
+// Readiness wall, the red Validation Warnings box, the Excluded Keywords
+// disclosure) into one readiness rollup, plus the Save/Regenerate actions.
+// Pure display of values Milestone A already computes — see
+// src/lib/listingReadiness.js's header for what this does and doesn't do.
+export default function Zone4Review({
+  output, latestGeneration, generating, genError,
+  productFormat, primarySearchIntent, primaryIntentStatus,
+  usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount, excludedKeywords,
+  validationWarnings, hasCollection, onRegenerate, onEditSetup,
+  editTitle, editTags, editDesc, editPrompts,
+  productId, onSaveEdits, saveEditsState,
+  savedProductId, saving, saveStage, onSaveStageChange, saveStages, onSaveProduct, canSaveProduct, onOpenProduct,
+}) {
+  const [confirmRegen, setConfirmRegen] = useState(false);
+
+  const hasGenerated = !!output || !!latestGeneration;
+  const readiness = computeListingReadiness({
+    hasGenerated, productFormat, primarySearchIntent, primaryIntentStatus,
+    usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount,
+    validationWarnings, aiValidationStatus: output?.validation?.status,
+  });
+
+  const unsavedEdits = hasUnsavedEdits({ editTitle, editTags, editDesc, editPrompts, output });
+  function handleRegenerateClick() {
+    if (unsavedEdits && !confirmRegen) { setConfirmRegen(true); return; }
+    setConfirmRegen(false);
+    onRegenerate();
+  }
+
+  const hydratedLabel = !output && latestGeneration
+    ? `From your last generation on ${(latestGeneration.created_at || '').slice(0, 10)}`
+    : null;
+
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <Dot color={HEADLINE_DOT_COLOR[readiness.headline]} />
+        <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--charcoal)' }}>
+          {HEADLINE_LABEL[readiness.headline]}
+        </span>
+      </div>
+      {hydratedLabel && (
+        <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', opacity: 0.7, marginBottom: 10 }}>{hydratedLabel}</div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '10px 0 16px' }}>
+        {readiness.dimensions.map(d => (
+          <div key={d.key}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <span style={{ marginTop: 5 }}><Dot color={STATE_DOT_COLOR[d.state]} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--charcoal-soft)' }}>{DIMENSION_LABEL[d.key]}</div>
+                <div style={{ fontSize: '0.76rem', color: 'var(--charcoal-soft)', lineHeight: 1.5 }}>{d.detail}</div>
+                {d.key === 'generation_validation' && d.state === 'caution' && (
+                  <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {validationWarnings.map((w, i) => (
+                      <div key={i} style={{ fontSize: '0.74rem', color: '#8b3a3a', lineHeight: 1.5 }}>⚠ {w}</div>
+                    ))}
+                  </div>
+                )}
+                {d.key === 'compatibility' && excludedKeywordCount > 0 && (
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', cursor: 'pointer' }}>
+                      view excluded keywords
+                    </summary>
+                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {excludedKeywords.map((k, i) => (
+                        <div key={i} style={{ fontSize: '0.74rem', color: 'var(--charcoal-soft)' }}>
+                          <strong>{k.keyword}</strong> — {k.reason}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', opacity: 0.7, marginBottom: 14 }}>
+        Generation is never blocked by thin research — these are things worth checking, not requirements.
+      </div>
+
+      {/* Actions only make sense once something's actually been generated —
+          pre-generation, the page's own full-width "Generate Listing" CTA
+          is the only entry point, and this row staying hidden avoids a
+          second, redundant generate button sitting right above it. */}
+      {hasGenerated && (
+        <>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: productId || !savedProductId ? 16 : 0 }}>
+            {output && <button className="btn btn-ghost btn-sm" onClick={onEditSetup}>← Edit setup</button>}
+            {confirmRegen ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.82rem' }}>
+                <span>Discard edits &amp; regenerate?</span>
+                <button onClick={handleRegenerateClick} disabled={generating}
+                  style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
+                  {generating ? 'Generating…' : 'Yes, regenerate'}
+                </button>
+                <button onClick={() => setConfirmRegen(false)}
+                  style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={handleRegenerateClick} disabled={generating || !hasCollection}>
+                {generating ? 'Generating…' : output ? '↺ Regenerate' : '✦ Generate New Version'}
+              </button>
+            )}
+            {genError && <span style={{ fontSize: '0.75rem', color: '#c97b7b' }}>{genError}</span>}
+          </div>
+
+          {/* Save edits back to product — linked mode only */}
+          {productId && (editTitle || editTags.length > 0) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button className="btn btn-primary btn-sm" onClick={onSaveEdits} disabled={saveEditsState === 'saving'}>
+                {saveEditsState === 'saving' ? 'Saving…' : saveEditsState === 'saved' ? '✓ Saved' : 'Save edits to product →'}
+              </button>
+              <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>Writes title, tags, linked concept, Product Truth, and any edited description/image prompts</span>
+            </div>
+          )}
+
+          {/* Save as new product — standalone only */}
+          {!productId && (
+            <div style={{ background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.12)', borderRadius: 4, padding: '14px 16px' }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Save as New Product</div>
+              {savedProductId ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.82rem', color: '#3d6b4a' }}>✓ Saved</span>
+                  <button className="btn btn-primary btn-sm" onClick={onOpenProduct}>Open Product →</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select value={saveStage} onChange={e => onSaveStageChange(e.target.value)} style={{ width: 'auto', fontSize: '0.82rem' }}>
+                    {saveStages.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <button className="btn btn-primary btn-sm" onClick={onSaveProduct} disabled={saving || !canSaveProduct}>
+                    {saving ? 'Saving…' : 'Save as New Product →'}
+                  </button>
+                  {!canSaveProduct && <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>Requires product name + collection</span>}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

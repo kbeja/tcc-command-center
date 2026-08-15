@@ -62,6 +62,17 @@ export async function updateProduct(id, updates) {
   return { data, error };
 }
 
+// Read-then-append-write onto products.notes — shared by SaveFlagsButton
+// and KeywordEvidencePanel (Milestone B) so neither presentational
+// component touches Supabase directly. Always a plain append; never
+// rewrites or removes prior notes content.
+export async function appendProductNote(productId, text) {
+  const { data: current } = await supabase.from('products').select('notes').eq('id', productId).single();
+  const existing = current?.notes || '';
+  const newNotes = existing ? `${existing}\n\n${text}` : text;
+  return updateProduct(productId, { notes: newNotes });
+}
+
 export async function deleteProduct(id) {
   return supabase.from('products').delete().eq('id', id);
 }
