@@ -1,7 +1,7 @@
 export async function processWithClaude(type, payload) {
   const res = await fetch('/.netlify/functions/claude-process', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
     body: JSON.stringify({ type, payload }),
   });
   if (!res.ok) throw new Error(`Claude function error: ${res.status}`);
@@ -15,7 +15,7 @@ export async function processWithClaude(type, payload) {
 export async function analyzeVisual(imageBase64, mediaType) {
   const res = await fetch('/.netlify/functions/analyze-visual', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
     body: JSON.stringify({ imageBase64, mediaType }),
   });
   const data = await res.json();

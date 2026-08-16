@@ -1109,7 +1109,7 @@ export async function analyzeListing(listing) {
   try {
     fetchRes = await fetch('/.netlify/functions/fetch-image', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
       body: JSON.stringify({ url: listing.image_url }),
     });
     fetchData = await fetchRes.json();

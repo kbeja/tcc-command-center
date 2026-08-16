@@ -692,7 +692,7 @@ function KeywordAuditSection({ product, sessions, generations, collectionObj, li
       try {
         const resp = await fetch('/.netlify/functions/claude-process', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
           body: JSON.stringify({ type: 'extract_keywords_image', payload: { imageBase64: base64, mediaType } }),
         });
         const data = await resp.json();

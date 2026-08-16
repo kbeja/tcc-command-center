@@ -44,7 +44,7 @@ export default function KeywordEvidencePanel({
       try {
         const res = await fetch('/.netlify/functions/claude-process', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
           body: JSON.stringify({ type: 'extract_keywords_image', payload: { imageBase64: base64, mediaType: file.type || 'image/png' } }),
         });
         const data = await res.json();
@@ -71,7 +71,7 @@ export default function KeywordEvidencePanel({
     try {
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
         body: JSON.stringify({ type: 'evaluate_keyword_evidence', payload: { currentPrimaryIntent, currentPrimaryIntentStatus, newKeywords: keywords } }),
       });
       const raw = await res.text();

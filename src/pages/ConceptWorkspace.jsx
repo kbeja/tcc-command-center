@@ -61,7 +61,7 @@ async function generateOutput(concept, functionType, extraContext) {
   const brief = extraContext ? `${buildConceptBrief(concept)}\n\n${extraContext}` : buildConceptBrief(concept);
   const res = await fetch(FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
     body: JSON.stringify({ type: functionType, payload: brief }),
   });
   const data = await res.json();
@@ -212,7 +212,7 @@ async function uploadAsset(conceptId, conceptCode, file, assetType = 'reference_
 async function uploadAssetFromUrl(conceptId, conceptCode, url, assetType = 'mood_board') {
   const res = await fetch('/.netlify/functions/fetch-image', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
     body: JSON.stringify({ url }),
   });
   const data = await res.json();

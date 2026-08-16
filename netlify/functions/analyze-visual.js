@@ -152,6 +152,8 @@ Never claim an exact color hex code, exact font name, or exact material/techniqu
 
 Call record_visual_profile with your findings.`;
 
+const { checkRateLimit } = require('../lib/rateLimit.js');
+
 const LIMITS = { imageBase64: 6_000_000 };
 
 function safeError(err, label) {
@@ -168,6 +170,15 @@ exports.handler = async (event) => {
     if (event.headers['x-function-secret'] !== process.env.FUNCTION_SECRET) {
       return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
     }
+  }
+
+  const rl = await checkRateLimit(event, 'analyze-visual');
+  if (!rl.allowed) {
+    return {
+      statusCode: 429,
+      headers: rl.retryAfterSeconds ? { 'Retry-After': String(rl.retryAfterSeconds) } : undefined,
+      body: JSON.stringify({ error: 'Too many requests. Please wait a moment and try again.' }),
+    };
   }
 
   if (!process.env.CLAUDE_API_KEY) {

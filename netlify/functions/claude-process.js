@@ -5,6 +5,7 @@
 // actual API call and evaluate_checkpoint_review's persisted ai_model value
 // can never disagree with the UI's own copy of the same constants.
 const { CHECKPOINT_DECISION_KEYS, CHECKPOINT_AI_MODEL } = require('../../src/lib/listingReviews.js');
+const { checkRateLimit } = require('../lib/rateLimit.js');
 
 const JSON_RULE = `\n\nCRITICAL: You must ALWAYS return valid JSON only. No explanations, no markdown, no conversational text. If you cannot extract information, return the JSON structure with empty arrays and a summary explaining what was missing. Never break out of JSON format for any reason.`;
 
@@ -169,6 +170,15 @@ exports.handler = async (event) => {
     if (event.headers['x-function-secret'] !== process.env.FUNCTION_SECRET) {
       return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
     }
+  }
+
+  const rl = await checkRateLimit(event, 'claude-process');
+  if (!rl.allowed) {
+    return {
+      statusCode: 429,
+      headers: rl.retryAfterSeconds ? { 'Retry-After': String(rl.retryAfterSeconds) } : undefined,
+      body: JSON.stringify({ error: 'Too many requests. Please wait a moment and try again.' }),
+    };
   }
 
   if (!process.env.CLAUDE_API_KEY) {

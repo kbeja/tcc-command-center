@@ -25,6 +25,7 @@
 // against the cost of another wrong anchor keyword.
 
 const { FORMAT_TAXONOMY_VERSION } = require('../../src/lib/productTruth.js');
+const { checkRateLimit } = require('../lib/rateLimit.js');
 
 // Derived the same way ListingBuilder.jsx derives its own copy — see
 // productTruth.js's FORMAT_TAXONOMY_VERSION comment. Was previously a
@@ -219,6 +220,15 @@ exports.handler = async (event) => {
     if (event.headers['x-function-secret'] !== process.env.FUNCTION_SECRET) {
       return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
     }
+  }
+
+  const rl = await checkRateLimit(event, 'generate-listing-v2');
+  if (!rl.allowed) {
+    return {
+      statusCode: 429,
+      headers: rl.retryAfterSeconds ? { 'Retry-After': String(rl.retryAfterSeconds) } : undefined,
+      body: JSON.stringify({ error: 'Too many requests. Please wait a moment and try again.' }),
+    };
   }
 
   if (!process.env.CLAUDE_API_KEY) {

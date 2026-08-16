@@ -4,6 +4,8 @@
 // the bytes of a cross-origin image response without permissive CORS headers,
 // but a server-side fetch has no such restriction.
 
+const { checkRateLimit } = require('../lib/rateLimit.js');
+
 const MAX_BYTES = 6_000_000; // matches claude-process.js LIMITS.imageBase64
 const TIMEOUT_MS = 10_000;
 
@@ -25,6 +27,15 @@ exports.handler = async (event) => {
     if (event.headers['x-function-secret'] !== process.env.FUNCTION_SECRET) {
       return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
     }
+  }
+
+  const rl = await checkRateLimit(event, 'fetch-image');
+  if (!rl.allowed) {
+    return {
+      statusCode: 429,
+      headers: rl.retryAfterSeconds ? { 'Retry-After': String(rl.retryAfterSeconds) } : undefined,
+      body: JSON.stringify({ error: 'Too many requests. Please wait a moment and try again.' }),
+    };
   }
 
   let body;

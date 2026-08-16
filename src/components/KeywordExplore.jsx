@@ -536,7 +536,7 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
       ).join('\n');
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
         body: JSON.stringify({ type: 'cluster_keywords', payload: { keywords: kwText } }),
       });
       const data = await res.json();

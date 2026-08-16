@@ -392,7 +392,7 @@ export default function ListingBuilder() {
     try {
       const res = await fetch('/.netlify/functions/claude-process', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
         body: JSON.stringify({ type: 'analyze_design_image', payload: { imageBase64: base64, mediaType } }),
       });
       const data = await res.json();
@@ -472,7 +472,7 @@ export default function ListingBuilder() {
       const ctx = buildGenerationContext({ form, keywords: allKeywords, styleGuide, brandStyleGuide, season, brandVoice, photoStandards, imageAnalysis, allCollectionNames, linkedConcept: freshLinkedConcept, approvedPolicies });
       const res = await fetch('/.netlify/functions/generate-listing-v2', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-function-secret': import.meta.env.VITE_FUNCTION_SECRET },
         body: JSON.stringify({
           context: ctx,
           imageBase64: imageBase64 || null,
