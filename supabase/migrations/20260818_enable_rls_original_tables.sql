@@ -1,13 +1,13 @@
--- SEC-002: Enable RLS on the 12 original tables
+-- SEC-002: Enable RLS on the 11 original tables
 -- Run this in Supabase SQL Editor (not auto-applied)
 --
--- Why: these 12 tables predate this repo's supabase/migrations/ convention
+-- Why: these 11 tables predate this repo's supabase/migrations/ convention
 -- and have never had Row Level Security enabled -- confirmed via grep across
 -- every file in supabase/migrations/, zero ENABLE ROW LEVEL SECURITY
 -- statements for any of them. Every table added since 2026-08-05 (15 tables --
 -- see e.g. concepts/concept_assets/concept_outputs in
 -- 20260805_design_intelligence.sql) already has RLS enabled with a
--- permissive "allow_all" policy. This migration brings these 12 up to the
+-- permissive "allow_all" policy. This migration brings these 11 up to the
 -- same standard so the whole database is consistent. TCC is single-user and
 -- the anon key is meant to have full access, same as it does today -- this
 -- is not a new restriction, it's closing the "RLS disabled entirely" gap
@@ -16,7 +16,18 @@
 --
 -- Storage bucket RLS (storage.objects -- see
 -- 20260807_design_vault_storage_rls.sql) is a separate mechanism and out of
--- scope here: none of these 12 are storage buckets.
+-- scope here: none of these 11 are storage buckets.
+--
+-- Correction from the first version of this file: it originally listed a
+-- 12th table, import_history. Running it against the real database failed
+-- with "relation 'import_history' does not exist" -- confirmed directly via
+-- the REST API that all 11 tables below are real, but import_history
+-- genuinely isn't. Five call sites across the app (EverbeeCSVImport.jsx,
+-- EtsyCSVImport.jsx, PinterestCSVImport.jsx, WeeklyReview.jsx) write to it
+-- with no error checking, so it's been silently no-op'ing on every import --
+-- a separate, real, pre-existing bug, unrelated to this security migration
+-- and not fixed here. Nothing reads from import_history anywhere, so this
+-- was never visibly broken, only silently broken.
 --
 -- Not safely re-runnable (Postgres has no CREATE POLICY IF NOT EXISTS) --
 -- same caveat as every prior migration's RLS block in this repo. Run this
@@ -24,7 +35,9 @@
 -- Postgres treats a multi-statement script submitted as a single query as one
 -- implicit transaction, so there is no window where a table is RLS-enabled
 -- with zero policies attached (which would otherwise deny all access, even
--- to the anon key, until the policy statement ran).
+-- to the anon key, until the policy statement ran) -- confirmed directly:
+-- the first version's failure on import_history rolled back cleanly, none
+-- of the other 11 tables were left partially modified.
 
 ALTER TABLE products            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sparks              ENABLE ROW LEVEL SECURITY;
@@ -36,7 +49,6 @@ ALTER TABLE playbooks           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE playbook_sections   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workshop_items      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE experiments         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE import_history      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pending_updates     ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "allow_all_products"            ON products            FOR ALL USING (true) WITH CHECK (true);
@@ -49,5 +61,4 @@ CREATE POLICY "allow_all_playbooks"           ON playbooks           FOR ALL USI
 CREATE POLICY "allow_all_playbook_sections"   ON playbook_sections   FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_workshop_items"      ON workshop_items      FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_experiments"         ON experiments         FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "allow_all_import_history"      ON import_history      FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_pending_updates"     ON pending_updates     FOR ALL USING (true) WITH CHECK (true);
