@@ -250,6 +250,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
   const [filterChapter, setFilterChapter] = useState('');
   const [filterCollection, setFilterCollection] = useState(initialCollection);
   const [filterBucket, setFilterBucket]   = useState('');
+  const [filterNiche, setFilterNiche]     = useState('');
   const [filterClassification, setFilterClassification] = useState('');
   const [filterConfidence, setFilterConfidence] = useState('');
   const [filterTrend, setFilterTrend]     = useState('');
@@ -285,7 +286,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     setLoading(true);
     const { data } = await supabase
       .from('keywords')
-      .select('*, research_sessions(id, collection, source, date, notes, seasonal)')
+      .select('*, research_sessions(id, collection, source, date, notes, seasonal, niche)')
       .not('research_session_id', 'is', null)
       .order('keyword', { ascending: true });
     setKeywords(data || []);
@@ -308,6 +309,18 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     keywords.map(k => k.research_sessions?.source).filter(Boolean)
   )].sort();
 
+  // Sub-niche — free-text, per-session (e.g. "90s Nostalgia" within a
+  // broader collection). Restored per Kristen's request: the ResearchSessionForm
+  // input that used to set this was deleted Aug 1 (commit 458d4dc) with no
+  // replacement, and this column never existed — old and new niche-tagged
+  // sessions were both effectively invisible here even though the data itself
+  // was never lost. uncategorizedNicheCount mirrors uncategorizedCount's
+  // pattern for the Collection filter below.
+  const allNichesFromData = [...new Set(
+    keywords.map(k => k.research_sessions?.niche).filter(Boolean)
+  )].sort();
+  const uncategorizedNicheCount = keywords.filter(k => !k.research_sessions?.niche).length;
+
   const uncategorizedCount = keywords.filter(k => !k.research_sessions?.collection).length;
 
   const filtered = keywords.filter(k => {
@@ -319,6 +332,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
       const bucketNum = Number(filterBucket);
       if (bucketNum === 0 ? !!k.bucket : k.bucket !== bucketNum) return false;
     }
+    if (filterNiche === '__uncategorized__' ? !!k.research_sessions?.niche : (filterNiche && k.research_sessions?.niche !== filterNiche)) return false;
     if (filterClassification && k.classification !== filterClassification) return false;
     if (filterConfidence && k.confidence !== filterConfidence) return false;
     if (filterTrend && k.trend_classification !== filterTrend) return false;
@@ -474,6 +488,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
     confidence:     e => e.primary.confidence || '',
     status:         e => e.primary.research_status || '',
     collection:     e => e.primary.research_sessions?.collection || '',
+    niche:          e => e.primary.research_sessions?.niche || '',
     source:         e => e.sources.join(', '),
   };
   const sortedRows = sortCol ? [...dedupedRows].sort((a, b) => {
@@ -608,7 +623,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 1060 }}>
           {/* Header — click a label to sort that column, click ▾ to filter it.
               Keyword stays frozen at the left edge while the rest scrolls. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 110px 120px 36px', gap: 8, padding: '4px 10px', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--charcoal-soft)' }}>
             <span
               onClick={() => toggleSort('keyword')}
               style={{
@@ -638,6 +653,12 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
               options={[
                 ...(uncategorizedCount > 0 ? [{ value: '__uncategorized__', label: `— Uncategorized (${uncategorizedCount}) —` }] : []),
                 ...visibleCollections,
+              ]} />
+            <ColumnFilterHeader label="Niche" sortKey="niche" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
+              value={filterNiche} onChange={setFilterNiche} allLabel="All niches" searchable
+              options={[
+                ...(uncategorizedNicheCount > 0 ? [{ value: '__uncategorized__', label: `— No niche (${uncategorizedNicheCount}) —` }] : []),
+                ...allNichesFromData,
               ]} />
             <ColumnFilterHeader label="Source(s)" sortKey="source" sortCol={sortCol} sortDir={sortDir} onSort={toggleSort}
               value={filterSource} onChange={setFilterSource} allLabel="All sources" options={allSourcesFromData} />
@@ -736,7 +757,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                 <div key={k.id}
                   onClick={() => setSelectedKeywordId(k.id)}
                   title="Click for classification, source comparison, and history"
-                  style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center', cursor: 'pointer' }}>
+                  style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 60px 72px 80px 56px 118px 62px 90px 130px 110px 120px 36px', gap: 8, padding: '7px 10px', background: 'var(--warm-white)', border: `1px solid ${inLiveListing ? 'rgba(124,175,138,0.3)' : 'rgba(43,41,38,0.07)'}`, borderRadius: 3, alignItems: 'center', cursor: 'pointer' }}>
                   <span style={{
                     fontSize: '0.82rem', fontWeight: 500,
                     position: 'sticky', left: 10, zIndex: 1, background: 'var(--warm-white)',
@@ -775,6 +796,7 @@ function KeywordList({ collectionObjects, chapters, onAddSession, initialCollect
                   <span><ConfidenceBadge confidence={k.confidence} /></span>
                   <span><StatusBadge status={k.research_status} /></span>
                   <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col}</span>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.research_sessions?.niche || '—'}</span>
                   <span style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                     {sources.map(s => (
                       <span key={s} style={{ fontSize: '0.58rem', padding: '1px 5px', borderRadius: 8, background: 'var(--rose-faint)', border: '1px solid rgba(188,143,143,0.3)', color: 'var(--dusty-rose)', whiteSpace: 'nowrap' }}>{s}</span>

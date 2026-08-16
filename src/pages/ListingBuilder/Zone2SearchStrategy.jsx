@@ -11,7 +11,7 @@ export default function Zone2SearchStrategy({
   form, setField,
   primarySearchIntent, onIntentChange, primaryIntentStatus, output,
   sessions, activeSessions, selectedSessionIds, onToggleSession, onSelectAllSessions, onSelectNoSessions, globalCollections,
-  totalUsable, sourcesForDisplay,
+  totalUsable, bucketCounts, sourcesForDisplay,
   keywordAgedays, collectionLastVerified, keywordsStale,
   brandStyleGuide,
   supportingKeywords, researchGaps, excludedKeywords, saveFlagsProductId,
@@ -89,6 +89,37 @@ export default function Zone2SearchStrategy({
           </div>
         )}
       </div>
+
+      {/* Bucket coverage — informational only, same B1≥1/B2≥3/B3≥1 thresholds
+          and gap wording as Research.jsx's own per-collection banner, kept
+          visible here (not buried in "View research details" below) per
+          Kristen's request. Milestone A deliberately removed the old
+          hard-blocking gate; this is its opposite by design — it never
+          blocks Generate, only informs. */}
+      {sessions.length > 0 && (() => {
+        const gaps = [];
+        if (bucketCounts[1] < 1) gaps.push('needs B1 (visibility keyword)');
+        if (bucketCounts[2] < 3) gaps.push(`needs ${3 - bucketCounts[2]} more B2`);
+        if (bucketCounts[3] < 1) gaps.push('needs B3 (bestseller)');
+        return (
+          <div style={{
+            display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '8px 12px', marginBottom: 14,
+            background: gaps.length ? 'rgba(232,168,124,0.12)' : 'rgba(124,175,138,0.1)', borderRadius: 2,
+            border: `1px solid ${gaps.length ? 'rgba(232,168,124,0.4)' : 'var(--success)'}`, fontSize: '0.72rem',
+          }}>
+            <span style={{ color: 'var(--charcoal-soft)' }}>Bucket coverage:</span>
+            {[['B1', bucketCounts[1], bucketCounts[1] >= 1 ? '#2d6b3c' : '#7a2b2b'],
+              ['B2', bucketCounts[2], bucketCounts[2] >= 3 ? '#2d6b3c' : '#7a4a1e'],
+              ['B3', bucketCounts[3], bucketCounts[3] >= 1 ? '#2d6b3c' : '#7a2b2b']].map(([label, count, color]) => (
+              <span key={label} style={{ fontWeight: 600, color }}>{label}: {count}</span>
+            ))}
+            {bucketCounts.unbucketed > 0 && <span style={{ color: 'var(--charcoal-soft)' }}>· {bucketCounts.unbucketed} unbucketed</span>}
+            {gaps.length > 0
+              ? <span style={{ color: '#7a4a1e', marginLeft: 4 }}>⚑ {gaps.join(' · ')} — doesn't block generating</span>
+              : <span style={{ color: '#2d6b3c', marginLeft: 4 }}>✓ Coverage complete</span>}
+          </div>
+        );
+      })()}
 
       {/* Research summary — replaces the old flat, always-expanded session
           list. activeSessions.length (not sessions.length) for the selected

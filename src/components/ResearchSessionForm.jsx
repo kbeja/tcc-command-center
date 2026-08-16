@@ -347,6 +347,11 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         </div>
       </div>
 
+      <div className="form-group">
+        <label className="form-label">Sub-niche <span style={{ fontWeight: 400, opacity: 0.5 }}>(optional — a specific angle within this collection, e.g. "90s Nostalgia")</span></label>
+        <input value={niche} onChange={e => setNiche(e.target.value)} placeholder="e.g. 90s Nostalgia, Dopamine" />
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'start', marginBottom: 12 }}>
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label">Status</label>

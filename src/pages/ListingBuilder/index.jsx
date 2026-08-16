@@ -347,6 +347,20 @@ export default function ListingBuilder() {
   const watchKws = allKeywords.filter(k => k.tag_type === 'watch' && !k.tags_only);
   const totalUsable = useKws.length + watchKws.length;
 
+  // Bucket coverage across the same usable pool totalUsable counts — Kristen's
+  // request: real visibility in Zone 2 plus a non-blocking warning when a
+  // bucket's empty, not a return of Milestone A's hard-blocking gate (that
+  // gate was removed on purpose; this only ever informs, never blocks
+  // Generate). Same B1≥1/B2≥3/B3≥1 thresholds and gap wording Research.jsx's
+  // own per-collection coverage banner already uses, for consistency.
+  const usableForBuckets = [...useKws, ...watchKws];
+  const bucketCounts = {
+    1: usableForBuckets.filter(k => k.bucket === 1).length,
+    2: usableForBuckets.filter(k => k.bucket === 2).length,
+    3: usableForBuckets.filter(k => k.bucket === 3).length,
+    unbucketed: usableForBuckets.filter(k => !k.bucket).length,
+  };
+
   // Playbooks. seo-standards is deliberately no longer fetched/used here —
   // Listing Intelligence Milestone A replaced the old bucket-ordering rules
   // it encoded with generate-listing-v2.js's own prompt; passing that old
@@ -765,7 +779,7 @@ export default function ListingBuilder() {
         onSelectAllSessions={() => setSelectedSessionIds(new Set(sessions.map(s => s.id)))}
         onSelectNoSessions={() => setSelectedSessionIds(new Set())}
         globalCollections={GLOBAL_COLLECTIONS}
-        totalUsable={totalUsable}
+        totalUsable={totalUsable} bucketCounts={bucketCounts}
         sourcesForDisplay={researchSourcesUsed.length > 0 ? researchSourcesUsed : [...new Set(allKeywords.map(k => k._source).filter(Boolean))]}
         keywordAgedays={keywordAgedays} collectionLastVerified={collectionLastVerified} keywordsStale={keywordsStale}
         brandStyleGuide={brandStyleGuide}
