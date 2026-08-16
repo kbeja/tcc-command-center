@@ -552,7 +552,7 @@ function ResearchSection({ collection, sessions, loading, onDeleted, refetch }) 
               No research sessions for {collection} yet.
             </div>
           )}
-          {sessions.map(s => <ResearchSessionCard key={s.id} session={s} onDeleted={onDeleted} />)}
+          {sessions.map(s => <ResearchSessionCard key={s.id} session={s} onDeleted={onDeleted} onUpdated={refetch} />)}
         </div>
       )}
     </div>

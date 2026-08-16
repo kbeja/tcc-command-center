@@ -269,7 +269,13 @@ export default function ListingBuilder() {
 
   const allCollectionNames = [form.collection, ...extraCollections].filter(Boolean);
 
-  const GLOBAL_COLLECTIONS = ['Global Keywords', 'General', 'Seasonal'];
+  // 'Seasonal' deliberately excluded — unlike General/Global Keywords (truly
+  // universal terms), Seasonal holds holiday/occasion-specific keywords that
+  // only apply to a subset of listings. Pooling it into every listing meant
+  // e.g. Halloween/Christmas terms leaking into evidence for non-seasonal
+  // products with no way to turn it off. A listing that actually wants those
+  // terms adds that collection explicitly via extraCollections instead.
+  const GLOBAL_COLLECTIONS = ['Global Keywords', 'General'];
 
   useEffect(() => {
     if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }

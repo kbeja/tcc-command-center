@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { PRODUCT_FORMATS, BLANK_BRANDS } from '../../lib/productTruth';
 import { resolveEffectiveProductTruth, formatProductTruthSourceNotes } from '../../lib/storePolicies';
 import { buildProductTruth } from './generation';
@@ -57,6 +58,19 @@ export default function Zone1Product({
   templates, approvedPolicies,
 }) {
   const productTruth = buildProductTruth(form);
+
+  // Local echo of form.availableColors while typing — committing the
+  // split/trim/filter on every keystroke (the old behavior) collapsed a
+  // trailing ", " back out immediately, so a comma could never be typed.
+  // Only re-parses into the real array on blur; the effect resyncs this
+  // when form.availableColors changes from outside typing (loading a
+  // different product, restoring a draft) — safe because setField below
+  // only runs on blur, so the array reference is stable while typing.
+  const [colorsText, setColorsText] = useState((form.availableColors || []).join(', '));
+  useEffect(() => {
+    setColorsText((form.availableColors || []).join(', '));
+  }, [form.availableColors]);
+
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <button type="button" onClick={onToggle}
@@ -128,8 +142,9 @@ export default function Zone1Product({
             <div className="form-group" style={{ margin: 0 }}>
               <label className="form-label">Available Colors <span style={{ fontWeight: 400, opacity: 0.5 }}>(comma-separated)</span></label>
               <input
-                value={(form.availableColors || []).join(', ')}
-                onChange={e => setField('availableColors', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                value={colorsText}
+                onChange={e => setColorsText(e.target.value)}
+                onBlur={() => setField('availableColors', colorsText.split(',').map(s => s.trim()).filter(Boolean))}
                 placeholder="e.g. Black, White, Pepper" style={{ fontSize: '0.78rem' }} />
             </div>
             <div className="form-group" style={{ margin: 0 }}>

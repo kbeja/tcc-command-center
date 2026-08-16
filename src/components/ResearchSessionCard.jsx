@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { deleteResearchSession, deleteKeyword, useChapters, useCollections, recomputeKeywordInterpretation } from '../lib/hooks';
+import { deleteResearchSession, deleteKeyword, useCollections, recomputeKeywordInterpretation } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 
@@ -169,31 +169,19 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [keywords, setKeywords] = useState(session.keywords || []);
   const [seasonal, setSeasonal] = useState(!!session.seasonal);
-  const [parentNiche, setParentNiche] = useState(session.parent_niche || '');
-  const [savingParent, setSavingParent] = useState(false);
   const [kwSelecting, setKwSelecting] = useState(false);
   const [kwSelected, setKwSelected] = useState(new Set());
   const [kwBulkTag, setKwBulkTag] = useState('');
   const [kwBulkDone, setKwBulkDone] = useState('');
-  const { chapters } = useChapters();
   const { collections } = useCollections();
   const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
-
-  async function handleParentNicheChange(val) {
-    setParentNiche(val);
-    setSavingParent(true);
-    await supabase.from('research_sessions')
-      .update({ parent_niche: val || null })
-      .eq('id', session.id);
-    setSavingParent(false);
-    onUpdated?.();
-  }
 
   async function toggleSeasonal() {
     const next = !seasonal;
     setSeasonal(next);
     await supabase.from('research_sessions').update({ seasonal: next }).eq('id', session.id);
+    onUpdated?.();
   }
 
   async function handleDelete() {
@@ -204,10 +192,12 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   async function handleDeleteKeyword(kwId) {
     await deleteKeyword(kwId);
     setKeywords(prev => prev.filter(k => k.id !== kwId));
+    onUpdated?.();
   }
 
   function handleKeywordSave(updated) {
     setKeywords(prev => prev.map(k => k.id === updated.id ? updated : k));
+    onUpdated?.();
   }
 
   function toggleKwSelect(id) {
@@ -226,15 +216,22 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
     setKwBulkDone(`Tagged ${ids.length} → ${kwBulkTag}`);
     setKwSelected(new Set());
     setKwBulkTag('');
+    onUpdated?.();
     setTimeout(() => setKwBulkDone(''), 2500);
   }
 
   return (
     <div style={{ borderTop: '1px solid rgba(43,41,38,0.08)', paddingTop: 12, marginTop: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <button
+        {/* div, not button — a real "seasonal" toggle button lives inside this
+            row, and buttons can't nest inside buttons (invalid HTML, unreliable
+            for screen readers/keyboard nav). tabIndex+onKeyDown keep it
+            keyboard-operable like a native button would be. */}
+        <div
+          role="button" tabIndex={0}
           style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, flex: 1 }}
           onClick={() => setOpen(!open)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
         >
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 500, fontSize: '0.82rem' }}>{session.date}</span>
@@ -272,7 +269,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
               </span>
             )}
           </div>
-        </button>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {confirmDelete ? (
@@ -292,20 +289,6 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
 
       {open && (
         <div style={{ marginTop: 12, fontSize: '0.8rem' }}>
-          {/* Parent niche editor */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', flexShrink: 0 }}>Chapter:</span>
-            <select
-              value={parentNiche}
-              onChange={e => handleParentNicheChange(e.target.value)}
-              disabled={savingParent}
-              style={{ fontSize: '0.72rem', padding: '2px 6px', color: parentNiche ? 'inherit' : 'var(--charcoal-soft)', opacity: parentNiche ? 1 : 0.6 }}
-            >
-              <option value="">— Cross-niche / unassigned —</option>
-              {chapters.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-            {savingParent && <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>Saving…</span>}
-          </div>
           {session.notes && (
             <p style={{ color: 'var(--charcoal-soft)', marginBottom: 8, lineHeight: 1.5 }}>{session.notes}</p>
           )}
