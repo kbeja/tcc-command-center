@@ -344,6 +344,54 @@ export async function skipListingReview({
   }).select().single();
 }
 
+// ─── Portfolio Comparison (Milestone C4) ───────────────────────────────────
+// Unscoped reads — no .eq('product_id', ...) — the first cross-product
+// queries against either table. Safe at current/expected volume: every
+// prior query against these two tables has been product-scoped (both
+// tables only came into existence today, Milestone A / C3), and this
+// mirrors the exact "small table, fetch all, group in JS" pattern
+// useVisualProfilesByListing()/useConceptTagsAll() already use above for
+// their own ungated tables. No realtime subscription — matches the
+// existing scoped useListingGenerations(productId)/useListingReviews(productId),
+// neither of which subscribes either; Portfolio is read-only/display-only
+// and exposes refetch() for the one case (arriving via nav after an edit
+// elsewhere) that needs a fresh read. useCompetitorListings()'s .range()
+// pagination loop is the proven fallback if either table ever grows large.
+
+export function useAllListingGenerations() {
+  const [generations, setGenerations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('listing_generations')
+      .select('*')
+      .order('created_at', { ascending: false });
+    setGenerations(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { generations, loading, refetch: fetch };
+}
+
+export function useAllListingReviews() {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('listing_reviews')
+      .select('*')
+      .order('created_at', { ascending: false });
+    setReviews(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { reviews, loading, refetch: fetch };
+}
+
 // ─── Needs Attention ─────────────────────────────────────────────────────────
 
 export function getNeedsAttention(products) {

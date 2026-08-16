@@ -10,9 +10,15 @@ import {
   buildPerformanceSnapshot, buildGenerationSnapshot, summarizeKeywordEvidence,
 } from './listingReviews.js';
 
+// UTC throughout (setUTCDate, not setDate) — computeCheckpointStates()
+// compares via daysBetween()/today() (seasons.js), which are themselves
+// UTC-referenced (toISOString().slice(0,10), and new Date('YYYY-MM-DD')
+// parses as UTC midnight). Mixing local-timezone subtraction with a UTC
+// serialization here caused this helper to drift a day right at local-
+// midnight boundaries — caught live when a long session crossed one.
 function daysAgo(n) {
   const d = new Date();
-  d.setDate(d.getDate() - n);
+  d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
 }
 

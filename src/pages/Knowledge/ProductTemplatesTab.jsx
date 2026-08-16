@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   useProductTemplates, createProductTemplate, updateProductTemplate,
-  archiveProductTemplate, markProductTemplateVerified,
+  archiveProductTemplate, markProductTemplateVerified, useProducts,
 } from '../../lib/hooks';
 import { PRODUCT_FORMATS, BLANK_BRANDS } from '../../lib/productTruth';
 import { TEMPLATE_OWNED_FIELDS, TEMPLATE_VERIFY_DUE_DAYS } from '../../lib/productTemplates';
+import { computeTemplateUsage } from '../../lib/portfolioAnalysis';
 
 const FIELD_LABELS = {
   blank_brand: 'Blank / Brand', blank_model: 'Blank / Model', material: 'Material',
@@ -130,6 +131,7 @@ function TemplateForm({ form, setForm, onSave, onCancel, saving, saveLabel }) {
 export default function ProductTemplatesTab() {
   const [showArchived, setShowArchived] = useState(false);
   const { templates, loading, refetch } = useProductTemplates(showArchived ? 'all' : 'active');
+  const { products } = useProducts();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ ...BLANK_FORM });
   const [saving, setSaving] = useState(false);
@@ -139,6 +141,19 @@ export default function ProductTemplatesTab() {
   const [verifiedId, setVerifiedId] = useState(null);
 
   const duplicateIds = findDuplicateIds(templates.filter(t => t.status === 'active'));
+
+  // Milestone C4 reverse lookup — reuses the same computeTemplateUsage()
+  // the Portfolio page's own Template Usage dimension calls, so "is this
+  // template in use" answers identically in both places. Each template's
+  // usage count is independent of what else is in `templates` (a product
+  // either references this specific id or it doesn't), so it stays
+  // correct regardless of whether the "Show archived" toggle is on.
+  const usageByTemplateId = useMemo(() => {
+    const usage = computeTemplateUsage(products, templates);
+    const map = new Map();
+    for (const u of usage) if (u.template) map.set(u.template.id, u.products);
+    return map;
+  }, [products, templates]);
 
   async function handleAdd() {
     setSaving(true);
@@ -245,6 +260,14 @@ export default function ProductTemplatesTab() {
                       {t.verification_note && (
                         <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', fontStyle: 'italic', marginTop: 4 }}>"{t.verification_note}"</div>
                       )}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
+                      {(() => {
+                        const usedBy = usageByTemplateId.get(t.id) || [];
+                        return usedBy.length
+                          ? `Used by ${usedBy.length} product${usedBy.length === 1 ? '' : 's'}: ${usedBy.map(p => p.name).join(', ')}`
+                          : 'Not currently used by any products';
+                      })()}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setEditingId(t.id); setEditForm(toEditForm(t)); }}>Edit</button>

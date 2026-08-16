@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   useStorePolicies, createStorePolicy, updateStorePolicy,
-  archiveStorePolicy, markStorePolicyVerified,
+  archiveStorePolicy, markStorePolicyVerified, useProducts, useAllListingGenerations,
 } from '../../lib/hooks';
 import { POLICY_TYPES, POLICY_VERIFY_DUE_DAYS, isPolicyGenerationEligible } from '../../lib/storePolicies';
+import { computePolicyUsage } from '../../lib/portfolioAnalysis';
 
 const POLICY_TYPE_LABELS = {
   shipping: 'Shipping', international_shipping: 'International Shipping',
@@ -87,8 +88,22 @@ export default function StorePoliciesTab() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [verifiedId, setVerifiedId] = useState(null);
+  const { products } = useProducts();
+  const { generations } = useAllListingGenerations();
 
   const duplicateIds = findDuplicateTypeIds(policies.filter(p => p.status === 'active'));
+
+  // Milestone C4 reverse lookup — same computePolicyUsage() the Portfolio
+  // page's own Policy Usage dimension calls. Policy usage is per-generation
+  // (product_truth_sources on each product's latest listing_generations
+  // row), not a direct FK, so this needs both products and generations,
+  // unlike the template lookup's simpler direct-FK version.
+  const usageByPolicyId = useMemo(() => {
+    const usage = computePolicyUsage(products, generations, policies);
+    const map = new Map();
+    for (const u of usage) if (u.policy) map.set(u.policy.id, u.products);
+    return map;
+  }, [products, generations, policies]);
 
   async function handleAdd() {
     setSaving(true);
@@ -201,6 +216,14 @@ export default function StorePoliciesTab() {
                     {p.verification_note && (
                       <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', fontStyle: 'italic', marginBottom: 10 }}>"{p.verification_note}"</div>
                     )}
+                    <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
+                      {(() => {
+                        const usedBy = usageByPolicyId.get(p.id) || [];
+                        return usedBy.length
+                          ? `Used by ${usedBy.length} product${usedBy.length === 1 ? '' : 's'}: ${usedBy.map(pr => pr.name).join(', ')}`
+                          : 'Not currently used by any products';
+                      })()}
+                    </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button
                         className="btn btn-ghost btn-sm"

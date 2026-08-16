@@ -9,6 +9,7 @@ import Sparks from './pages/Sparks';
 import Research from './pages/Research';
 import Workshop from './pages/Workshop';
 import Analytics from './pages/Analytics';
+import Portfolio from './pages/Portfolio';
 import Trends from './pages/Trends';
 import Collections from './pages/Collections';
 import CollectionDetail from './pages/CollectionDetail';
@@ -35,6 +36,7 @@ function AppInner() {
         <Route path="/research" element={<Research />} />
         <Route path="/workshop" element={<Workshop />} />
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/trends" element={<Trends />} />
         <Route path="/collections" element={<Collections />} />
         <Route path="/collections/:name" element={<CollectionDetail />} />
