@@ -39,3 +39,27 @@ export function phraseAppearsIn(haystackText, needlePhrase) {
   if (!needle.length) return false;
   return containsSubsequence(tokenize(haystackText), needle);
 }
+
+// Which of `pool`'s researched keywords does `text` actually contain?
+//
+// Longest phrases are preferred: if a title contains "hockey mom shirt", the
+// "hockey mom" and "hockey shirt" that also sit inside it are dropped as
+// subsumed, so one piece of text is never reported three times under three
+// overlapping phrases. Built on phraseAppearsIn(), so this agrees with the
+// Product Compatibility Gate and the SEO gap analysis about what "contains"
+// means rather than being a fourth, subtly different answer.
+//
+// Lives here rather than beside its component so the matching stays testable
+// on its own and reusable by anything else that needs it.
+export function matchKeywordPhrases(text, pool) {
+  if (!text || !pool?.length) return [];
+  const hits = pool
+    .filter(k => k.keyword && phraseAppearsIn(text, k.keyword))
+    .sort((a, b) => b.keyword.length - a.keyword.length);
+
+  const kept = [];
+  for (const hit of hits) {
+    if (!kept.some(k => phraseAppearsIn(k.keyword, hit.keyword))) kept.push(hit);
+  }
+  return kept;
+}

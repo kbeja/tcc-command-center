@@ -887,6 +887,7 @@ export default function ListingBuilder() {
             supportingKeywords={asArray(output?.supporting_keywords)}
             researchGaps={researchGaps} excludedKeywords={excludedKeywordsDisplay}
             sources={researchSourcesUsed.length > 0 ? researchSourcesUsed : [...new Set(allKeywords.map(k => k._source).filter(Boolean))]}
+            keywordPool={usableForBuckets}
           />
         </div>
       )}

@@ -4,6 +4,7 @@ import { CopyButton, SectionHeader } from './shared';
 import Zone3Description from './Zone3Description';
 import Zone3Images from './Zone3Images';
 import Zone3Research from './Zone3Research';
+import KeywordBucketReadout from './KeywordBucketReadout';
 
 // Zone 3 — Listing (Milestone B). Tab bar owned locally (activeTab, default
 // 'listing', not lifted, not persisted) — copies the underline-tab pattern
@@ -17,6 +18,7 @@ export default function Zone3Listing({
   form, editDesc, onDescChange,
   imagePreview, imageAnalysis, editPrompts, onPromptsChange,
   supportingKeywords, researchGaps, excludedKeywords, sources,
+  keywordPool = [],
 }) {
   const [activeTab, setActiveTab] = useState('listing');
 
@@ -64,6 +66,10 @@ export default function Zone3Listing({
             </div>
             <CopyButton text={editTitle} />
           </div>
+
+          {/* Which researched keywords the title and tags actually contain,
+              with their buckets — read-only, never edits or suggests. */}
+          <KeywordBucketReadout title={editTitle} tags={editTags} pool={keywordPool} />
 
           <SectionHeader title={`Tags (${editTags.length}/13)`} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
