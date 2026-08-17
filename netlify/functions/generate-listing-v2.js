@@ -94,6 +94,29 @@ const TITLE_STRATEGY_INSTRUCTIONS = {
   manual: 'The shop owner intends to write or heavily edit this title herself. You may return an empty string, or a single natural, accurate suggestion if the evidence clearly points to one — do not over-invest in this field.',
 };
 
+// Listing Image Plan (image_prompts) — a fixed role taxonomy instead of
+// free-text slot/type fields, so the set reads as one cohesive plan rather
+// than disconnected prompts, and the frontend (Zone3Images.jsx — ROLE_LABEL/
+// ROLE_ORDER, kept in sync by hand, same convention as analyze-visual.js's
+// duplicated taxonomy) can group and label predictably. hero/lifestyle_1/
+// flat_lay/detail are always expected; lifestyle_2 and alternate_colors are
+// conditional — see IMAGE_PROMPT_INSTRUCTIONS.
+const IMAGE_ROLES = ['hero', 'lifestyle_1', 'lifestyle_2', 'flat_lay', 'detail', 'alternate_colors'];
+
+const IMAGE_PROMPT_INSTRUCTIONS = `IMAGE PROMPT PLAN — produce a cohesive, Etsy-ready set of image prompts, each tagged with its role from this fixed set: ${IMAGE_ROLES.join(', ')}. Always include hero, lifestyle_1, flat_lay, and detail. Only include lifestyle_2 when there's a genuinely distinct second styling angle worth showing (a different setting, activity, or framing than lifestyle_1) — omit it rather than duplicate lifestyle_1's concept. Only include alternate_colors when Product Truth lists 2 or more Available Colors — never invent color options that aren't confirmed there.
+
+The whole set should read as one intentional visual strategy — modern boutique Etsy apparel photography filtered through TCC's warm, natural aesthetic — never generic POD-template or wholesale-catalog photography. Across every role, avoid: stiff POD-template mockups, sterile catalog photography, vendor sell sheets, floating-shirt wholesale grids, excessive props, unreadable designs, unlabeled color images, and multiple redundant flat-lay images.
+
+- hero (the Main Image — the single most important image, and the one every other role exists in contrast to): a simple, product-focused mockup, but NOT a sterile catalog shot, stiff front-facing studio template, or wholesale-catalog vibe. Clean, minimal, non-distracting, warm neutral background with subtle depth (not a blank studio void). Minimal or no props. The garment fills roughly 70-85% of the frame, cropped in close enough that the shirt is clearly the focus. The design must be large, centered, fully visible, and readable at thumbnail size. Use soft natural lighting. Pose/styling: avoid a stiff straight-on pose — a relaxed, natural body position with a slight angle or softer stance is preferred, as long as the shirt stays the clear focal point. Avoid busy environments, heavy scene styling, or any composition choice that competes with the graphic. Overall feel: simple, clean, product-led, slightly styled, warm and natural — modern boutique, not generic mockup.
+- lifestyle_1 / lifestyle_2: real-world styled shots showing the product worn in a setting that fits the product's aesthetic and audience — secondary to hero, so keep them warm, natural, and lightly styled rather than a heavy storytelling scene. Support the product without overpowering it; keep the shirt and design readable; avoid overly busy scenes. Should read as soft, current, Etsy-friendly support images — not a chaotic lifestyle collage.
+- flat_lay: ONE combined flat-lay overview image — never split across several separate flat-lay prompts. If showing multiple colorways or styling variations, arrange them together in a single cohesive layout — clean, intentional, and balanced, on a warm neutral background consistent with the rest of the set. Avoid a busy collage or catalog-sheet look. This complements hero/lifestyle/alternate_colors; it does not replace hero.
+- detail: a close-up on the design/print itself — texture, print quality, readability up close. A clean, intentional supporting image, not a repeat of another role's framing.
+- alternate_colors: show the product's other Available Colors side by side in a polished boutique presentation — clean editorial layout, warm neutral background consistent with the rest of the set, accurate garment colors. Every color shown MUST have its own clean, readable, neatly placed text label naming that exact color (e.g. if the Available Colors are Ivory, Pepper, Bay, and White, the image must show all four with each one explicitly labeled "Ivory," "Pepper," "Bay," and "White") — never leave a color unlabeled. This should read as a branded Etsy color-options slide, not a manufacturer's line sheet or wholesale product sheet.
+
+STYLING DIRECTION (hero and any lifestyle role showing the garment worn): prefer a relaxed, slightly oversized look over a fitted/bodycon silhouette — natural drape, a roomier fit, a casual and current feel. Pair with simple casual bottoms (denim shorts, relaxed jeans, biker shorts, etc.) when the scene calls for it. This is a styling preference, not license to misrepresent the product: the garment must still read as believably true to the actual blank in Product Truth (see PRODUCT TRUTH OVERRIDES EVERYTHING above) — avoid extreme silhouette exaggeration or styling that makes the shirt look like a different garment cut.
+
+Return image_prompts as an array of {role, prompt} objects, one per included role, in the order listed above (hero first).`;
+
 function buildSystemPrompt({ titleStrategy }) {
   const titleInstruction = TITLE_STRATEGY_INSTRUCTIONS[titleStrategy] || TITLE_STRATEGY_INSTRUCTIONS.buyer_clear;
   return `You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop.
@@ -106,13 +129,15 @@ YOUR TASK, IN THIS ORDER:
 1. Identify the Primary Search Intent — the single clearest phrase describing what a shopper would search for to find this exact product. It does not have to be the highest-volume keyword in the pool; it has to accurately describe the product as sold. Status: "validated" if it exactly matches a phrase in the supplied pool, "supported" if it's not an exact match but the pool contains close semantic/product evidence for the same territory, "unvalidated" if you're inferring it purely from Product Truth/collection/audience with no supporting research at all. Never mark "validated" unless you can name the exact matching pool phrase.
 2. Classify every keyword you reference into exactly one of: ${RELEVANCE_CATEGORIES.join(', ')}.
 3. Note research gaps: "critical" for a product/listing accuracy problem, "research_opportunity" for a clearly missing but useful search phrase, "optional_test" for a future nice-to-have comparison. Do not invent a gap just because the pool is small — only flag a real, specific gap.
-4. Write the listing — title, tags, description, image prompts — using only the Primary Search Intent, your relevance-classified supporting keywords, and Product Truth.
+4. Write the listing — title, tags, description, image prompts (see IMAGE PROMPT PLAN below) — using only the Primary Search Intent, your relevance-classified supporting keywords, and Product Truth.
 
 TITLE STRATEGY: ${titleInstruction}
 
 TAGS: up to 13, each ≤20 characters, all unique, no artificial padding to hit 13 — fewer good tags beats a nonsense tag. Never include an excluded or format-incompatible term.
 
 DESCRIPTION SECTIONS: opener (warm, specific, not keyword-dense filler), product_details, ordering_steps, shipping (leave as an empty string if shipping is a forbidden topic — see permissions below), cross_sell (only real TCC products/collections/features — if none apply, a generic approved CTA or empty string, never an invented cross-sell), brand_voice_closer (must end with: "The Current Chapter- for the current chapter and every chapter in between.").
+
+${IMAGE_PROMPT_INSTRUCTIONS}
 
 Return your answer only by calling the build_listing tool — do not write prose outside the tool call.`;
 }
@@ -185,10 +210,11 @@ const BUILD_LISTING_TOOL = {
       },
       image_prompts: {
         type: 'array',
+        description: 'The Listing Image Plan — see IMAGE PROMPT PLAN instructions for role definitions, order, and which roles are conditional.',
         items: {
           type: 'object',
-          properties: { slot: { type: 'string' }, type: { type: 'string' }, prompt: { type: 'string' } },
-          required: ['prompt'],
+          properties: { role: { type: 'string', enum: IMAGE_ROLES }, prompt: { type: 'string' } },
+          required: ['role', 'prompt'],
         },
       },
       validation: {

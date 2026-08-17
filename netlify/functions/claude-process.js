@@ -147,6 +147,22 @@ const LIMITS = {
   content: 50_000,
   newKeywordsCount: 200,
   keywordText: 200,
+  imagePromptText: 3_000,
+  feedbackText: 500,
+};
+
+// Listing Image Plan role taxonomy — duplicated from generate-listing-v2.js's
+// IMAGE_ROLES/IMAGE_PROMPT_INSTRUCTIONS (kept in sync by hand, same
+// convention as analyze-visual.js's taxonomy duplication) so a single-role
+// regenerate call applies the exact same rules as a full generation.
+const IMAGE_ROLES = ['hero', 'lifestyle_1', 'lifestyle_2', 'flat_lay', 'detail', 'alternate_colors'];
+const IMAGE_ROLE_GUIDANCE = {
+  hero: 'The Main Image — a simple, product-focused mockup, but NOT a sterile catalog shot, stiff front-facing studio template, or wholesale-catalog vibe. Clean, minimal, warm neutral background with subtle depth. Minimal or no props. Garment fills roughly 70-85% of the frame, cropped close so the shirt is clearly the focus. Design large, centered, fully visible, and readable at thumbnail size. Soft natural lighting. Relaxed, natural body position (not stiff straight-on) with the shirt as the clear focal point — avoid busy environments or styling that competes with the graphic. Prefer a relaxed, slightly oversized fit over fitted/bodycon, while staying believably true to the actual blank in Product Truth — never exaggerate the silhouette into a different garment cut. Overall feel: modern boutique apparel photography, not generic POD/catalog.',
+  lifestyle_1: 'A real-world styled shot showing the product worn in a setting that fits the product\'s aesthetic and audience — secondary to hero, so keep it warm, natural, and lightly styled rather than a heavy storytelling scene. Support the product without overpowering it; keep the design readable.',
+  lifestyle_2: 'A second, genuinely distinct real-world styled shot — a different setting, activity, or framing than a typical first lifestyle shot, not a near-duplicate. Same warm, natural, lightly-styled feel as lifestyle_1.',
+  flat_lay: 'ONE combined flat-lay overview image — never split into multiple flat-lay prompts. If showing multiple colorways or styling variations, arrange them together in a single cohesive, clean, balanced layout on a warm neutral background. Avoid a busy collage or catalog-sheet look.',
+  detail: 'A close-up on the design/print itself — texture, print quality, readability up close. Clean and intentional, not a repeat of another role\'s framing.',
+  alternate_colors: 'Shows the product\'s other available colors side by side in a polished boutique presentation — clean editorial layout, warm neutral background, accurate garment colors. Every color shown must have its own clean, readable text label naming that exact color — never leave a color unlabeled. Should read as a branded Etsy color-options slide, not a wholesale line sheet.',
 };
 
 function safeError(err, label) {
@@ -386,6 +402,82 @@ Only use "notable_shift" for a genuinely material difference — new evidence be
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed: toolUse.input }) };
     } catch (err) {
       return safeError(err, 'evaluate_keyword_evidence');
+    }
+  }
+
+  // ── Regenerate one Listing Image Plan prompt ──
+  // Narrower than a full listing regeneration (generate-listing-v2.js) — for
+  // touching up a single weak prompt in the Image Plan without re-running
+  // title/tags/description too. Applies the same role-specific rules a full
+  // generation would (IMAGE_ROLE_GUIDANCE above), grounded in the prompt's
+  // own existing text rather than re-deriving product facts from scratch —
+  // Zone3Images.jsx doesn't carry full Product Truth/context, only the
+  // already-generated prompt text and (optionally) the design's image
+  // analysis, which is enough to refine composition/staging without
+  // re-fetching the product.
+  if (type === 'regenerate_image_prompt') {
+    const { role, currentPrompt, imageAnalysis, feedback } = payload || {};
+    if (!role || !IMAGE_ROLES.includes(role)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'role must be one of: ' + IMAGE_ROLES.join(', ') }) };
+    }
+    if (typeof currentPrompt !== 'string' || !currentPrompt.trim()) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'currentPrompt is required' }) };
+    }
+    if (currentPrompt.length > LIMITS.imagePromptText) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'currentPrompt too long' }) };
+    }
+    if (imageAnalysis != null && (typeof imageAnalysis !== 'string' || imageAnalysis.length > LIMITS.content)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'imageAnalysis too long' }) };
+    }
+    if (feedback != null && (typeof feedback !== 'string' || feedback.length > LIMITS.feedbackText)) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'feedback too long' }) };
+    }
+
+    const regenerateTool = {
+      name: 'regenerate_image_prompt',
+      description: 'Return one improved image prompt for the given role.',
+      input_schema: {
+        type: 'object',
+        properties: { prompt: { type: 'string' } },
+        required: ['prompt'],
+      },
+    };
+    const prompt = `You are refining ONE image prompt from an Etsy listing's Image Plan for TCC (The Current Chapter). Role: "${role}".
+
+ROLE REQUIREMENTS: ${IMAGE_ROLE_GUIDANCE[role] || '(no specific rules for this role)'}
+
+CURRENT PROMPT:
+"${currentPrompt}"
+${imageAnalysis ? `\nDESIGN ANALYSIS (context on the actual artwork, not a rule to enforce):\n${imageAnalysis}\n` : ''}${feedback ? `\nSHOP OWNER'S FEEDBACK ON THE CURRENT PROMPT: "${feedback}"\n` : ''}
+Write an improved version of this ONE prompt that better satisfies the role requirements above${feedback ? ' and addresses the feedback' : ''}. Stay consistent with the current prompt's product/design specifics — you are refining the photographic and compositional direction, not inventing a different product. Call regenerate_image_prompt with the new prompt text only.`;
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 600,
+          system: 'You are an Etsy listing image-prompt specialist for TCC (The Current Chapter). Call regenerate_image_prompt with your improved prompt.',
+          tools: [regenerateTool],
+          tool_choice: { type: 'tool', name: 'regenerate_image_prompt' },
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('[claude-process] regenerate_image_prompt upstream error:', response.status, errText);
+        return { statusCode: 502, body: JSON.stringify({ error: 'Regeneration failed upstream. Please try again.' }) };
+      }
+      const data = await response.json();
+      const toolUse = (data.content || []).find(block => block.type === 'tool_use' && block.name === 'regenerate_image_prompt');
+      if (!toolUse) {
+        console.error('[claude-process] regenerate_image_prompt: no tool_use block:', JSON.stringify(data));
+        return { statusCode: 502, body: JSON.stringify({ error: 'Regeneration did not return structured data. Please try again.' }) };
+      }
+      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parsed: toolUse.input }) };
+    } catch (err) {
+      return safeError(err, 'regenerate_image_prompt');
     }
   }
 
