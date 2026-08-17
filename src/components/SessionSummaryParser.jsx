@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection, useTimingNiches, useTimingSources, createTimingNiche, createTimingSource, createTimingGuidance, createTimingGuidanceNote, linkNicheToCollection } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
@@ -23,7 +23,7 @@ function cleanLine(line) {
     .trim();
 }
 
-function parseSummary(text, products, collectionObjects, sparks, researchSessions, trendSignals, visualTags) {
+function parseSummary(text, products, collectionObjects, sparks, researchSessions, trendSignals, visualTags, timingNiches, timingSources) {
   const result = {
     sparks: [],
     stageUpdates: [],
@@ -33,6 +33,7 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     concepts: [],
     trendSignals: [],
     visualLanguage: [],
+    timing: [],
     filed: [],
     session: null,
   };
@@ -77,7 +78,7 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
   }
 
   const SECTION_HEADERS = new Set([
-    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts', 'trend signals', 'visual language'
+    'sparks', 'stage updates', 'research', 'decisions (for codex)', 'decisions', 'notes', 'concepts', 'trend signals', 'visual language', 'timing intelligence'
   ]);
 
   const bulletLines = (block) =>
@@ -380,6 +381,124 @@ function parseSummary(text, products, collectionObjects, sparks, researchSession
     });
   }
 
+  // TIMING INTELLIGENCE — each item starts with "Niche:". Until this phase
+  // these blocks fell through to the catch-all below and landed in Workshop
+  // as untyped text; they now have a real structured destination.
+  //
+  // Two provenance concepts are deliberately kept apart here, because they
+  // are routinely different and conflating them would quietly restate an
+  // expert's claim as a fact observed by TCC:
+  //   Source:  who is making the timing claim (e.g. a POD niche calendar)
+  //   session: which paste carried it in (ChatGPT, threaded as session_id)
+  //
+  // Evidence type defaults to the WEAKEST value, 'hypothesis'. A ChatGPT
+  // sentence like "Hockey may be worth starting earlier this year" is a
+  // hypothesis; it is not the same kind of thing as "observed demand rose
+  // July 20", and it must never be promoted to one by omission. Strengthening
+  // it requires saying so explicitly in the paste.
+  const TIMING_EVIDENCE = { 'expert guidance': 'expert_guidance', expert: 'expert_guidance',
+    observation: 'observation', observed: 'observation', hypothesis: 'hypothesis' };
+  const TIMING_CLASSIFICATIONS = {
+    'low competition': 'low_competition', 'high competition': 'high_competition',
+    evergreen: 'evergreen', 'fast mover': 'fast_mover', 'emotion-based': 'emotion_based',
+    'emotion based': 'emotion_based',
+  };
+  const MONTH_LOOKUP = ['january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'];
+
+  const timingBlock = extractBlock('TIMING INTELLIGENCE');
+  const timingItems = timingBlock.split(/\n(?=[*-]?\s*Niche:)/i).filter(Boolean);
+  let timingIdx = 0;
+  for (const item of timingItems) {
+    const itemLines = item.trim().split('\n').map(l => l.trim().replace(/^[*-]\s+/, ''));
+    const get = (label) => {
+      const line = itemLines.find(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
+      return line ? line.slice(label.length + 1).trim() : '';
+    };
+    const getMultiline = (label) => {
+      const idx = itemLines.findIndex(l => l.toLowerCase().startsWith(label.toLowerCase() + ':'));
+      if (idx === -1) return '';
+      const firstLine = itemLines[idx].slice(label.length + 1).trim();
+      const rest = [];
+      for (let i = idx + 1; i < itemLines.length; i++) {
+        if (itemLines[i].match(/^[A-Z][a-zA-Z ]+:/)) break;
+        if (itemLines[i]) rest.push(itemLines[i]);
+      }
+      return [firstLine, ...rest].filter(Boolean).join(' ').trim();
+    };
+
+    const nicheText = get('Niche');
+    const timingText = get('Timing') || get('Guidance State');
+    if (!nicheText || !timingText) {
+      pushFiled('TIMING INTELLIGENCE', `Missing Niche or Timing — "${item.trim().slice(0, 60)}"`);
+      continue;
+    }
+
+    const sourceText = get('Source');
+    if (!sourceText) {
+      // Unattributed timing evidence is the one thing this phase's whole
+      // schema exists to prevent, so it hard-blocks rather than saving with a
+      // null source — the same reasoning CONCEPTS uses for an unresolvable
+      // collection.
+      pushFiled('TIMING INTELLIGENCE', `"${nicheText}" — no Source given. Timing evidence must say who is claiming it; add a "Source:" line and re-paste.`);
+      continue;
+    }
+
+    const monthText = get('Month');
+    let month = null;
+    if (monthText) {
+      const asNum = parseInt(monthText, 10);
+      if (Number.isFinite(asNum) && asNum >= 1 && asNum <= 12) month = asNum;
+      else {
+        const found = MONTH_LOOKUP.findIndex(m => m.startsWith(monthText.trim().toLowerCase().slice(0, 3)));
+        if (found >= 0) month = found + 1;
+      }
+    }
+    const dayRaw = parseInt(get('Day'), 10);
+    const day = Number.isFinite(dayRaw) && dayRaw >= 1 && dayRaw <= 31 ? dayRaw : null;
+
+    const nicheMatch = (timingNiches || []).find(n => n.name.toLowerCase() === nicheText.toLowerCase());
+    const sourceMatch = (timingSources || []).find(s => s.name.toLowerCase() === sourceText.toLowerCase());
+
+    // An unmatched Collection warns but does not block — the junction is
+    // optional, so the guidance is still worth saving without it (the same
+    // warn-don't-block treatment TREND SIGNALS gives its own collection).
+    const collectionText = get('Collection');
+    const collectionMatch = collectionText
+      ? collectionObjects?.find(c => c.name.toLowerCase() === collectionText.toLowerCase())
+      : null;
+
+    const evidenceRaw = (get('Evidence') || get('Source Type') || '').trim().toLowerCase();
+    const evidenceType = TIMING_EVIDENCE[evidenceRaw] || 'hypothesis';
+
+    const classRaw = (get('Classification') || '').trim().toLowerCase();
+
+    result.timing.push({
+      id: `timing-${timingIdx++}`,
+      nicheName: nicheText,
+      nicheId: nicheMatch?.id || null,
+      willCreateNiche: !nicheMatch,
+      sourceName: sourceText,
+      sourceId: sourceMatch?.id || null,
+      willCreateSource: !sourceMatch,
+      // The source's own word, stored verbatim and never translated into a
+      // TCC state at import time.
+      guidanceState: timingText.toUpperCase(),
+      month, day,
+      monthRaw: monthText,
+      datePrecision: day ? 'day' : (month ? 'month' : null),
+      classification: TIMING_CLASSIFICATIONS[classRaw] || null,
+      evidenceType,
+      evidenceWasExplicit: !!TIMING_EVIDENCE[evidenceRaw],
+      guidanceText: getMultiline('Guidance'),
+      collectionName: collectionMatch?.name || null,
+      collectionId: collectionMatch?.id || null,
+      collectionWarning: collectionText && !collectionMatch
+        ? `Collection "${collectionText}" not found — the guidance will save without a collection link.`
+        : null,
+    });
+  }
+
   // Any other all-caps section header — file its content for manual triage
   // rather than silently dropping or swallowing it into a neighboring
   // section. This is how object types with no schema yet (Trends, SEO
@@ -422,6 +541,8 @@ export default function SessionSummaryParser({ products, onDone }) {
   const { sessions: allResearchSessions } = useResearchSessions();
   const { signals: allTrendSignals } = useTrendSignals();
   const { tags: allVisualTags } = useVisualTags();
+  const { niches: allTimingNiches, refetch: refetchTimingNiches } = useTimingNiches();
+  const { sources: allTimingSources, refetch: refetchTimingSources } = useTimingSources('all');
   const [text, setText] = useState('');
   const [parsed, setParsed] = useState(null);
   const [checked, setChecked] = useState({});
@@ -430,10 +551,10 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   function handleParse() {
     if (!text.trim()) return;
-    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions, allTrendSignals, allVisualTags);
+    const result = parseSummary(text, products, collectionObjects, allSparks, allResearchSessions, allTrendSignals, allVisualTags, allTimingNiches, allTimingSources);
     setParsed(result);
     const nextChecked = {};
-    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'trendSignals', 'visualLanguage', 'filed']) {
+    for (const key of ['sparks', 'stageUpdates', 'research', 'decisions', 'notes', 'concepts', 'trendSignals', 'visualLanguage', 'timing', 'filed']) {
       for (const item of result[key]) nextChecked[item.id] = true;
     }
     setChecked(nextChecked);
@@ -447,7 +568,7 @@ export default function SessionSummaryParser({ products, onDone }) {
     setSaving(true);
     const now = nowISO();
     const today = nowISO().split('T')[0];
-    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, trendSignals: 0, visualLanguage: 0, filed: 0 };
+    const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, trendSignals: 0, visualLanguage: 0, timing: 0, filed: 0 };
     const errors = [];
     const stageDetails = [];
 
@@ -572,6 +693,68 @@ export default function SessionSummaryParser({ products, onDone }) {
       else counts.trendSignals++;
     }
 
+    // TIMING INTELLIGENCE — creates the niche and/or source when the preview
+    // said it would, then one append-only guidance row. Both provenance
+    // columns are written on every row and are never the same thing:
+    // source_id is who made the claim, import_session_id is the paste that
+    // carried it here.
+    for (const t of parsed.timing) {
+      if (!checked[t.id]) continue;
+
+      let nicheId = t.nicheId;
+      if (!nicheId) {
+        const { data, error } = await createTimingNiche(t.nicheName);
+        if (error || !data) { errors.push(`Timing "${t.nicheName}": ${error?.message || 'could not create niche'}`); continue; }
+        nicheId = data.id;
+      }
+
+      let sourceId = t.sourceId;
+      if (!sourceId) {
+        const { data, error } = await createTimingSource({
+          name: t.sourceName,
+          // A source first seen inside a paste is recorded as expert guidance
+          // only when the paste said so; otherwise it is what it actually is.
+          source_type: t.evidenceType === 'expert_guidance' ? 'expert_guidance' : 'chatgpt_session',
+        });
+        if (error || !data) { errors.push(`Timing "${t.nicheName}": ${error?.message || 'could not create source'}`); continue; }
+        sourceId = data.id;
+      }
+
+      const { data: guidanceRow, error: gErr } = await createTimingGuidance({
+        source_id: sourceId,
+        niche_id: nicheId,
+        source_niche_label: t.nicheName,
+        guidance_state: t.guidanceState,
+        month: t.month,
+        day: t.day,
+        date_precision: t.datePrecision,
+        classification: t.classification,
+        evidence_type: t.evidenceType,
+        guidance_text: t.guidanceText || null,
+        import_session_id: sessionId,
+      });
+      if (gErr || !guidanceRow) { errors.push(`Timing "${t.nicheName}": ${gErr?.message || 'could not save guidance'}`); continue; }
+      counts.timing++;
+
+      // Filed unclassified: which of the five guidance types a sentence
+      // belongs to is a human call, and a pasted note is no more
+      // self-classifying than a printed one.
+      if (t.guidanceText) {
+        await createTimingGuidanceNote(guidanceRow.id, null, t.guidanceText);
+      }
+
+      // Only when the paste named a collection AND it resolved — and even
+      // then it counts as deliberate because she approved this item in the
+      // preview before saving.
+      if (t.collectionId) {
+        const { error: linkErr } = await linkNicheToCollection(nicheId, t.collectionId);
+        if (linkErr && !linkErr.message?.toLowerCase().includes('duplicate')) {
+          errors.push(`Timing "${t.nicheName}" collection link: ${linkErr.message}`);
+        }
+      }
+    }
+    if (counts.timing) { await refetchTimingNiches(); await refetchTimingSources(); }
+
     for (const vl of parsed.visualLanguage) {
       if (!checked[vl.id]) continue;
       let itemError = null;
@@ -649,7 +832,7 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   if (saveResult) {
     const total = saveResult.sparks + saveResult.stages + saveResult.research + saveResult.decisions
-      + saveResult.concepts + saveResult.trendSignals + saveResult.visualLanguage + saveResult.filed + (saveResult.notesResult?.count || 0);
+      + saveResult.concepts + saveResult.trendSignals + saveResult.visualLanguage + saveResult.timing + saveResult.filed + (saveResult.notesResult?.count || 0);
     return (
       <div>
         <div className="section-label" style={{ marginBottom: 12 }}>Saved</div>
@@ -675,6 +858,9 @@ export default function SessionSummaryParser({ products, onDone }) {
           )}
           {saveResult.trendSignals > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.trendSignals} trend signal{saveResult.trendSignals !== 1 ? 's' : ''} added</div>
+          )}
+          {saveResult.timing > 0 && (
+            <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.timing} timing guidance entr{saveResult.timing !== 1 ? 'ies' : 'y'} recorded</div>
           )}
           {saveResult.visualLanguage > 0 && (
             <div style={{ fontSize: '0.85rem' }}>✓ {saveResult.visualLanguage} visual language update{saveResult.visualLanguage !== 1 ? 's' : ''} applied</div>
@@ -778,6 +964,17 @@ VISUAL LANGUAGE
 - Collection: Mom Chapter
   Tags: cottagecore, retro, dopamine dressing
   Notes: ... (optional)
+
+TIMING INTELLIGENCE
+- Niche: Hockey Mom
+  Source: Taylor POD Calendar
+  Timing: START
+  Month: September (optional)
+  Day: 15 (optional)
+  Evidence: expert guidance (optional — defaults to hypothesis)
+  Classification: low competition (optional)
+  Guidance: Begin research/design ahead of hockey season. (optional)
+  Collection: Hockey (optional)
 
 DECISIONS (for Codex)
 - Decision that needs to go into TCC OS
@@ -947,6 +1144,49 @@ function PreviewChecklist({ parsed, checked, toggle, products, saving, onSave, o
               }
             >
               {vl.tagNames.join(', ')}
+            </PreviewRow>
+          ))}
+        </PreviewSection>
+      )}
+
+      {parsed.timing.length > 0 && (
+        <PreviewSection title={`Timing Intelligence (${parsed.timing.length})`}>
+          {parsed.timing.map(t => (
+            <PreviewRow
+              key={t.id}
+              checked={!!checked[t.id]}
+              onToggle={() => toggle(t.id)}
+              annotation={
+                <>
+                  {/* Who is claiming it, always — the whole reason this
+                      section exists rather than the catch-all. */}
+                  <span style={{ color: '#2d6b3c' }}>→ source: &quot;{t.sourceName}&quot;</span>
+                  {t.willCreateSource && <span style={{ color: '#2d4270' }}> (will be created)</span>}
+                  <div style={{ color: t.willCreateNiche ? '#2d4270' : '#2d6b3c' }}>
+                    {t.willCreateNiche ? '+ will create new niche' : '✓ matches existing niche'}: {t.nicheName}
+                  </div>
+                  {/* Evidence strength is stated in the preview every time,
+                      because the default is the weakest value and that must be
+                      visible before she approves rather than discovered after. */}
+                  <div style={{ color: t.evidenceType === 'hypothesis' ? '#7a4a1e' : 'var(--charcoal-soft)' }}>
+                    evidence: {t.evidenceType.replace('_', ' ')}
+                    {!t.evidenceWasExplicit && ' (defaulted — add an "Evidence:" line to record this as an observation or expert guidance)'}
+                  </div>
+                  {t.monthRaw && !t.month && (
+                    <div style={{ color: '#7a4a1e' }}>⚠ month &quot;{t.monthRaw}&quot; not recognised — will save without a month</div>
+                  )}
+                  {t.collectionName && <div style={{ color: '#2d6b3c' }}>✓ will link to collection: {t.collectionName}</div>}
+                  {t.collectionWarning && <div style={{ color: '#7a4a1e' }}>⚠ {t.collectionWarning}</div>}
+                  {t.guidanceText && (
+                    <div style={{ color: 'var(--charcoal-soft)' }}>
+                      📝 guidance saved verbatim, filed unclassified for you to type in Knowledge → Timing
+                    </div>
+                  )}
+                </>
+              }
+            >
+              {t.nicheName} — <strong>{t.guidanceState}</strong>
+              {t.month ? ` · month ${t.month}${t.day ? ` day ${t.day}` : ''}` : ''}
             </PreviewRow>
           ))}
         </PreviewSection>
