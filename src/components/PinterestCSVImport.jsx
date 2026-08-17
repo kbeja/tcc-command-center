@@ -1,12 +1,36 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
+// RFC 4180-compliant CSV line parser — handles quoted fields containing
+// commas. Same local copy EtsyCSVImport.jsx already carries (neither file
+// exports its copy today, so each importer keeps its own).
+function parseCSVLine(line) {
+  const fields = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
 function parseCSV(text) {
   const lines = text.trim().split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase());
+  if (lines.length > 5001) throw new Error('CSV too large — max 5,000 rows');
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase());
   return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.replace(/"/g, '').trim());
+    const vals = parseCSVLine(line);
     const row = {};
     headers.forEach((h, i) => { row[h] = vals[i] || ''; });
     return row;
@@ -37,13 +61,21 @@ export default function PinterestCSVImport({ products, onImported }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
   const [lastImported, setLastImported] = useState(null);
+  const [csvError, setCsvError] = useState('');
 
   function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setCsvError('');
     const reader = new FileReader();
     reader.onload = ev => {
-      const rows = parseCSV(ev.target.result);
+      let rows;
+      try {
+        rows = parseCSV(ev.target.result);
+      } catch (err) {
+        setCsvError(err.message);
+        return;
+      }
       const liveProducts = products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing');
       const matched = [], unmatched = [];
 
@@ -118,6 +150,12 @@ export default function PinterestCSVImport({ products, onImported }) {
           <div style={{ fontSize: '0.82rem', fontWeight: 500, marginBottom: 4 }}>Import complete</div>
           <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>✓ {result.updated} listings updated with Pinterest data</div>
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setResult(null)}>Import another</button>
+        </div>
+      )}
+
+      {csvError && (
+        <div style={{ background: 'rgba(201,123,123,0.12)', border: '1px solid var(--alert)', borderRadius: 2, padding: '10px 14px', marginBottom: 16, fontSize: '0.78rem', color: 'var(--alert)' }}>
+          ⚠ {csvError}
         </div>
       )}
 

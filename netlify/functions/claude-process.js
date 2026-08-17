@@ -139,13 +139,14 @@ const LIMITS = {
   imageBase64: 6_000_000,
   keywords: 20_000,
   currentTitle: 200,
-  notes: 5_000,
   checkpointPayload: 20_000, // performance snapshot + generation snapshot + research evidence combined
   // Whole-request-body ceiling — must clear imageBase64 plus its JSON/text
   // overhead, or every image upload gets rejected here before the
   // type-specific (and more informative) imageBase64 check ever runs.
   body: 8_000_000,
   content: 50_000,
+  newKeywordsCount: 200,
+  keywordText: 200,
 };
 
 function safeError(err, label) {
@@ -160,7 +161,7 @@ function stripTrailingCommas(jsonText) {
   return jsonText.replace(/,(\s*[}\]])/g, '$1');
 }
 
-exports.handler = async (event) => {
+async function handleRequest(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
@@ -312,6 +313,17 @@ exports.handler = async (event) => {
     if (!currentPrimaryIntent) return { statusCode: 400, body: JSON.stringify({ error: 'No current Primary Search Intent provided' }) };
     if (typeof currentPrimaryIntent !== 'string' || currentPrimaryIntent.length > LIMITS.currentTitle) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Primary Search Intent too long' }) };
+    }
+    if (newKeywords !== undefined) {
+      if (!Array.isArray(newKeywords)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'newKeywords must be an array' }) };
+      }
+      if (newKeywords.length > LIMITS.newKeywordsCount) {
+        return { statusCode: 400, body: JSON.stringify({ error: `Too many keywords (max ${LIMITS.newKeywordsCount})` }) };
+      }
+      if (newKeywords.some(k => !k || typeof k.keyword !== 'string' || k.keyword.length > LIMITS.keywordText)) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'Invalid keyword entry' }) };
+      }
     }
     const kwList = (newKeywords || []).map(k =>
       `  - "${k.keyword}"${k.volume != null ? ` (vol ${k.volume}` : ''}${k.competition != null ? `, comp ${k.competition}` : ''}${k.volume != null ? ')' : ''}`
@@ -567,4 +579,18 @@ Using ONLY the real data above, recommend exactly one of: no_action_needed (perf
   } catch (err) {
     return safeError(err, type);
   }
+}
+
+// SEC-004 — pin Access-Control-Allow-Origin to the real deployed origin
+// (Netlify's own built-in URL env var — always the site's canonical
+// production origin, and correctly resolves to the local dev server's own
+// origin under `netlify dev` too) rather than leaving it unset or `*`.
+// Wrapping the handler once here, instead of touching every one of this
+// file's many return statements individually, guarantees every response
+// path gets the header with no risk of missing a branch.
+const ORIGIN = process.env.URL || '';
+
+exports.handler = async (event) => {
+  const result = await handleRequest(event);
+  return { ...result, headers: { ...(result.headers || {}), 'Access-Control-Allow-Origin': ORIGIN } };
 };

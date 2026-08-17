@@ -204,14 +204,24 @@ const BUILD_LISTING_TOOL = {
   },
 };
 
-const LIMITS = { imageBase64: 6_000_000, context: 60_000 };
+const LIMITS = {
+  imageBase64: 6_000_000,
+  context: 60_000, // whole-prompt backstop; per-field caps below stop any one field from crowding out the rest
+  collectionContext: 10_000,
+  conceptContext: 10_000,
+  imageAnalysis: 10_000,
+  styleGuide: 15_000,
+  brandVoice: 5_000,
+  photoStandards: 5_000,
+};
+const CONTEXT_TEXT_FIELDS = ['collectionContext', 'conceptContext', 'imageAnalysis', 'styleGuide', 'brandVoice', 'photoStandards'];
 
 function safeError(err, label) {
   console.error(`[generate-listing-v2] ${label}:`, err);
   return { statusCode: 500, body: JSON.stringify({ error: 'Listing generation failed. Please try again.' }) };
 }
 
-exports.handler = async (event) => {
+async function handleRequest(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
@@ -246,6 +256,12 @@ exports.handler = async (event) => {
   if (!context) return { statusCode: 400, body: JSON.stringify({ error: 'No context provided' }) };
   if (imageBase64 && imageBase64.length > LIMITS.imageBase64) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Image too large (max 6MB)' }) };
+  }
+  for (const field of CONTEXT_TEXT_FIELDS) {
+    const val = context[field];
+    if (val != null && typeof val === 'string' && val.length > LIMITS[field]) {
+      return { statusCode: 400, body: JSON.stringify({ error: `${field} too large` }) };
+    }
   }
 
   try {
@@ -304,4 +320,13 @@ exports.handler = async (event) => {
   } catch (err) {
     return safeError(err, 'build_listing');
   }
+}
+
+// SEC-004 — see claude-process.js's identical wrapper comment for the full
+// reasoning; same pattern applied here.
+const ORIGIN = process.env.URL || '';
+
+exports.handler = async (event) => {
+  const result = await handleRequest(event);
+  return { ...result, headers: { ...(result.headers || {}), 'Access-Control-Allow-Origin': ORIGIN } };
 };

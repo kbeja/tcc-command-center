@@ -161,7 +161,7 @@ function safeError(err, label) {
   return { statusCode: 500, body: JSON.stringify({ error: 'Visual analysis failed. Please try again.' }) };
 }
 
-exports.handler = async (event) => {
+async function handleRequest(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
@@ -254,4 +254,13 @@ exports.handler = async (event) => {
   } catch (err) {
     return safeError(err, 'record_visual_profile');
   }
+}
+
+// SEC-004 — see claude-process.js's identical wrapper comment for the full
+// reasoning; same pattern applied here.
+const ORIGIN = process.env.URL || '';
+
+exports.handler = async (event) => {
+  const result = await handleRequest(event);
+  return { ...result, headers: { ...(result.headers || {}), 'Access-Control-Allow-Origin': ORIGIN } };
 };

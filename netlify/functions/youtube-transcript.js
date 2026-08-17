@@ -1,8 +1,24 @@
 const { YoutubeTranscript } = require('youtube-transcript');
+const { checkRateLimit } = require('../lib/rateLimit.js');
 
-exports.handler = async (event) => {
+async function handleRequest(event) {
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method not allowed' };
+  }
+
+  if (process.env.FUNCTION_SECRET) {
+    if (event.headers['x-function-secret'] !== process.env.FUNCTION_SECRET) {
+      return { statusCode: 403, body: JSON.stringify({ error: 'Unauthorized' }) };
+    }
+  }
+
+  const rl = await checkRateLimit(event, 'youtube-transcript');
+  if (!rl.allowed) {
+    return {
+      statusCode: 429,
+      headers: rl.retryAfterSeconds ? { 'Retry-After': String(rl.retryAfterSeconds) } : undefined,
+      body: JSON.stringify({ error: 'Too many requests. Please wait a moment and try again.' }),
+    };
   }
 
   const { videoId } = event.queryStringParameters || {};
@@ -29,4 +45,13 @@ exports.handler = async (event) => {
   } catch {
     return { statusCode: 404, body: 'No transcript available for this video.' };
   }
+}
+
+// SEC-004 — see claude-process.js's identical wrapper comment for the full
+// reasoning; same pattern applied here.
+const ORIGIN = process.env.URL || '';
+
+exports.handler = async (event) => {
+  const result = await handleRequest(event);
+  return { ...result, headers: { ...(result.headers || {}), 'Access-Control-Allow-Origin': ORIGIN } };
 };

@@ -23,7 +23,16 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_A
 // synchronously, which would break every invocation until redeploy).
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-exports.handler = async (event) => {
+// SEC-006 — same safeError() pattern claude-process.js/generate-listing-v2.js/
+// analyze-visual.js already use: log the real error server-side, never echo
+// a raw Supabase error.message (internal table/column/constraint names) back
+// to the client.
+function safeError(err, label) {
+  console.error(`[mobile-capture] ${label}:`, err);
+  return { statusCode: 500, body: JSON.stringify({ error: 'Request failed. Please try again.' }) };
+}
+
+async function handleRequest(event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
@@ -76,7 +85,7 @@ exports.handler = async (event) => {
       created_at: now,
       updated_at: now,
     }).select().single();
-    if (error) return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+    if (error) return safeError(error, 'sparks insert');
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spark: data }) };
   }
 
@@ -100,7 +109,7 @@ exports.handler = async (event) => {
       status: 'pending',
       created_at: now,
     }).select().single();
-    if (error) return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
+    if (error) return safeError(error, 'workshop_items insert');
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: data }) };
   }
 
@@ -134,7 +143,7 @@ exports.handler = async (event) => {
       upsert: false,          // omitting this would store the object with the
     });                       // wrong content-type and could break rendering later
     if (uploadError) {
-      return { statusCode: 500, body: JSON.stringify({ error: uploadError.message }) };
+      return safeError(uploadError, 'storage upload');
     }
 
     const { data, error: dbError } = await supabase.from('concept_assets').insert({
@@ -152,11 +161,20 @@ exports.handler = async (event) => {
       // dangling -- the extension's own saveMoodBoardImage doesn't do this
       // today, a deliberate small improvement here, not a silent deviation.
       await supabase.storage.from('design-vault').remove([path]);
-      return { statusCode: 500, body: JSON.stringify({ error: dbError.message }) };
+      return safeError(dbError, 'concept_assets insert');
     }
 
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asset: data }) };
   }
 
   return { statusCode: 400, body: JSON.stringify({ error: `Unknown type: ${type}` }) };
+}
+
+// SEC-004 — see claude-process.js's identical wrapper comment for the full
+// reasoning; same pattern applied here.
+const ORIGIN = process.env.URL || '';
+
+exports.handler = async (event) => {
+  const result = await handleRequest(event);
+  return { ...result, headers: { ...(result.headers || {}), 'Access-Control-Allow-Origin': ORIGIN } };
 };

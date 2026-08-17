@@ -74,14 +74,22 @@ export default function EtsyCSVImport({ products, onImported }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
   const [lastImported, setLastImported] = useState(null);
+  const [csvError, setCsvError] = useState('');
 
   function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setCsvError('');
     const reader = new FileReader();
     reader.onload = ev => {
       const text = ev.target.result;
-      const rows = parseEtsyCSV(text);
+      let rows;
+      try {
+        rows = parseEtsyCSV(text);
+      } catch (err) {
+        setCsvError(err.message);
+        return;
+      }
       const liveProducts = products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing');
 
       const matched = [], unmatched = [];
@@ -167,6 +175,12 @@ export default function EtsyCSVImport({ products, onImported }) {
           <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>✓ {result.updated} listings updated</div>
           {result.unmatched > 0 && <div style={{ fontSize: '0.78rem', color: 'var(--warning)' }}>⚠ {result.unmatched} could not be matched</div>}
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setResult(null)}>Import another</button>
+        </div>
+      )}
+
+      {csvError && (
+        <div style={{ background: 'rgba(201,123,123,0.12)', border: '1px solid var(--alert)', borderRadius: 2, padding: '10px 14px', marginBottom: 16, fontSize: '0.78rem', color: 'var(--alert)' }}>
+          ⚠ {csvError}
         </div>
       )}
 
