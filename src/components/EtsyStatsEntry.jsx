@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { nowISO } from '../lib/utils';
 
 function fmt$(n) {
   if (!n && n !== 0) return '—';
@@ -166,7 +167,7 @@ export default function EtsyStatsEntry() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [periodType, setPeriodType] = useState('ytd');
-  const [snapshotDate, setSnapshotDate] = useState(new Date().toISOString().split('T')[0]);
+  const [snapshotDate, setSnapshotDate] = useState(nowISO().split('T')[0]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 

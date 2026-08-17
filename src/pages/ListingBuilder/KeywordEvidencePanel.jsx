@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { appendProductNote } from '../../lib/hooks';
 import { hasUnsavedEdits } from './generation';
 import { ConfirmDiscardRow } from './shared';
+import { nowISO } from '../../lib/utils';
 
 // "New Keyword Evidence" (Listing Intelligence Milestone A) — replaces the
 // old "apply to title & tags" patch flow. Deliberately never proposes a
@@ -101,7 +102,7 @@ export default function KeywordEvidencePanel({
     // Same shape as SaveFlagsButton's note block — dated, explicit that the
     // listing itself was NOT changed by this review.
     const recordText = [
-      `--- New Keyword Evidence Review (${new Date().toISOString().slice(0, 10)}) ---`,
+      `--- New Keyword Evidence Review (${nowISO().slice(0, 10)}) ---`,
       `Recommendation: ${RECOMMENDATION_LABEL[result.recommendation] || result.recommendation}`,
       result.reasoning,
       ...(result.notable_keywords || []).map(k => `- ${k.keyword}: ${k.note}`),

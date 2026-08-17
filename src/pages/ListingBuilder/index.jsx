@@ -9,6 +9,7 @@ import {
 import { resizeImageForUpload } from '../../lib/image';
 import { nicheStyleGuides } from '../../data/collections';
 import { STAGES } from '../../data/stages';
+import { nowISO } from '../../lib/utils';
 
 import { GENERATION_VERSION, BRAND_VOICE_FALLBACK } from './constants';
 import { buildGenerationContext, asArray, validateGeneratedListing, buildOutputFromGeneration, extractHistoryDisplay } from './generation';
@@ -252,7 +253,7 @@ export default function ListingBuilder() {
       editTitle,
       editTags,
       selectedSessionIds: [...selectedSessionIds],
-      savedAt: new Date().toISOString(),
+      savedAt: nowISO(),
     };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
   }, [productId, form, imageAnalysis, output, editTitle, editTags, selectedSessionIds]);
@@ -646,7 +647,7 @@ export default function ListingBuilder() {
       live_title:        editTitle || null,
       live_tags:         editTags.filter(Boolean).join(', ') || null,
       concept_id:        linkedConceptId || null,
-      stage_updated_at:  new Date().toISOString(),
+      stage_updated_at:  nowISO(),
       ...productTruthUpdates(),
       ...(Object.keys(editDesc).length > 0 ? { generated_description: editDesc } : {}),
       ...(editPrompts.length > 0 ? { generated_image_prompts: editPrompts } : {}),

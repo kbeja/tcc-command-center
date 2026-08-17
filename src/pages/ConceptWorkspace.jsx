@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/image';
+import { nowISO } from '../lib/utils';
 import {
   useConcept,
   useCollections,
@@ -198,7 +199,7 @@ async function uploadAsset(conceptId, conceptCode, file, assetType = 'reference_
       mime_type: file.type,
       size_bytes: file.size,
       label: file.name || 'Pasted image',
-      created_at: new Date().toISOString(),
+      created_at: nowISO(),
     })
     .select()
     .single();
@@ -243,7 +244,7 @@ async function copyAssetToMoodBoard(conceptId, conceptCode, asset) {
       mime_type: asset.mime_type,
       size_bytes: asset.size_bytes,
       label: asset.label,
-      created_at: new Date().toISOString(),
+      created_at: nowISO(),
     })
     .select()
     .single();

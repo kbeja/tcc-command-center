@@ -8,6 +8,7 @@ import {
   runCodexMigrationIfNeeded,
 } from '../../lib/hooks';
 import { processWithClaude } from '../../lib/claude';
+import { nowISO } from '../../lib/utils';
 import ProductTemplatesTab from './ProductTemplatesTab';
 import StorePoliciesTab from './StorePoliciesTab';
 
@@ -61,7 +62,7 @@ function InboxTab({ onNewUpdate }) {
       const { parsed, raw } = await processWithClaude(item.input_type, item.content);
       const result = parsed || { raw_only: true, raw };
       setProcessResult(prev => ({ ...prev, [item.id]: result }));
-      await updateInboxItem(item.id, { status: 'processed', processed_at: new Date().toISOString() });
+      await updateInboxItem(item.id, { status: 'processed', processed_at: nowISO() });
 
       // Create a pending update for every processed item so it appears in Updates tab
       const itemSource = item.url_type || item.input_type;
@@ -333,7 +334,7 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
       // Review-only item — mark approved (not rejected)
       const { error } = await supabase.from('pending_updates').update({
         status: 'approved',
-        resolved_at: new Date().toISOString(),
+        resolved_at: nowISO(),
       }).eq('id', update.id);
       if (error) {
         setApproveErrors(prev => ({ ...prev, [update.id]: error.message }));
@@ -524,7 +525,7 @@ function PlaybooksTab({ playbooks, refetch }) {
 
 const BLANK_FORM = {
   title: '', hypothesis: '', baseline: '', metric: '',
-  collection: '', start_date: new Date().toISOString().split('T')[0],
+  collection: '', start_date: nowISO().split('T')[0],
   timeline_days: 14, reference_url: '',
 };
 
@@ -565,7 +566,7 @@ function ExperimentsTab() {
       reference_url: form.reference_url || null,
       checkpoints: [],
     });
-    setForm({ ...BLANK_FORM, start_date: new Date().toISOString().split('T')[0] });
+    setForm({ ...BLANK_FORM, start_date: nowISO().split('T')[0] });
     setAdding(false);
     setSaving(false);
     refetch();
@@ -578,7 +579,7 @@ function ExperimentsTab() {
     const exp = experiments.find(e => e.id === expId);
     const existing = Array.isArray(exp.checkpoints) ? exp.checkpoints : [];
     await updateExperiment(expId, {
-      checkpoints: [...existing, { note, logged_at: new Date().toISOString().split('T')[0] }],
+      checkpoints: [...existing, { note, logged_at: nowISO().split('T')[0] }],
     });
     setCheckpointText(prev => ({ ...prev, [expId]: '' }));
     setSavingCp(prev => { const n = { ...prev }; delete n[expId]; return n; });

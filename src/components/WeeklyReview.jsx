@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { nowISO } from '../lib/utils';
 
 function parseStats(text) {
   const result = { visits: null, views: null, orders: null, revenue: null, conversion: null };
@@ -41,7 +42,7 @@ export default function WeeklyReview({ onApplied }) {
 
   async function handleApply() {
     setApplying(true);
-    const now = new Date().toISOString();
+    const now = nowISO();
     // Store as shop-level stats — update all live products proportionally
     // For now, log to import_history and surface in overview
     await supabase.from('import_history').insert({

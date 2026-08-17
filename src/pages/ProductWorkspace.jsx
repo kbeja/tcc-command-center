@@ -12,6 +12,7 @@ import CollectionKnowledge from '../components/CollectionKnowledge';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import ReviewCheckpoints from '../components/ReviewCheckpoints';
+import { nowISO } from '../lib/utils';
 
 // ─── Stage Tracker (2-col grid, no overflow) ─────────────────────────────────
 
@@ -127,7 +128,7 @@ function LiveStats({ product, onSave }) {
   async function handleSave() {
     const ok = await onSave({
       went_live_at: wentLive || null,
-      stats_updated_at: new Date().toISOString(),
+      stats_updated_at: nowISO(),
       mo_sales: parseInt(moSales) || 0,
       mo_revenue: parseFloat(moRevenue) || 0,
       total_sales: parseInt(totalSales) || 0,
@@ -722,7 +723,7 @@ function KeywordAuditSection({ product, sessions, generations, collectionObj, li
 
   async function handleAuditCommit() {
     setAuditSaving(true);
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = nowISO().split('T')[0];
     await createResearchSession(
       {
         collection: product.collection,
@@ -1021,7 +1022,7 @@ export default function ProductWorkspace() {
   }
 
   async function handleStageUpdate(stage) {
-    const { error } = await updateProduct(id, { stage, stage_updated_at: new Date().toISOString() });
+    const { error } = await updateProduct(id, { stage, stage_updated_at: nowISO() });
     if (error) { setSaveError(error.message); return; }
     setSaveError('');
     setStageSaved(true);

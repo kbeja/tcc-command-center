@@ -3,6 +3,7 @@ import { createSpark, createWorkshopItem, createResearchSession, createConcept, 
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 import { STAGES } from '../data/stages';
+import { nowISO } from '../lib/utils';
 import { parseConceptFields, looseTextMatch } from './ConceptChatImport';
 
 function autoColor(score, competition) {
@@ -443,8 +444,8 @@ export default function SessionSummaryParser({ products, onDone }) {
 
   async function handleSaveApproved() {
     setSaving(true);
-    const now = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
+    const now = nowISO();
+    const today = nowISO().split('T')[0];
     const counts = { sparks: 0, stages: 0, research: 0, decisions: 0, concepts: 0, trendSignals: 0, visualLanguage: 0, filed: 0 };
     const errors = [];
     const stageDetails = [];

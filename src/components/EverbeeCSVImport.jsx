@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { createResearchSession, useChapters } from '../lib/hooks';
 import { assignBucketsToList, isLowQualityKeyword } from '../lib/keywords.jsx';
+import { nowISO } from '../lib/utils';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
   async function handleImport() {
     if (!preview || preview.error) return;
     setImporting(true);
-    const now = new Date().toISOString();
+    const now = nowISO();
 
     try {
       if (shape === 'keyword') {

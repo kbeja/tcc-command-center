@@ -7,6 +7,7 @@ import {
   buildKeywordPool, deriveProductRelevance, computeGapAnalysis,
   computeListingSEOStatus, rollupStatus, evaluateListingSEO,
 } from './listingSEO.js';
+import { nowISO } from './utils.js';
 
 function kw(overrides) {
   return {
@@ -193,7 +194,7 @@ describe('historical_context does not independently force Weak', () => {
     // only thing that differs between the two calls below is whether the
     // generation record happens to carry a critical historical gap.
     const gapAnalysis = computeGapAnalysis(pool, relevance, { title: 'Hockey Shirt', tags: '', productFormat: 't-shirt' });
-    const args = { pool, relevance, gapAnalysis, hasLiveListing: true, lastVerified: new Date().toISOString() };
+    const args = { pool, relevance, gapAnalysis, hasLiveListing: true, lastVerified: nowISO() };
 
     const clean = computeListingSEOStatus({ ...args, latestGeneration: generationWithData });
     const withCriticalGap = computeListingSEOStatus({
@@ -216,7 +217,7 @@ describe('evaluateListingSEO', () => {
     const result = evaluateListingSEO({
       sessions, isSeasonalProduct: false, latestGeneration: generationWithData,
       title: 'Hockey Shirt', tags: '', productFormat: 't-shirt', hasLiveListing: true,
-      lastVerified: new Date().toISOString(),
+      lastVerified: nowISO(),
     });
     expect(result.pool.length).toBeGreaterThan(0);
     expect(result.relevance.hasRelevanceData).toBe(true);

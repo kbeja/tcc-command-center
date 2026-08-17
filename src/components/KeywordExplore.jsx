@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { createCollection, createResearchSession, useChapters } from '../lib/hooks';
+import { nowISO } from '../lib/utils';
 
 // ─── Column detection ─────────────────────────────────────────────────────────
 
@@ -585,7 +586,7 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
     const { error: sessionErr } = await createResearchSession(
       {
         collection: collName || null,
-        date: new Date().toISOString().slice(0, 10),
+        date: nowISO().slice(0, 10),
         source: sourceLabel || 'Keyword Explore',
         status: 'Complete',
         notes: [

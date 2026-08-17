@@ -4,6 +4,7 @@ import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObje
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
 import ConceptChatImport from '../components/ConceptChatImport';
+import { nowISO } from '../lib/utils';
 
 export default function Sparks() {
   const [searchParams] = useSearchParams();
@@ -68,7 +69,7 @@ export default function Sparks() {
   async function bulkAction(action) {
     const ids = [...selected];
     if (!ids.length) return;
-    const now = new Date().toISOString();
+    const now = nowISO();
     const count = ids.length;
 
     if (action === 'archive') {

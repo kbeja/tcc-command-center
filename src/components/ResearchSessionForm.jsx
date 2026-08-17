@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createResearchSession, useCollections, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
+import { nowISO } from '../lib/utils';
 
 const SOURCES = ['Everbee', 'eRank', 'Etsy Search', 'Etsy Marketplace Insights', 'Pinterest', 'Other'];
 const STATUSES = ['Complete', 'Needs More Data', 'Gaps Identified'];
@@ -151,7 +152,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   const [newCollectionLaunch, setNewCollectionLaunch] = useState('');
   const [parentNiche, setParentNiche] = useState(defaultParentNiche || '');
   const [niche, setNiche] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(nowISO().split('T')[0]);
   const [source, setSource] = useState('Everbee');
   const [status, setStatus] = useState('Complete');
   const [notes, setNotes] = useState('');
@@ -181,7 +182,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         status: autoColor(score, competition, statusText),
         clicks: clicks || '',
         ctr: ctr || '',
-        updated_at: new Date().toISOString(),
+        updated_at: nowISO(),
       });
     }
     if (parsed.length) {

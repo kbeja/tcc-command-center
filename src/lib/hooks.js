@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import { daysBetween, today } from '../data/seasons';
 import { interpretKeyword } from './keywordIntelligence';
 import { analyzeVisual } from './claude';
+import { nowISO } from './utils';
 
 // ─── Products ───────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ export function useProduct(id) {
 export async function updateProduct(id, updates) {
   const { data, error } = await supabase
     .from('products')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -78,7 +79,7 @@ export async function deleteProduct(id) {
 }
 
 export async function createProduct(product) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { data, error } = await supabase
     .from('products')
     .insert({ ...product, created_at: now, updated_at: now })
@@ -224,7 +225,7 @@ export async function createProductTemplate(fields) {
 // against Printify, and that distinction is the entire point of the
 // provenance block. Only markProductTemplateVerified() sets it.
 export async function updateProductTemplate(id, updates) {
-  return supabase.from('product_templates').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
+  return supabase.from('product_templates').update({ ...updates, updated_at: nowISO() }).eq('id', id);
 }
 
 export async function archiveProductTemplate(id) {
@@ -233,9 +234,9 @@ export async function archiveProductTemplate(id) {
 
 export async function markProductTemplateVerified(id, note) {
   return supabase.from('product_templates').update({
-    last_verified: new Date().toISOString().slice(0, 10),
+    last_verified: nowISO().slice(0, 10),
     verification_note: note || null,
-    updated_at: new Date().toISOString(),
+    updated_at: nowISO(),
   }).eq('id', id);
 }
 
@@ -260,7 +261,7 @@ export async function createStorePolicy(fields) {
 }
 
 export async function updateStorePolicy(id, updates) {
-  return supabase.from('store_policies').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
+  return supabase.from('store_policies').update({ ...updates, updated_at: nowISO() }).eq('id', id);
 }
 
 export async function archiveStorePolicy(id) {
@@ -269,9 +270,9 @@ export async function archiveStorePolicy(id) {
 
 export async function markStorePolicyVerified(id, note) {
   return supabase.from('store_policies').update({
-    last_verified: new Date().toISOString().slice(0, 10),
+    last_verified: nowISO().slice(0, 10),
     verification_note: note || null,
-    updated_at: new Date().toISOString(),
+    updated_at: nowISO(),
   }).eq('id', id);
 }
 
@@ -514,7 +515,7 @@ export async function updateKeyword(id, updates) {
 // already reads collection/date/source off the `session` param rather than
 // the inserted row, so this needed no other changes to the function body.
 export async function createResearchSession(session, keywords) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const todayStr = now.split('T')[0];
 
   let s;
@@ -745,7 +746,7 @@ export function useSparks() {
 }
 
 export async function createSpark(content, extra = {}) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { collectionTag, idea_type, ...rest } = extra;
   const { data, error } = await supabase
     .from('sparks')
@@ -766,7 +767,7 @@ export async function createSpark(content, extra = {}) {
 export async function updateSpark(id, updates) {
   const { data, error } = await supabase
     .from('sparks')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -774,7 +775,7 @@ export async function updateSpark(id, updates) {
 }
 
 export async function archiveSpark(id) {
-  return updateSpark(id, { archived_at: new Date().toISOString() });
+  return updateSpark(id, { archived_at: nowISO() });
 }
 
 export function useSpark(id) {
@@ -856,7 +857,7 @@ export function useCollectionObjects() {
 export async function updateCollection(id, updates) {
   const { data, error } = await supabase
     .from('collections')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -866,7 +867,7 @@ export async function updateCollection(id, updates) {
 export async function createCollection(name, extra = {}) {
   const { data, error } = await supabase
     .from('collections')
-    .insert({ name, status: 'active', priority: 'supporting', ...extra, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .insert({ name, status: 'active', priority: 'supporting', ...extra, created_at: nowISO(), updated_at: nowISO() })
     .select()
     .single();
   return { data, error };
@@ -897,7 +898,7 @@ export function useWorkshopItems() {
 }
 
 export async function createWorkshopItem(item) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { data, error } = await supabase
     .from('workshop_items')
     .insert({ ...item, status: 'pending', created_at: now })
@@ -909,7 +910,7 @@ export async function createWorkshopItem(item) {
 export async function resolveWorkshopItem(id, status = 'reviewed') {
   const { data, error } = await supabase
     .from('workshop_items')
-    .update({ status, reviewed_at: new Date().toISOString() })
+    .update({ status, reviewed_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -936,7 +937,7 @@ export function useCodexEntries() {
 }
 
 export async function createCodexEntry(entry) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { data, error } = await supabase
     .from('codex_entries')
     .insert({ ...entry, created_at: now, updated_at: now })
@@ -948,7 +949,7 @@ export async function createCodexEntry(entry) {
 export async function updateCodexEntry(id, updates) {
   const { data, error } = await supabase
     .from('codex_entries')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -979,7 +980,7 @@ export function useTrendSignals() {
 }
 
 export async function createTrendSignal(fields) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { data, error } = await supabase
     .from('trend_signals')
     .insert({ ...fields, created_at: now, updated_at: now })
@@ -991,7 +992,7 @@ export async function createTrendSignal(fields) {
 export async function updateTrendSignal(id, updates) {
   const { data, error } = await supabase
     .from('trend_signals')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -1272,7 +1273,7 @@ export function usePlaybooks() {
 export async function updatePlaybookSection(id, body) {
   return supabase
     .from('playbook_sections')
-    .update({ body, updated_at: new Date().toISOString() })
+    .update({ body, updated_at: nowISO() })
     .eq('id', id);
 }
 
@@ -1280,7 +1281,7 @@ export async function incrementPlaybookVersion(playbookId) {
   const { data } = await supabase.from('playbooks').select('current_version').eq('id', playbookId).single();
   if (!data) return { error: new Error(`Playbook ${playbookId} not found`) };
   const next = data.current_version + 1;
-  return supabase.from('playbooks').update({ current_version: next, updated_at: new Date().toISOString() }).eq('id', playbookId);
+  return supabase.from('playbooks').update({ current_version: next, updated_at: nowISO() }).eq('id', playbookId);
 }
 
 export function usePendingUpdates() {
@@ -1353,26 +1354,26 @@ export async function approvePendingUpdate(update, newBody) {
       body: section.body,
       version: section.version,
       changed_by: 'user',
-      changed_at: new Date().toISOString(),
+      changed_at: nowISO(),
     }]);
     await supabase.from('playbook_sections').update({
       body: newBody || update.text,
       version: (section.version || 1) + 1,
-      updated_at: new Date().toISOString(),
+      updated_at: nowISO(),
     }).eq('id', section.id);
     await incrementPlaybookVersion(resolvedPlaybookId);
   }
 
   return supabase.from('pending_updates').update({
     status: 'approved',
-    resolved_at: new Date().toISOString(),
+    resolved_at: nowISO(),
   }).eq('id', update.id);
 }
 
 export async function rejectPendingUpdate(id) {
   return supabase.from('pending_updates').update({
     status: 'rejected',
-    resolved_at: new Date().toISOString(),
+    resolved_at: nowISO(),
   }).eq('id', id);
 }
 
@@ -1396,7 +1397,7 @@ export async function createExperiment(fields) {
   return supabase.from('experiments').insert([{
     ...fields,
     status: 'running',
-    started_at: new Date().toISOString(),
+    started_at: nowISO(),
   }]).select().single();
 }
 
@@ -1409,7 +1410,7 @@ export async function closeExperiment(id, result, resultNotes) {
     status: result,
     result,
     result_notes: resultNotes,
-    closed_at: new Date().toISOString(),
+    closed_at: nowISO(),
   }).eq('id', id);
 }
 
@@ -1453,7 +1454,7 @@ export async function autoHotSparksForSignal(collection) {
     .update({
       temperature: 'hot',
       trend_signal_reason: 'Trend signal: Pursue',
-      updated_at: new Date().toISOString(),
+      updated_at: nowISO(),
     })
     .in('id', sparks.map(s => s.id));
 }
@@ -1541,7 +1542,7 @@ export function useConceptsBySpark() {
 }
 
 export async function createConcept(fields) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { data, error } = await supabase
     .from('concepts')
     .insert({ ...fields, created_at: now, updated_at: now })
@@ -1553,7 +1554,7 @@ export async function createConcept(fields) {
 export async function updateConcept(id, updates) {
   const { data, error } = await supabase
     .from('concepts')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -1567,7 +1568,7 @@ export async function archiveConcept(id) {
 // ─── Design Intelligence — Concept Outputs ──────────────────────────────────
 
 export async function createConceptOutput(fields) {
-  const now = new Date().toISOString();
+  const now = nowISO();
   const { data, error } = await supabase
     .from('concept_outputs')
     .insert({ ...fields, created_at: now, updated_at: now })
@@ -1584,7 +1585,7 @@ export async function setCurrentOutput(conceptId, outputType, newOutputId) {
     .eq('output_type', outputType);
   const { data, error } = await supabase
     .from('concept_outputs')
-    .update({ is_current: true, updated_at: new Date().toISOString() })
+    .update({ is_current: true, updated_at: nowISO() })
     .eq('id', newOutputId)
     .select()
     .single();
@@ -1594,7 +1595,7 @@ export async function setCurrentOutput(conceptId, outputType, newOutputId) {
 export async function updateConceptOutput(id, updates) {
   const { data, error } = await supabase
     .from('concept_outputs')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: nowISO() })
     .eq('id', id)
     .select()
     .single();
@@ -1637,7 +1638,7 @@ export async function generateConceptCode(collectionName) {
 export async function createImportSession(fields) {
   const { data, error } = await supabase
     .from('import_sessions')
-    .insert({ ...fields, created_at: new Date().toISOString() })
+    .insert({ ...fields, created_at: nowISO() })
     .select()
     .single();
   return { data, error };

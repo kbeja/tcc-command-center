@@ -5,6 +5,8 @@ export const seasonalWindows = [
   { name: "Mother's Day", opens: '2027-04-01', peaks: '2027-05-08', collections: ['Mom Chapter'] },
 ];
 
+import { nowISO } from '../lib/utils';
+
 export function daysBetween(a, b) {
   const da = new Date(a);
   const db = new Date(b);
@@ -12,7 +14,7 @@ export function daysBetween(a, b) {
 }
 
 export function today() {
-  return new Date().toISOString().split('T')[0];
+  return nowISO().split('T')[0];
 }
 
 export function getNextSaturday(fromDate = new Date()) {

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { nowISO } from '../lib/utils';
 
 // RFC 4180-compliant CSV line parser — handles quoted fields containing
 // commas. Same local copy EtsyCSVImport.jsx already carries (neither file
@@ -100,7 +101,7 @@ export default function PinterestCSVImport({ products, onImported }) {
   async function handleImport() {
     if (!parsed) return;
     setImporting(true);
-    const now = new Date().toISOString();
+    const now = nowISO();
     let updated = 0;
 
     const toUpdate = [...parsed.matched];

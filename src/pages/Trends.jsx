@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProducts, useCollections, autoHotSparksForSignal, useChapters, useTrendSignals, createTrendSignal, updateTrendSignal } from '../lib/hooks';
 import ConfidenceSelector from '../components/ConfidenceSelector';
+import { nowISO } from '../lib/utils';
 
 const STATUSES = [
   { key: 'pursue',    label: '🟢 Pursue',    color: '#2d6b3c', bg: 'rgba(124,175,138,0.15)' },
@@ -95,7 +96,7 @@ function SignalCard({ signal, products, collections, onAction }) {
       confidence: form.confidence || null,
       competitor_snapshot: form.competitor_snapshot || null,
       revisit_date: form.revisit_date || null,
-      last_updated: new Date().toISOString().split('T')[0],
+      last_updated: nowISO().split('T')[0],
     });
     if (error) {
       setSaveError(error.message);
@@ -194,7 +195,7 @@ function SignalCard({ signal, products, collections, onAction }) {
               </span>
             )}
             {signal.revisit_date && (() => {
-              const today = new Date().toISOString().split('T')[0];
+              const today = nowISO().split('T')[0];
               const overdue = signal.revisit_date < today;
               return (
                 <span style={{ fontSize: '0.65rem', color: overdue ? 'var(--alert)' : 'var(--charcoal-soft)', fontWeight: overdue ? 600 : 400 }}>
@@ -271,7 +272,7 @@ function SignalCard({ signal, products, collections, onAction }) {
               style={{ background: 'rgba(124,175,138,0.15)', color: '#2d6b3c', border: '1px solid rgba(124,175,138,0.4)', fontWeight: 600 }}
               onClick={async () => {
                 setSaving(true);
-                await supabase.from('trend_signals').update({ status: 'pursue', last_updated: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() }).eq('id', signal.id);
+                await supabase.from('trend_signals').update({ status: 'pursue', last_updated: nowISO().split('T')[0], updated_at: nowISO() }).eq('id', signal.id);
                 if (signal.collection) await autoHotSparksForSignal(signal.collection);
                 setSaving(false);
                 setPursueToast(true);
@@ -297,7 +298,7 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
     name: '', collection: '', parent_niche: '', status: 'watch',
     score_breakdown: {}, evidence: '', notes: '', source: '', confidence: '',
     competitor_snapshot: '', revisit_date: '',
-    first_spotted: new Date().toISOString().split('T')[0],
+    first_spotted: nowISO().split('T')[0],
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');

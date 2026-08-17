@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { deleteResearchSession, deleteKeyword, useCollections, recomputeKeywordInterpretation } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
+import { nowISO } from '../lib/utils';
 
 const STATUS_STYLES = {
   'Complete': { background: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
@@ -36,7 +37,7 @@ function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
       bucket: bucket !== '' ? parseInt(bucket) : null,
       bucket_source: bucket !== '' && bucket !== k.bucket ? 'manual' : (k.bucket_source || null),
       collection_tag: collectionTag || null,
-      updated_at: new Date().toISOString(),
+      updated_at: nowISO(),
     };
     await supabase.from('keywords').update(updates).eq('id', k.id);
     // Volume/competition/score may have just changed — re-run classification

@@ -12,6 +12,7 @@ import EverbeeCSVImport from '../components/EverbeeCSVImport';
 import WeeklyReview from '../components/WeeklyReview';
 import EtsyStatsEntry from '../components/EtsyStatsEntry';
 import VisualDNACard from '../components/VisualDNACard';
+import { nowISO } from '../lib/utils';
 
 const PRINTIFY_COST_DEFAULT = 14;
 const JUNK_TAG = /^[-–—]+$|^null$|^undefined$|^n\/a$/i;
@@ -148,7 +149,7 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
     await supabase.from('competitor_listings').update({
       matched_signal_id: signalId || null,
       white_space_flag: !signalId,
-      last_updated_at: new Date().toISOString(),
+      last_updated_at: nowISO(),
     }).eq('id', listingId);
     setSavingMatch(null);
     onRefetch?.();
@@ -156,7 +157,7 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
 
   async function handleCreateSignalFromCluster(tag, collection) {
     setCreatingCluster(tag);
-    const now = new Date().toISOString();
+    const now = nowISO();
     await createTrendSignal({
       name: tag,
       collection: collection || null,
@@ -447,8 +448,8 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                             </select>
                             {/* Tag-based: create new signal from listing's own tags */}
                             {(() => {
-                              const listingTags = [1,2,3,4,5,6,7,8,9,10,11,12,13]
-                                .map(i => l[`tag_${i}`])
+                              const listingTags = TAG_KEYS
+                                .map(key => l[key])
                                 .filter(t => t && !/^[-–—]+$/.test(t.trim()));
                               const trackedNames = new Set(signals.map(s => s.name.toLowerCase()));
                               const newTags = listingTags.filter(t => !trackedNames.has(t.toLowerCase())).slice(0, 6);
@@ -463,7 +464,7 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                                         disabled={savingMatch === l.id}
                                         onClick={async () => {
                                           setSavingMatch(l.id);
-                                          const now = new Date().toISOString();
+                                          const now = nowISO();
                                           const { data: newSignal } = await createTrendSignal({
                                             name: tag,
                                             status: 'watch', score: 0, score_breakdown: {},
@@ -497,7 +498,7 @@ function CompetitorsTab({ listings, loading, signals, onRefetch }) {
                       </div>
                       {/* Tags */}
                       {(() => {
-                        const tags = [1,2,3,4,5,6,7,8,9,10,11,12,13].map(i => l[`tag_${i}`]).filter(Boolean);
+                        const tags = TAG_KEYS.map(key => l[key]).filter(Boolean);
                         return tags.length > 0 ? (
                           <div>
                             <div style={{ fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--charcoal-soft)', marginBottom: 6 }}>Tags</div>

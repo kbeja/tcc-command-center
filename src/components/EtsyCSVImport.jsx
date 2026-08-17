@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { nowISO } from '../lib/utils';
 
 function fuzzyMatch(csvTitle, products) {
   const t = csvTitle.toLowerCase().trim();
@@ -119,7 +120,7 @@ export default function EtsyCSVImport({ products, onImported }) {
   async function handleImport() {
     if (!parsed) return;
     setImporting(true);
-    const now = new Date().toISOString();
+    const now = nowISO();
     let updated = 0;
 
     // Check for manually entered data that would be overwritten

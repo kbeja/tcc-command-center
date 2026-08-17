@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createResearchSession } from '../../lib/hooks';
+import { nowISO } from '../../lib/utils';
 
 export default function InlineKeywordAdd({ collection, sessions, onSaved }) {
   const [open, setOpen]       = useState(false);
@@ -43,7 +44,7 @@ export default function InlineKeywordAdd({ collection, sessions, onSaved }) {
     // instead of creating a new one. Blank means "+ Create new session".
     const existingSession = targetSession ? sessions.find(s => s.id === targetSession) : null;
     const sessionParam = existingSession || {
-      date: new Date().toISOString().slice(0, 10),
+      date: nowISO().slice(0, 10),
       collection,
       source: 'Inline add',
       status: 'Needs More Data',
