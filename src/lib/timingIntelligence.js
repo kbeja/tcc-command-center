@@ -150,6 +150,24 @@ export function summarizeLeadTime(profile) {
   };
 }
 
+// ── Timing confidence ──────────────────────────────────────────────────────
+// Deterministic and about EVIDENCE COMPLETENESS only — how much of what the
+// calculation needs actually exists. It is emphatically not a judgment about
+// whether the niche is a good bet, and it never blends in trend, marketplace
+// or SEO signal. Same three-value vocabulary as keywordIntelligence.js's
+// scoreConfidence so the two read consistently.
+export function scoreTimingConfidence({ hasTarget, datePrecision, hasLeadTime }) {
+  if (!hasTarget) {
+    return { value: 'Low', reason: datePrecision === 'month'
+      ? 'The source gives a target month but no date, so no runway can be calculated.'
+      : 'No target live date is recorded for this niche.' };
+  }
+  if (hasLeadTime) {
+    return { value: 'High', reason: 'A dated target and a configured TCC lead time are both present, so every phase boundary is calculated from real values.' };
+  }
+  return { value: 'Medium', reason: 'The target date is dated and real, but no TCC lead-time profile exists — stage boundaries come from the source\'s own months rather than from measured production time.' };
+}
+
 // ── Date helpers (UTC only) ────────────────────────────────────────────────
 function isoFrom(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -350,6 +368,11 @@ export function computeTimingState({
     componentsUsed: lead.used,
     componentsUnknown: lead.unknown,
     indexingDays: lead.indexingDays,
+    confidence: scoreTimingConfidence({
+      hasTarget: !!cycle.targetLiveDate,
+      datePrecision: cycle.datePrecision,
+      hasLeadTime: lead.usable,
+    }),
   };
 
   // No peak, tail or close date exists in any source yet, so these stay
@@ -499,7 +522,8 @@ function blank(reason, unknowns) {
     targetLiveDate: null, datePrecision: null, sourceImpliedRunwayDays: null,
     latestSafeStart: null, daysRemaining: null, daysUntilTarget: null,
     leadTimeTotal: null, leadTimeProfileName: null, componentsUsed: {}, componentsUnknown: [],
-    indexingDays: null, phaseBoundaries: null,
+    indexingDays: null, phaseBoundaries: null, daysPastTarget: null, nextCycleTarget: null,
+    confidence: scoreTimingConfidence({ hasTarget: false, datePrecision: null, hasLeadTime: false }),
   };
 }
 
@@ -532,6 +556,77 @@ export function computeProductTiming(product, timing = null, todayStr = today())
 // this app; reused rather than inventing a ninth definition.
 export function isLiveStage(product) {
   return ['Live', 'Reviewing'].includes(product?.stage);
+}
+
+// ── Composition ────────────────────────────────────────────────────────────
+// One place that assembles raw rows into per-niche timing, so the collection
+// page, the product page, Home and the Knowledge tab can never disagree about
+// what state a niche is in. Pure — the caller does the fetching.
+//
+// hasLiveCoverage is a plain factual check: does a product in a collection
+// this niche is explicitly linked to have a live date on or before today. It
+// feeds only the MAINTAIN/LATE_WINDOW split and nothing else. Note the
+// linkage is required — an unlinked niche reports no coverage rather than
+// guessing which collection it might correspond to.
+export function buildNicheTimings({
+  niches = [], guidance = [], notes = [], links = [], profiles = [],
+  collections = [], products = [], todayStr = today(),
+} = {}) {
+  const guidanceByNiche = new Map();
+  for (const g of guidance) {
+    const list = guidanceByNiche.get(g.niche_id) || [];
+    list.push(g);
+    guidanceByNiche.set(g.niche_id, list);
+  }
+
+  const notesByGuidance = new Map();
+  for (const n of notes) {
+    const list = notesByGuidance.get(n.guidance_id) || [];
+    list.push(n);
+    notesByGuidance.set(n.guidance_id, list);
+  }
+
+  const collectionById = new Map(collections.map(c => [c.id, c]));
+  const linksByNiche = new Map();
+  for (const l of links) {
+    const list = linksByNiche.get(l.niche_id) || [];
+    list.push(l.collection_id);
+    linksByNiche.set(l.niche_id, list);
+  }
+
+  return niches.map(niche => {
+    const rows = guidanceByNiche.get(niche.id) || [];
+    const collectionIds = linksByNiche.get(niche.id) || [];
+    const linkedCollections = collectionIds.map(id => collectionById.get(id)).filter(Boolean);
+    const linkedNames = new Set(linkedCollections.map(c => c.name));
+
+    const hasLiveCoverage = products.some(
+      p => linkedNames.has(p.collection) && p.went_live_at && p.went_live_at <= todayStr
+    );
+
+    const leadTime = resolveLeadTimeFor(profiles, niche.id, collectionIds);
+    const timing = computeTimingState({ guidance: rows, leadTime, hasLiveCoverage, todayStr });
+
+    return {
+      niche,
+      timing,
+      guidance: rows,
+      notes: rows.flatMap(r => notesByGuidance.get(r.id) || []),
+      linkedCollections,
+      hasLiveCoverage,
+      leadTime,
+    };
+  });
+}
+
+// Most specific wins. Mirrors resolveLeadTimeProfile() in hooks.js — kept here
+// too so this module stays importable without pulling in the data layer.
+function resolveLeadTimeFor(profiles, nicheId, collectionIds) {
+  if (!profiles?.length) return null;
+  return profiles.find(p => p.scope === 'niche' && p.niche_id === nicheId)
+      || profiles.find(p => p.scope === 'collection' && collectionIds.includes(p.collection_id))
+      || profiles.find(p => p.scope === 'default')
+      || null;
 }
 
 // ── Grouping helper for a portfolio-style timing overview ───────────────────

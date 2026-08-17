@@ -430,6 +430,36 @@ describe('groupNichesByState', () => {
   });
 });
 
+describe('timing confidence', () => {
+  it('is High only when a dated target and a real lead time both exist', () => {
+    const r = computeTimingState({ guidance: WINTER_SPORTS, leadTime: FULL_LEAD, todayStr: '2026-10-15' });
+    expect(r.confidence.value).toBe('High');
+  });
+
+  it('is Medium with a dated target but no configured lead time', () => {
+    const r = computeTimingState({ guidance: WINTER_SPORTS, todayStr: '2026-10-15' });
+    expect(r.confidence.value).toBe('Medium');
+    expect(r.confidence.reason).toMatch(/no TCC lead-time profile/i);
+  });
+
+  it('is Low when the source gives no usable target date', () => {
+    const monthOnly = computeTimingState({ guidance: [g('START', 4, null), g('DUE', 9, null)], todayStr: '2026-08-17' });
+    expect(monthOnly.confidence.value).toBe('Low');
+    expect(monthOnly.confidence.reason).toMatch(/no date/i);
+    expect(computeTimingState({ guidance: [], todayStr: '2026-08-17' }).confidence.value).toBe('Low');
+  });
+
+  it('measures evidence completeness only — never whether the niche is a good bet', () => {
+    // A high-competition niche and a low-competition one with identical date
+    // evidence must score identically.
+    const hot = [g('START', 9, null, { classification: 'high_competition' }), g('DUE', 11, 8, { classification: 'high_competition' })];
+    const cold = [g('START', 9, null, { classification: 'low_competition' }), g('DUE', 11, 8, { classification: 'low_competition' })];
+    const a = computeTimingState({ guidance: hot, leadTime: FULL_LEAD, todayStr: '2026-10-15' });
+    const b = computeTimingState({ guidance: cold, leadTime: FULL_LEAD, todayStr: '2026-10-15' });
+    expect(a.confidence.value).toBe(b.confidence.value);
+  });
+});
+
 describe('monthName', () => {
   it('maps 1-12 and degrades gracefully', () => {
     expect(monthName(1)).toBe('January');

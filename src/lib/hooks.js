@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from './supabase';
 import { daysBetween, today } from '../data/seasons';
 import { interpretKeyword } from './keywordIntelligence';
+import { buildNicheTimings } from './timingIntelligence';
 import { analyzeVisual } from './claude';
 import { nowISO } from './utils';
 
@@ -1793,4 +1794,232 @@ export async function applyTagToCollection(collectionId, tagId) {
 
 export async function removeTagFromCollection(collectionId, tagId) {
   return supabase.from('collection_tags').delete().eq('collection_id', collectionId).eq('tag_id', tagId);
+}
+
+// ─── Timing Intelligence (Phase 22) ─────────────────────────────────────────
+// One fetch per table rather than a deep embedded select: the whole dataset is
+// small and bounded (69 niches / 186 guidance rows from the seeded calendar),
+// and several consumers need different slices of the same data, so composing
+// in JS keeps every caller off a bespoke query shape.
+
+export function useTimingSources(statusFilter = 'active') {
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('timing_sources').select('*').order('name');
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+    const { data } = await q;
+    setSources(data || []);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { sources, loading, refetch: fetch };
+}
+
+export async function createTimingSource(fields) {
+  return supabase.from('timing_sources').insert([{ status: 'active', ...fields }]).select().single();
+}
+
+export async function updateTimingSource(id, updates) {
+  return supabase.from('timing_sources').update(updates).eq('id', id);
+}
+
+export async function archiveTimingSource(id) {
+  return updateTimingSource(id, { status: 'archived' });
+}
+
+export function useTimingNiches() {
+  const [niches, setNiches] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('timing_niches').select('*').order('name');
+    setNiches(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { niches, loading, refetch: fetch };
+}
+
+export async function createTimingNiche(name, notes = null) {
+  return supabase.from('timing_niches').insert([{ name: name.trim(), notes }]).select().single();
+}
+
+// Case-insensitive, matching the lower(name) unique index — so a paste naming
+// "book reading" resolves to the existing "Book Reading" niche instead of
+// failing on the constraint or minting a near-duplicate.
+export function findNicheByName(niches, name) {
+  if (!name) return null;
+  const needle = String(name).trim().toLowerCase();
+  return niches.find(n => n.name.toLowerCase() === needle) || null;
+}
+
+// Embeds the source so every guidance row can state who asserted it without a
+// second lookup — computeTimingState() reads g.timing_sources directly and
+// must never be handed an unattributed row.
+export function useTimingGuidance(nicheId = null) {
+  const [guidance, setGuidance] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase
+      .from('timing_guidance')
+      .select('*, timing_sources(id, name, source_type, version, edition_label, publisher, url, status)')
+      .order('month');
+    if (nicheId) q = q.eq('niche_id', nicheId);
+    const { data } = await q;
+    setGuidance(data || []);
+    setLoading(false);
+  }, [nicheId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { guidance, loading, refetch: fetch };
+}
+
+export async function createTimingGuidance(fields) {
+  return supabase.from('timing_guidance').insert([fields]).select().single();
+}
+
+export async function deleteTimingGuidance(id) {
+  return supabase.from('timing_guidance').delete().eq('id', id);
+}
+
+export function useTimingGuidanceNotes() {
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('timing_guidance_notes').select('*');
+    setNotes(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { notes, loading, refetch: fetch };
+}
+
+export async function createTimingGuidanceNote(guidanceId, guidanceType, text) {
+  return supabase.from('timing_guidance_notes')
+    .insert([{ guidance_id: guidanceId, guidance_type: guidanceType || null, text, assigned_by: 'user' }])
+    .select().single();
+}
+
+// Reclassifying always flips assigned_by to 'user': once she has made the
+// call it is no longer the transcription's proposal, and that distinction is
+// what keeps "which of these did I actually decide?" answerable later.
+export async function setGuidanceNoteType(noteId, guidanceType) {
+  return supabase.from('timing_guidance_notes')
+    .update({ guidance_type: guidanceType || null, assigned_by: 'user' })
+    .eq('id', noteId);
+}
+
+// Splitting a mixed note into two typed notes is a human act — the calendar's
+// Christmas entry is cross-niche advice AND SEO advice in one sentence. The
+// original text stays on the parent guidance row either way, so a split can
+// never destroy what the page actually said.
+export async function splitGuidanceNote(note, parts) {
+  const rows = parts
+    .filter(p => p.text && p.text.trim())
+    .map(p => ({ guidance_id: note.guidance_id, guidance_type: p.guidanceType || null,
+                 text: p.text.trim(), assigned_by: 'user' }));
+  if (!rows.length) return { error: { message: 'Nothing to split into.' } };
+  const { error } = await supabase.from('timing_guidance_notes').insert(rows);
+  if (error) return { error };
+  return supabase.from('timing_guidance_notes').delete().eq('id', note.id);
+}
+
+export function useNicheCollections() {
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('timing_niche_collections').select('*');
+    setLinks(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { links, loading, refetch: fetch };
+}
+
+// Always an explicit human action — nothing anywhere auto-matches a source's
+// niche name onto a TCC collection. "Hockey" in an expert calendar and this
+// shop's separate "Field Hockey Niche" collection may not be the same thing,
+// and guessing would quietly turn a source's vocabulary into a TCC fact.
+export async function linkNicheToCollection(nicheId, collectionId) {
+  const { data, error } = await supabase.from('timing_niche_collections')
+    .insert({ niche_id: nicheId, collection_id: collectionId }).select().single();
+  return { data, error };
+}
+
+export async function unlinkNicheFromCollection(nicheId, collectionId) {
+  return supabase.from('timing_niche_collections').delete()
+    .eq('niche_id', nicheId).eq('collection_id', collectionId);
+}
+
+export function useLeadTimeProfiles(statusFilter = 'active') {
+  const [profiles, setProfiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('lead_time_profiles').select('*').order('name');
+    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+    const { data } = await q;
+    setProfiles(data || []);
+    setLoading(false);
+  }, [statusFilter]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { profiles, loading, refetch: fetch };
+}
+
+export async function createLeadTimeProfile(fields) {
+  return supabase.from('lead_time_profiles')
+    .insert([{ status: 'active', source: 'user_defined', ...fields }]).select().single();
+}
+
+export async function updateLeadTimeProfile(id, updates) {
+  return supabase.from('lead_time_profiles').update(updates).eq('id', id);
+}
+
+export async function archiveLeadTimeProfile(id) {
+  return updateLeadTimeProfile(id, { status: 'archived' });
+}
+
+// Most specific wins: a profile scoped to this niche, else one scoped to a
+// collection the niche is linked to, else the default. Returns null rather
+// than a fabricated fallback when nothing is configured — the engine's tier-2
+// path exists precisely so an unconfigured shop still gets a real answer.
+export function resolveLeadTimeProfile(profiles, { nicheId = null, collectionIds = [] } = {}) {
+  if (!profiles?.length) return null;
+  return profiles.find(p => p.scope === 'niche' && p.niche_id === nicheId)
+      || profiles.find(p => p.scope === 'collection' && collectionIds.includes(p.collection_id))
+      || profiles.find(p => p.scope === 'default')
+      || null;
+}
+
+// Composed timing view — every surface (collection page, product page, Home,
+// the Knowledge tab) reads from this one hook so they can never disagree
+// about what state a niche is in. The underlying dataset is small and
+// bounded, so fetching all of it once is cheaper than four bespoke queries.
+export function useNicheTimings(products = [], collections = []) {
+  const { niches, loading: l1, refetch: r1 } = useTimingNiches();
+  const { guidance, loading: l2, refetch: r2 } = useTimingGuidance();
+  const { notes, loading: l3, refetch: r3 } = useTimingGuidanceNotes();
+  const { links, loading: l4, refetch: r4 } = useNicheCollections();
+  const { profiles, loading: l5, refetch: r5 } = useLeadTimeProfiles();
+
+  const results = useMemo(
+    () => buildNicheTimings({ niches, guidance, notes, links, profiles, collections, products }),
+    [niches, guidance, notes, links, profiles, collections, products]
+  );
+
+  const refetch = useCallback(async () => {
+    await Promise.all([r1(), r2(), r3(), r4(), r5()]);
+  }, [r1, r2, r3, r4, r5]);
+
+  return { results, loading: l1 || l2 || l3 || l4 || l5, refetch };
 }
