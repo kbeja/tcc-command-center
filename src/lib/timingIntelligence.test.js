@@ -132,6 +132,16 @@ describe('resolveCycle', () => {
     expect(c.startMonth).toBe(12);
   });
 
+  it('caps the trailing span at half the dead zone', () => {
+    // Professions (START November, DUE March 31) has a 150-day runway, so the
+    // runway bound alone left it reading "just missed" 139 days past target —
+    // found by running the real seeded calendar, not by any fixture. Its dead
+    // zone (Mar 31 -> Nov 1) is 215 days, so the trailing span is 107.
+    const professions = [g('START', 11, null), g('DUE', 3, 31)];
+    expect(resolveCycle(professions, 150, '2026-07-01').targetLiveDate).toBe('2026-03-31');
+    expect(resolveCycle(professions, 150, '2026-08-17').targetLiveDate).toBe('2027-03-31');
+  });
+
   it('caps the trailing span by the runway so a long runway is not a long tail', () => {
     // Bachelorette's runway is 278 days. Without the cap, every day from
     // September to the following December would anchor backwards and read

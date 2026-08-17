@@ -240,13 +240,23 @@ export function resolveCycle(rows, runwayDays, todayStr) {
   // it the useful reading is "the next cycle hasn't started yet"
   // (TOO_EARLY_WATCH).
   //
-  // The trailing span is min(runway, length of the dead zone) — both real,
-  // derived numbers, no invented constant:
-  //   * bounded by the dead zone so it can never overlap the next runway;
-  //   * bounded by the runway so a niche with a very long runway does not get
-  //     a very long tail. That second bound is load-bearing: the calendar's
-  //     Bachelorette entry runs START December to DUE September, a 278-day
-  //     runway, and without this it would report LATE_WINDOW for nine months.
+  // The trailing span is min(runway, half the dead zone) — both real, derived
+  // numbers, no invented constant:
+  //   * bounded by the runway, because you cannot sensibly still be "just
+  //     late" for longer than the work itself takes. Load-bearing: the
+  //     calendar's Bachelorette entry runs START December to DUE September, a
+  //     278-day runway, and without this it would report LATE_WINDOW for nine
+  //     months.
+  //   * bounded by half the dead zone, because within that span you belong to
+  //     whichever cycle you are nearer to — trailing the one that passed, or
+  //     waiting for the next. Also load-bearing, and found only by running the
+  //     real seeded calendar: Professions (START November, DUE March 31) has a
+  //     150-day runway, so the runway bound alone still reported LATE_WINDOW
+  //     139 days past target — long after entry for that cycle was possible,
+  //     and on Home that renders as a bare "Late Window" chip with none of the
+  //     surrounding detail.
+  // Halving is structural rather than tuned: it is the midpoint between the
+  // two cycles, the only split that needs no chosen number.
   //
   // This decides only which cycle to ANCHOR TO. It is never a claim about how
   // long demand lasts — the real window close date stays unknown and stays on
@@ -269,7 +279,7 @@ export function resolveCycle(rows, runwayDays, todayStr) {
     const runwayOpen = shiftISO(upcoming, -runway);
     if (todayStr < runwayOpen) {
       const deadZone = Math.max(0, daysBetween(justPassed, runwayOpen));
-      const trailing = Math.min(runway, deadZone);
+      const trailing = Math.min(runway, Math.floor(deadZone / 2));
       const past = daysBetween(justPassed, todayStr);
       if (past <= trailing) { targetLiveDate = justPassed; daysPastTarget = past; }
     }

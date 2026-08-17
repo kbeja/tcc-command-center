@@ -511,7 +511,9 @@ function NichesSection({ results, collections, loading, onChanged }) {
 
 export default function TimingTab() {
   const [sub, setSub] = useState('Niches');
-  const { collections } = useCollectionsContext();
+  // collectionObjects, not collections — the context exposes the real rows
+  // (with ids) under that name, and the junction needs a uuid, not a name.
+  const { collectionObjects: collections } = useCollectionsContext();
   const { products } = useProducts();
   const { results, loading, refetch } = useNicheTimings(products, collections);
 
