@@ -2023,3 +2023,116 @@ export function useNicheTimings(products = [], collections = []) {
 
   return { results, loading: l1 || l2 || l3 || l4 || l5, refetch };
 }
+
+// ─── TCC Performance Evidence (Phase 23A) ───────────────────────────────────
+// The capture layer for the learning loop. Everything here is append-only
+// except shop_ads_daily, which is keyed by date because a given calendar day
+// has exactly one true set of shop totals — re-importing an overlapping range
+// must correct a day rather than duplicate it.
+
+export function useShopAdsDaily(limit = 120) {
+  const [days, setDays] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase
+      .from('shop_ads_daily')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(limit);
+    setDays(data || []);
+    setLoading(false);
+  }, [limit]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { days, loading, refetch: fetch };
+}
+
+// Upsert on date: re-importing an overlapping export corrects those days
+// rather than duplicating them. Returns per-row outcome so the UI can report
+// what actually changed instead of claiming a flat success.
+export async function importShopAdsDaily(rows) {
+  if (!rows?.length) return { inserted: 0, updated: 0, error: null };
+
+  const dates = rows.map(r => r.date);
+  const { data: existing } = await supabase
+    .from('shop_ads_daily')
+    .select('date')
+    .in('date', dates);
+  const had = new Set((existing || []).map(r => r.date));
+
+  const payload = rows.map(r => ({ ...r, imported_at: nowISO() }));
+  const { error } = await supabase
+    .from('shop_ads_daily')
+    .upsert(payload, { onConflict: 'date' });
+
+  if (error) return { inserted: 0, updated: 0, error };
+  return {
+    inserted: rows.filter(r => !had.has(r.date)).length,
+    updated: rows.filter(r => had.has(r.date)).length,
+    error: null,
+  };
+}
+
+export function useListingSnapshots(productId = null, limit = 200) {
+  const [snapshots, setSnapshots] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase
+      .from('listing_performance_snapshots')
+      .select('*, listing_traffic_sources(*), listing_search_terms(*)')
+      .order('captured_at', { ascending: false })
+      .limit(limit);
+    if (productId) q = q.eq('product_id', productId);
+    const { data } = await q;
+    setSnapshots(data || []);
+    setLoading(false);
+  }, [productId, limit]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { snapshots, loading, refetch: fetch };
+}
+
+// One capture = one snapshot row + its channel breakdown + its search terms,
+// written together. The children are inserted after the parent so a failed
+// child can never leave a snapshot claiming a traffic split it doesn't have;
+// on child failure the parent is removed rather than left half-populated.
+export async function createListingSnapshot(snapshot, { trafficSources = [], searchTerms = [] } = {}) {
+  const { data: row, error } = await supabase
+    .from('listing_performance_snapshots')
+    .insert([snapshot])
+    .select()
+    .single();
+  if (error || !row) return { data: null, error: error || { message: 'Snapshot insert returned no row' } };
+
+  if (trafficSources.length) {
+    const { error: tsErr } = await supabase
+      .from('listing_traffic_sources')
+      .insert(trafficSources.map(t => ({ ...t, snapshot_id: row.id })));
+    if (tsErr) {
+      await supabase.from('listing_performance_snapshots').delete().eq('id', row.id);
+      return { data: null, error: tsErr };
+    }
+  }
+
+  if (searchTerms.length) {
+    const { error: stErr } = await supabase
+      .from('listing_search_terms')
+      .insert(searchTerms.map(t => ({ ...t, snapshot_id: row.id })));
+    if (stErr) {
+      await supabase.from('listing_performance_snapshots').delete().eq('id', row.id);
+      return { data: null, error: stErr };
+    }
+  }
+
+  return { data: row, error: null };
+}
+
+// Links a TCC product to its Etsy listing. Always an explicit human action —
+// proposeListingLinks() only ever proposes, because two of this shop's
+// listings share a byte-identical title and no automated matcher can tell
+// them apart.
+export async function linkProductToEtsyListing(productId, etsyListingId) {
+  return supabase.from('products').update({ etsy_listing_id: etsyListingId }).eq('id', productId);
+}

@@ -3,8 +3,11 @@ import { supabase } from '../lib/supabase';
 import { nowISO } from '../lib/utils';
 
 // RFC 4180-compliant CSV line parser — handles quoted fields containing
-// commas. Same local copy EtsyCSVImport.jsx already carries (neither file
-// exports its copy today, so each importer keeps its own).
+// commas. A shared equivalent now lives in src/lib/tccIntelligence.js
+// (parseCSVLine), added in Phase 23A; this local copy is left in place rather
+// than swapped mid-phase, since this importer is untouched by that work and a
+// gratuitous edit here would mean re-verifying a working Pinterest import for
+// no gain. Worth consolidating when Pinterest import is next touched.
 function parseCSVLine(line) {
   const fields = [];
   let cur = '';

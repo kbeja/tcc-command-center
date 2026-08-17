@@ -7,7 +7,7 @@ import {
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
-import EtsyCSVImport from '../components/EtsyCSVImport';
+import EtsyAdsCSVImport from '../components/EtsyAdsCSVImport';
 import PinterestCSVImport from '../components/PinterestCSVImport';
 import EverbeeCSVImport from '../components/EverbeeCSVImport';
 import WeeklyReview from '../components/WeeklyReview';
@@ -943,8 +943,12 @@ export default function Analytics() {
           <div style={{ marginBottom: 32 }}>
             <EverbeeCSVImport products={products} onImported={refetch} />
           </div>
+          {/* Phase 23A: replaces the old EtsyCSVImport, which parsed a
+              per-listing stats CSV Etsy has never produced (its instructions
+              pointed at Etsy Studio, shut down in 2018) and had never once
+              run. Etsy Ads is the only real performance export Etsy offers. */}
           <div style={{ borderTop: 'var(--border)', paddingTop: 24, marginBottom: 32 }}>
-            <EtsyCSVImport products={products} onImported={refetch} />
+            <EtsyAdsCSVImport onImported={refetch} />
           </div>
           <div style={{ borderTop: 'var(--border)', paddingTop: 24 }}>
             <PinterestCSVImport products={products} onImported={refetch} />
