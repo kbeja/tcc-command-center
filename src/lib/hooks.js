@@ -893,7 +893,15 @@ export function useWorkshopItems() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('workshop-items-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workshop_items' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
   return { items, loading, refetch: fetch };
 }
 

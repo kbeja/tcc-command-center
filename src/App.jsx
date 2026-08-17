@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useWorkshopItems, useProducts } from './lib/hooks';
+import { useProducts } from './lib/hooks';
+import { WorkshopProvider, useWorkshopContext } from './context/WorkshopContext';
 import Nav from './components/Nav';
 import CaptureButton from './components/CaptureButton';
 import Home from './pages/Home';
@@ -20,7 +21,7 @@ import Concepts from './pages/Concepts';
 import './styles/global.css';
 
 function AppInner() {
-  const { items } = useWorkshopItems();
+  const { items } = useWorkshopContext();
   const { products } = useProducts();
   const liveProducts = products.filter(p => p.stage === 'Live' || p.stage === 'Reviewing');
   const moSales = liveProducts.reduce((s, p) => s + (p.mo_sales || 0), 0);
@@ -53,7 +54,9 @@ function AppInner() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppInner />
+      <WorkshopProvider>
+        <AppInner />
+      </WorkshopProvider>
     </BrowserRouter>
   );
 }

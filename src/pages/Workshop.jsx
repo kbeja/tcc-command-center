@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useWorkshopItems, useProducts } from '../lib/hooks';
+import { useProducts } from '../lib/hooks';
+import { useWorkshopContext } from '../context/WorkshopContext';
 import WorkshopItem from '../components/WorkshopItem';
 import SessionSummaryParser from '../components/SessionSummaryParser';
 import Codex from '../components/Codex';
 
 export default function Workshop() {
-  const { items, loading, refetch } = useWorkshopItems();
+  const { items, loading, refetch } = useWorkshopContext();
   const { products } = useProducts();
   const [tab, setTab] = useState('triage');
 

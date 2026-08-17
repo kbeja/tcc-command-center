@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProducts, useWorkshopItems, useSparks, useTrendSignals, useCollectionObjects, getNeedsAttention, getPickUpProducts } from '../lib/hooks';
+import { useProducts, useSparks, useTrendSignals, useCollectionObjects, getNeedsAttention, getPickUpProducts } from '../lib/hooks';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
 import { getNextReviewDates, daysBetween, today, seasonalWindows } from '../data/seasons';
 import ProductCard from '../components/ProductCard';
@@ -33,7 +33,6 @@ function Section({ icon, title, badge, children, defaultOpen = false }) {
 export default function Home() {
   const navigate = useNavigate();
   const { products } = useProducts();
-  const { items: workshopItems } = useWorkshopItems();
   const { sparks, refetch: refetchSparks } = useSparks();
   const { signals } = useTrendSignals();
   const { collections: collectionObjects } = useCollectionObjects();
