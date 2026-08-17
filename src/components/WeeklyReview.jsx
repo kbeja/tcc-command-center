@@ -32,6 +32,7 @@ export default function WeeklyReview({ onApplied }) {
   const [edited, setEdited] = useState({});
   const [applying, setApplying] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState(null);
 
   function handleParse() {
     const stats = parseStats(text);
@@ -41,16 +42,21 @@ export default function WeeklyReview({ onApplied }) {
 
   async function handleApply() {
     setApplying(true);
+    setError(null);
     const now = new Date().toISOString();
     // Store as shop-level stats — update all live products proportionally
     // For now, log to import_history and surface in overview
-    await supabase.from('import_history').insert({
+    const { error: err } = await supabase.from('import_history').insert({
       import_type: 'weekly_review',
       imported_at: now,
       records_updated: 1,
       notes: JSON.stringify(edited),
     });
     setApplying(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
     setDone(true);
     onApplied?.();
   }
@@ -81,6 +87,12 @@ export default function WeeklyReview({ onApplied }) {
       <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginBottom: 12, lineHeight: 1.6 }}>
         Paste your Etsy Stats summary. Numbers are extracted and logged to history — use them as a reference when updating individual listing stats.
       </div>
+
+      {error && (
+        <div style={{ background: 'rgba(201,123,123,0.1)', border: '1px solid var(--alert)', borderRadius: 2, padding: '12px 14px', marginBottom: 16 }}>
+          <div style={{ fontSize: '0.82rem', color: 'var(--alert)' }}>⚠ Save failed: {error}</div>
+        </div>
+      )}
 
       {!parsed && (
         <div>

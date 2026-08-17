@@ -90,14 +90,14 @@ export default function PinterestCSVImport({ products, onImported }) {
       updated++;
     }
 
-    await supabase.from('import_history').insert({
+    const { error: historyErr } = await supabase.from('import_history').insert({
       import_type: 'pinterest',
       imported_at: now,
       records_updated: updated,
       notes: `${parsed.unmatched.length} unmatched`,
     });
 
-    setResult({ updated });
+    setResult({ updated, historyLogFailed: !!historyErr });
     setLastImported(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     setImporting(false);
     setParsed(null);
@@ -117,6 +117,7 @@ export default function PinterestCSVImport({ products, onImported }) {
         <div style={{ background: 'rgba(124,175,138,0.1)', border: '1px solid var(--success)', borderRadius: 2, padding: '12px 14px', marginBottom: 16 }}>
           <div style={{ fontSize: '0.82rem', fontWeight: 500, marginBottom: 4 }}>Import complete</div>
           <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>✓ {result.updated} listings updated with Pinterest data</div>
+          {result.historyLogFailed && <div style={{ fontSize: '0.78rem', color: 'var(--warning)' }}>⚠ Import succeeded, but the history log entry failed to save</div>}
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setResult(null)}>Import another</button>
         </div>
       )}

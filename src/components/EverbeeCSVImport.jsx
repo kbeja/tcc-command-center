@@ -273,7 +273,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
         );
         if (sessionErr) throw new Error(`Research session save failed: ${sessionErr.message}`);
 
-        await supabase.from('import_history').insert({
+        const { error: historyErr } = await supabase.from('import_history').insert({
           import_type: 'everbee_keywords',
           imported_at: now,
           records_updated: kwRows.length,
@@ -286,6 +286,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           anomalies: preview.anomalies.length,
           misspellings: preview.misspellings.length,
           collection,
+          historyLogFailed: !!historyErr,
         });
 
       } else {
@@ -353,7 +354,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           competitorAdded += chunk.length;
         }
 
-        await supabase.from('import_history').insert({
+        const { error: historyErr } = await supabase.from('import_history').insert({
           import_type: 'everbee_listings',
           imported_at: now,
           records_updated: ownUpdated + competitorAdded + competitorUpdated,
@@ -368,6 +369,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
           whiteSpace,
           autoMatched,
           ambiguous: preview.ambiguous.length,
+          historyLogFailed: !!historyErr,
         });
       }
 
@@ -397,6 +399,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
               <div>✓ {result.added} keywords saved to Research → {result.collection || 'Uncategorized'}</div>
               {result.anomalies > 0 && <div>⚠ {result.anomalies} flagged as possible data anomalies — imported as Suspect / Low Confidence</div>}
               {result.misspellings > 0 && <div>⚑ {result.misspellings} misspellings included as Watch (tags-only)</div>}
+              {result.historyLogFailed && <div style={{ color: 'var(--warning)' }}>⚠ Import succeeded, but the history log entry failed to save</div>}
             </div>
           ) : (
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -406,6 +409,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
               {result.whiteSpace > 0 && <div>⚑ {result.whiteSpace} flagged as white-space — check Competitors tab for clusters</div>}
               {result.competitorUpdated > 0 && <div>↺ {result.competitorUpdated} existing competitor listings updated</div>}
               {result.ambiguous > 0 && <div style={{ color: 'var(--warning)' }}>⚠ {result.ambiguous} rows skipped — shop name blank or ambiguous</div>}
+              {result.historyLogFailed && <div style={{ color: 'var(--warning)' }}>⚠ Import succeeded, but the history log entry failed to save</div>}
             </div>
           )}
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={reset}>Import another</button>

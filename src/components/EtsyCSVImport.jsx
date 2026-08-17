@@ -138,14 +138,18 @@ export default function EtsyCSVImport({ products, onImported }) {
     }
 
     // Log import
-    await supabase.from('import_history').insert({
+    const { error: historyErr } = await supabase.from('import_history').insert({
       import_type: 'etsy',
       imported_at: now,
       records_updated: updated,
       notes: `${parsed.unmatched.length - Object.keys(manualMatches).length} unmatched`,
     });
 
-    setResult({ updated, unmatched: parsed.unmatched.filter(u => !manualMatches[u.csvTitle]).length });
+    setResult({
+      updated,
+      unmatched: parsed.unmatched.filter(u => !manualMatches[u.csvTitle]).length,
+      historyLogFailed: !!historyErr,
+    });
     setLastImported(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
     setImporting(false);
     setParsed(null);
@@ -166,6 +170,7 @@ export default function EtsyCSVImport({ products, onImported }) {
           <div style={{ fontSize: '0.82rem', fontWeight: 500, marginBottom: 4 }}>Import complete</div>
           <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)' }}>✓ {result.updated} listings updated</div>
           {result.unmatched > 0 && <div style={{ fontSize: '0.78rem', color: 'var(--warning)' }}>⚠ {result.unmatched} could not be matched</div>}
+          {result.historyLogFailed && <div style={{ fontSize: '0.78rem', color: 'var(--warning)' }}>⚠ Import succeeded, but the history log entry failed to save</div>}
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setResult(null)}>Import another</button>
         </div>
       )}
