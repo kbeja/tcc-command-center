@@ -1339,21 +1339,28 @@ export async function approvePendingUpdate(update, newBody) {
       .eq('playbook_id', resolvedPlaybookId)
       .single();
 
-    if (section) {
-      await supabase.from('playbook_history').insert([{
-        playbook_section_id: section.id,
-        body: section.body,
-        version: section.version,
-        changed_by: 'user',
-        changed_at: new Date().toISOString(),
-      }]);
-      await supabase.from('playbook_sections').update({
-        body: newBody || update.text,
-        version: (section.version || 1) + 1,
-        updated_at: new Date().toISOString(),
-      }).eq('id', section.id);
-      await incrementPlaybookVersion(resolvedPlaybookId);
+    // A resolved playbook with no matching section_key is a real data
+    // problem (stale/typo'd key) — must not fall through to the
+    // unconditional 'approved' write below, or this becomes the exact
+    // false-approved-no-write state this function exists to prevent.
+    if (!section) {
+      console.error('[approvePendingUpdate] section_key not found:', update.section_key, 'in playbook', resolvedPlaybookId);
+      return { error: new Error(`Section "${update.section_key}" not found in this playbook`) };
     }
+
+    await supabase.from('playbook_history').insert([{
+      playbook_section_id: section.id,
+      body: section.body,
+      version: section.version,
+      changed_by: 'user',
+      changed_at: new Date().toISOString(),
+    }]);
+    await supabase.from('playbook_sections').update({
+      body: newBody || update.text,
+      version: (section.version || 1) + 1,
+      updated_at: new Date().toISOString(),
+    }).eq('id', section.id);
+    await incrementPlaybookVersion(resolvedPlaybookId);
   }
 
   return supabase.from('pending_updates').update({

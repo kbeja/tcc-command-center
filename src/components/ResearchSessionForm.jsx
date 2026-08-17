@@ -162,6 +162,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
   const [seasonal, setSeasonal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   function parseBulk() {
     const lines = bulkText.trim().split('\n').filter(Boolean);
@@ -252,12 +253,17 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         clicks: k.clicks ? parseInt(k.clicks) : null,
         ctr: k.ctr ? parseFloat(k.ctr) : null,
       }));
-    await createResearchSession(
+    const { error } = await createResearchSession(
       { collection: effectiveCollection, parent_niche: parentNiche || null, niche: niche.trim() || null, date, source, notes, status, gaps_notes: gapsNotes, seasonal },
       kwList
     );
     // last_verified is now touched inside createResearchSession itself, for every caller
     setSaving(false);
+    if (error) {
+      setSaveError(error.message || 'Save failed — please try again.');
+      return;
+    }
+    setSaveError('');
     setSaved(true);
     setTimeout(() => { onSaved?.(); }, 1000);
   }
@@ -446,6 +452,7 @@ export default function ResearchSessionForm({ defaultCollection, defaultNiche, d
         </button>
         {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>}
         {saved && <span className="inline-confirm">✓ Saved</span>}
+        {saveError && <span style={{ color: 'var(--alert)', fontSize: '0.78rem' }}>⚠ {saveError}</span>}
       </div>
     </div>
   );

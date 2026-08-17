@@ -307,6 +307,7 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
   const [editing, setEditing] = useState({});
   const [confirming, setConfirming] = useState({});
   const [copied, setCopied] = useState({});
+  const [approveErrors, setApproveErrors] = useState({});
 
   useEffect(() => { refetch?.(); }, []);
 
@@ -319,16 +320,25 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
   }
 
   async function handleApprove(update) {
+    setApproveErrors(prev => { const n = { ...prev }; delete n[update.id]; return n; });
     if (update.playbook_slug) {
       const body = editing[update.id] ?? update.proposed_body;
       // approvePendingUpdate now resolves playbook_id from playbook_slug internally
-      await approvePendingUpdate(update, body);
+      const { error } = await approvePendingUpdate(update, body);
+      if (error) {
+        setApproveErrors(prev => ({ ...prev, [update.id]: error.message }));
+        return;
+      }
     } else {
       // Review-only item — mark approved (not rejected)
-      await supabase.from('pending_updates').update({
+      const { error } = await supabase.from('pending_updates').update({
         status: 'approved',
         resolved_at: new Date().toISOString(),
       }).eq('id', update.id);
+      if (error) {
+        setApproveErrors(prev => ({ ...prev, [update.id]: error.message }));
+        return;
+      }
     }
     setConfirming(prev => ({ ...prev, [update.id]: 'approved' }));
     setTimeout(() => { setConfirming(prev => { const n = { ...prev }; delete n[update.id]; return n; }); refetch(); }, 1500);
@@ -395,9 +405,12 @@ function UpdatesTab({ playbooks, updates = [], refetch }) {
           {confirming[u.id] ? (
             <span className="inline-confirm">✓ {confirming[u.id] === 'approved' ? 'Approved' : 'Rejected'}</span>
           ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button className="btn btn-primary btn-sm" onClick={() => handleApprove(u)}>Approve →</button>
               <button className="btn btn-ghost btn-sm" onClick={() => handleReject(u.id)} style={{ color: 'var(--charcoal-soft)' }}>Reject</button>
+              {approveErrors[u.id] && (
+                <span style={{ color: 'var(--alert)', fontSize: '0.78rem' }}>⚠ {approveErrors[u.id]}</span>
+              )}
             </div>
           )}
         </div>
