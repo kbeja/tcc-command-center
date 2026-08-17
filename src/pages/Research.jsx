@@ -6,6 +6,7 @@ import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
 import KeywordDetail from '../components/KeywordDetail';
+import ConfirmButton from '../components/ConfirmButton';
 import { assignBucket, BucketBadge, BUCKET_STYLE, isLowQualityKeyword, ClassificationBadge, ConfidenceBadge, StatusBadge, TrendIndicator, DisagreementFlag } from '../lib/keywords';
 import { CLASSIFICATIONS, CONFIDENCE_LEVELS, TREND_CLASSIFICATIONS, RESEARCH_STATUSES } from '../lib/keywordIntelligence';
 
@@ -136,15 +137,15 @@ function CollectionsManager({ refetch: refetchNames }) {
                       </span>
                     )}
                   </div>
-                  {confirmDelete === c.id ? (
-                    <span style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.75rem' }}>
-                      <span style={{ color: 'var(--charcoal-soft)' }}>Delete?</span>
-                      <button onClick={() => handleDelete(c.id)} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
-                      <button onClick={() => setConfirmDelete(null)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                    </span>
-                  ) : (
-                    <button onClick={() => setConfirmDelete(c.id)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', opacity: 0.5 }}>🗑</button>
-                  )}
+                  <ConfirmButton
+                    label="🗑"
+                    triggerStyle={{ fontSize: '0.75rem', opacity: 0.5 }}
+                    promptText="Delete?"
+                    confirming={confirmDelete === c.id}
+                    onTrigger={() => setConfirmDelete(c.id)}
+                    onCancel={() => setConfirmDelete(null)}
+                    onConfirm={() => handleDelete(c.id)}
+                  />
                 </div>
               ))}
             </div>

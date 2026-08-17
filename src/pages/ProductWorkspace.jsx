@@ -12,6 +12,7 @@ import CollectionKnowledge from '../components/CollectionKnowledge';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import ReviewCheckpoints from '../components/ReviewCheckpoints';
+import ConfirmButton from '../components/ConfirmButton';
 import { nowISO } from '../lib/utils';
 
 // ─── Stage Tracker (2-col grid, no overflow) ─────────────────────────────────
@@ -968,7 +969,6 @@ export default function ProductWorkspace() {
   const [noteSaved, setNoteSaved] = useState(false);
   const [stageSaved, setStageSaved] = useState(false);
   const [fieldSaved, setFieldSaved] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveError, setSaveError] = useState('');
 
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useResearchSessions(product?.collection);
@@ -1421,24 +1421,13 @@ export default function ProductWorkspace() {
 
       {/* ── Delete ── */}
       <div style={{ paddingTop: 8, borderTop: '1px solid rgba(43,41,38,0.08)' }}>
-        {confirmDelete ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.82rem' }}>
-            <span>Permanently delete this product?</span>
-            <button onClick={async () => { await deleteProduct(id); navigate('/products'); }}
-              style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>
-              Yes, delete
-            </button>
-            <button onClick={() => setConfirmDelete(false)}
-              style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <button onClick={() => setConfirmDelete(true)}
-            style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>
-            Delete product
-          </button>
-        )}
+        <ConfirmButton
+          label="Delete product"
+          triggerStyle={{ fontSize: '0.75rem', opacity: 0.6 }}
+          promptText="Permanently delete this product?"
+          confirmLabel="Yes, delete"
+          onConfirm={async () => { await deleteProduct(id); navigate('/products'); }}
+        />
       </div>
     </div>
   );

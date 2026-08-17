@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useCodexEntries, createCodexEntry, updateCodexEntry, deleteCodexEntry } from '../lib/hooks';
+import ConfirmButton from './ConfirmButton';
 
 const CATEGORIES = ['Product Strategy', 'Process & Workflow', 'Brand & Voice', 'Pricing & Business', 'Lessons Learned'];
 
@@ -15,7 +16,7 @@ function CodexEntry({ entry, onAction }) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [category, setCategory] = useState(entry.category);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -85,16 +86,25 @@ function CodexEntry({ entry, onAction }) {
         </div>
       </div>
       <p style={{ fontSize: '0.85rem', lineHeight: 1.6, marginBottom: 10 }}>{entry.content}</p>
-      {confirmDelete ? (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem' }}>
-          <span style={{ color: 'var(--charcoal-soft)' }}>Delete this entry?</span>
-          <button onClick={handleDelete} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
-          <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-        </span>
+      {confirmingDelete ? (
+        <ConfirmButton
+          confirming
+          promptText="Delete this entry?"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       ) : (
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Edit</button>
-          <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }}>🗑</button>
+          <ConfirmButton
+            label="🗑"
+            triggerStyle={{ marginLeft: 'auto', fontSize: '0.8rem', opacity: 0.5 }}
+            confirming={false}
+            onTrigger={() => setConfirmingDelete(true)}
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmingDelete(false)}
+            promptText="Delete this entry?"
+          />
         </div>
       )}
     </div>

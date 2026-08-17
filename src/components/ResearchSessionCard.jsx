@@ -3,6 +3,7 @@ import { deleteResearchSession, deleteKeyword, useCollections, recomputeKeywordI
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { nowISO } from '../lib/utils';
+import ConfirmButton from './ConfirmButton';
 
 const STATUS_STYLES = {
   'Complete': { background: 'rgba(124,175,138,0.2)', color: '#2d6b3c' },
@@ -167,7 +168,6 @@ function EditableKeyword({ k, onSave, onDelete, collections = [], source }) {
 
 export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   const [open, setOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [keywords, setKeywords] = useState(session.keywords || []);
   const [seasonal, setSeasonal] = useState(!!session.seasonal);
   const [kwSelecting, setKwSelecting] = useState(false);
@@ -273,17 +273,14 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          {confirmDelete ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem' }}>
-              <span style={{ color: 'var(--charcoal-soft)' }}>Delete this session?</span>
-              <button onClick={handleDelete} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>Yes</button>
-              <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>Cancel</button>
-            </span>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.6 }} title="Delete session">
-              🗑
-            </button>
-          )}
+          <ConfirmButton
+            label="🗑"
+            triggerTitle="Delete session"
+            triggerStyle={{ fontSize: '0.8rem', opacity: 0.6 }}
+            wrapperStyle={{ gap: 6, fontSize: '0.75rem' }}
+            promptText="Delete this session?"
+            onConfirm={handleDelete}
+          />
           <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>{open ? '▲' : '▼'}</span>
         </div>
       </div>

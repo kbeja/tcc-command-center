@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/image';
 import { nowISO } from '../lib/utils';
+import ConfirmButton from '../components/ConfirmButton';
 import {
   useConcept,
   useCollections,
@@ -952,7 +953,6 @@ function GeneratedOutputTab({ concept, refetch, conceptId, config, navigate, oth
 }
 
 function AssetCard({ asset, url, onDelete }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div style={{ border: '1px solid rgba(43,41,38,0.1)', borderRadius: 8, overflow: 'hidden', background: 'var(--warm-white)' }}>
       {url ? (
@@ -964,14 +964,13 @@ function AssetCard({ asset, url, onDelete }) {
         <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>
           {asset.label || asset.asset_type}
         </div>
-        {confirmDelete ? (
-          <div style={{ display: 'flex', gap: 6, fontSize: '0.68rem' }}>
-            <button onClick={onDelete} style={{ color: 'var(--alert)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Delete</button>
-            <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-          </div>
-        ) : (
-          <button onClick={() => setConfirmDelete(true)} style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}>Remove</button>
-        )}
+        <ConfirmButton
+          label="Remove"
+          triggerStyle={{ fontSize: '0.65rem', opacity: 0.5 }}
+          wrapperStyle={{ gap: 6, fontSize: '0.68rem' }}
+          confirmLabel="Delete"
+          onConfirm={onDelete}
+        />
       </div>
     </div>
   );
@@ -1136,7 +1135,6 @@ function MoodBoardTab({ concept, conceptId, refetch, assetUrls, moodAssets, othe
 }
 
 function MoodBoardCard({ asset, url, onDelete }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <div style={{ breakInside: 'avoid', marginBottom: 12, position: 'relative', borderRadius: 8, overflow: 'hidden', background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.1)' }}>
       {url ? (
@@ -1145,17 +1143,14 @@ function MoodBoardCard({ asset, url, onDelete }) {
         <div style={{ width: '100%', aspectRatio: '1', background: 'rgba(43,41,38,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>🖼</div>
       )}
       <div style={{ position: 'absolute', top: 6, right: 6 }}>
-        {confirmDelete ? (
-          <div style={{ display: 'flex', gap: 4, background: 'rgba(43,41,38,0.85)', borderRadius: 6, padding: '3px 6px' }}>
-            <button onClick={onDelete} style={{ color: '#fff', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.68rem', fontWeight: 600 }}>Remove</button>
-            <button onClick={() => setConfirmDelete(false)} style={{ color: 'rgba(255,255,255,0.7)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.68rem' }}>Cancel</button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            style={{ background: 'rgba(43,41,38,0.6)', color: '#fff', border: 'none', borderRadius: '50%', width: 24, height: 24, cursor: 'pointer', fontSize: '0.7rem' }}
-          >✕</button>
-        )}
+        <ConfirmButton
+          dark
+          label="✕"
+          triggerStyle={{ background: 'rgba(43,41,38,0.6)', borderRadius: '50%', width: 24, height: 24, fontSize: '0.7rem' }}
+          wrapperStyle={{ gap: 4, background: 'rgba(43,41,38,0.85)', borderRadius: 6, padding: '3px 6px', fontSize: '0.68rem' }}
+          confirmLabel="Remove"
+          onConfirm={onDelete}
+        />
       </div>
     </div>
   );

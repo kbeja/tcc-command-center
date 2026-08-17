@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { nowISO } from '../lib/utils';
+import ConfirmButton from './ConfirmButton';
 
 function fmt$(n) {
   if (!n && n !== 0) return '—';
@@ -61,7 +62,6 @@ function Field({ label, value, onChange, prefix, suffix }) {
 }
 
 function SnapshotCard({ snap, onDelete }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const label = snap.period_type === 'ytd' ? 'Year to Date' : 'Last 30 Days';
   const date = new Date(snap.snapshot_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
@@ -73,15 +73,14 @@ function SnapshotCard({ snap, onDelete }) {
           <span style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginLeft: 8 }}>Saved {date}</span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {confirmDelete ? (
-            <>
-              <span style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', alignSelf: 'center' }}>Delete?</span>
-              <button onClick={() => onDelete(snap.id)} style={{ color: 'var(--alert)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600 }}>Yes</button>
-              <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.72rem' }}>Cancel</button>
-            </>
-          ) : (
-            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--alert)', fontSize: '0.68rem' }} onClick={() => setConfirmDelete(true)}>Delete</button>
-          )}
+          <ConfirmButton
+            label="Delete"
+            triggerClassName="btn btn-ghost btn-sm"
+            triggerStyle={{ color: 'var(--alert)', fontSize: '0.68rem' }}
+            wrapperStyle={{ fontSize: '0.72rem' }}
+            promptText="Delete?"
+            onConfirm={() => onDelete(snap.id)}
+          />
         </div>
       </div>
 

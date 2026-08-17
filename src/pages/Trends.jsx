@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProducts, useCollections, autoHotSparksForSignal, useChapters, useTrendSignals, createTrendSignal, updateTrendSignal } from '../lib/hooks';
 import ConfidenceSelector from '../components/ConfidenceSelector';
+import ConfirmButton from '../components/ConfirmButton';
 import { nowISO } from '../lib/utils';
 
 const STATUSES = [
@@ -60,7 +61,7 @@ function SignalCard({ signal, products, collections, onAction }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ ...signal });
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [pursueToast, setPursueToast] = useState(false);
@@ -252,12 +253,15 @@ function SignalCard({ signal, products, collections, onAction }) {
         </div>
       )}
 
-      {confirmDelete ? (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem', marginTop: 8 }}>
-          <span style={{ color: 'var(--charcoal-soft)' }}>Delete this signal?</span>
-          <button onClick={handleDelete} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
-          <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-        </span>
+      {confirmingDelete ? (
+        <div style={{ marginTop: 8 }}>
+          <ConfirmButton
+            confirming
+            promptText="Delete this signal?"
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmingDelete(false)}
+          />
+        </div>
       ) : (
         <>
           {pursueToast && (
@@ -284,7 +288,15 @@ function SignalCard({ signal, products, collections, onAction }) {
             </button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>Update signal</button>
-          <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }}>🗑</button>
+          <ConfirmButton
+            label="🗑"
+            triggerStyle={{ marginLeft: 'auto', fontSize: '0.8rem', opacity: 0.5 }}
+            confirming={false}
+            onTrigger={() => setConfirmingDelete(true)}
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmingDelete(false)}
+            promptText="Delete this signal?"
+          />
         </div>
         </>
       )}

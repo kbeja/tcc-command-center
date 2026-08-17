@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { updateSpark, archiveSpark, createProduct, useCollections } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import ConfirmButton from './ConfirmButton';
 
 const IDEA_TYPES = ['Product Idea', 'Strategy Idea', 'Tool/Resource'];
 
@@ -15,7 +16,7 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
   const navigate = useNavigate();
   const { collections } = useCollections();
   const [confirm, setConfirm] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingCollection, setEditingCollection] = useState(false);
   const [collection, setCollection] = useState(spark.collection_tag || '');
   const [ideaType, setIdeaType] = useState(spark.idea_type || 'Product Idea');
@@ -266,12 +267,13 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
 
       {confirm ? (
         <span className="inline-confirm">✓ Done</span>
-      ) : confirmDelete ? (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem' }}>
-          <span style={{ color: 'var(--charcoal-soft)' }}>Remove this spark?</span>
-          <button onClick={handleDelete} style={{ color: 'var(--alert)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Yes</button>
-          <button onClick={() => setConfirmDelete(false)} style={{ color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-        </span>
+      ) : confirmingDelete ? (
+        <ConfirmButton
+          confirming
+          promptText="Remove this spark?"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       ) : !evaluating && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           {spark.temperature === 'hot' ? (
@@ -288,7 +290,16 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
             <button className="btn btn-ghost btn-sm" onClick={() => onCreateConcept(spark)}>+ Concept</button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={() => handle('archive')} style={{ color: 'var(--charcoal-soft)' }}>Archive</button>
-          <button onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto', color: 'var(--charcoal-soft)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', opacity: 0.5 }} title="Delete spark">🗑</button>
+          <ConfirmButton
+            label="🗑"
+            triggerTitle="Delete spark"
+            triggerStyle={{ marginLeft: 'auto', fontSize: '0.8rem', opacity: 0.5 }}
+            confirming={false}
+            onTrigger={() => setConfirmingDelete(true)}
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmingDelete(false)}
+            promptText="Remove this spark?"
+          />
         </div>
       )}
     </div>
