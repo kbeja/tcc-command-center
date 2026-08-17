@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCollectionObjects, createCollection, updateCollection, useChapters } from '../lib/hooks';
+import { createCollection, updateCollection } from '../lib/hooks';
 import { useSparks, useProducts } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 const PRIORITY_ORDER = ['flagship', 'priority_1', 'priority_2', 'supporting', 'archived'];
 
 const PRIORITY_LABELS = {
@@ -76,10 +77,9 @@ function CollectionCard({ collection, productCount, sparkCount, chapters, onUpda
 
 export default function Collections() {
   const navigate = useNavigate();
-  const { collections, loading, refetch } = useCollectionObjects();
+  const { collectionObjects: collections, collectionObjectsLoading: loading, refetchCollectionObjects: refetch, chapters } = useCollectionsContext();
   const { sparks } = useSparks();
   const { products } = useProducts();
-  const { chapters } = useChapters();
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newChapter, setNewChapter] = useState('');

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { updateSpark, archiveSpark, createProduct, useCollections } from '../lib/hooks';
+import { updateSpark, archiveSpark, createProduct } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import ConfirmButton from './ConfirmButton';
@@ -14,7 +15,7 @@ const TYPE_STYLES = {
 
 export default function SparkCard({ spark, onAction, linkedConcepts = [], onCreateConcept }) {
   const navigate = useNavigate();
-  const { collections } = useCollections();
+  const { collectionNames: collections } = useCollectionsContext();
   const [confirm, setConfirm] = useState(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingCollection, setEditingCollection] = useState(false);

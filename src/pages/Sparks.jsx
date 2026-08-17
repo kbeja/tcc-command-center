@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useSparks, updateSpark, archiveSpark, useCollections, useCollectionObjects, useChapters, useConceptsBySpark } from '../lib/hooks';
+import { useSparks, updateSpark, archiveSpark, useConceptsBySpark } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
 import ConceptChatImport from '../components/ConceptChatImport';
@@ -10,9 +11,7 @@ export default function Sparks() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { sparks, loading, refetch } = useSparks();
-  const { collections } = useCollections();
-  const { collections: collectionObjects } = useCollectionObjects();
-  const { chapters } = useChapters();
+  const { collectionNames: collections, collectionObjects, chapters } = useCollectionsContext();
   const { conceptsBySparkId } = useConceptsBySpark();
   const [conceptSourceSpark, setConceptSourceSpark] = useState(null);
   const [search, setSearch] = useState('');

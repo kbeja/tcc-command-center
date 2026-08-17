@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useProducts, useCollections, autoHotSparksForSignal, useChapters, useTrendSignals, createTrendSignal, updateTrendSignal } from '../lib/hooks';
+import { useProducts, autoHotSparksForSignal, useTrendSignals, createTrendSignal, updateTrendSignal } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import ConfidenceSelector from '../components/ConfidenceSelector';
 import ConfirmButton from '../components/ConfirmButton';
 import { nowISO } from '../lib/utils';
@@ -65,7 +66,7 @@ function SignalCard({ signal, products, collections, onAction }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [pursueToast, setPursueToast] = useState(false);
-  const { chapters } = useChapters();
+  const { chapters } = useCollectionsContext();
 
   const st = statusStyle(signal.status);
   const linkedProducts = products.filter(p =>
@@ -305,7 +306,7 @@ function SignalCard({ signal, products, collections, onAction }) {
 }
 
 function AddSignalForm({ collections, onSaved, onCancel }) {
-  const { chapters } = useChapters();
+  const { chapters } = useCollectionsContext();
   const [form, setForm] = useState({
     name: '', collection: '', parent_niche: '', status: 'watch',
     score_breakdown: {}, evidence: '', notes: '', source: '', confidence: '',
@@ -395,8 +396,7 @@ function AddSignalForm({ collections, onSaved, onCancel }) {
 export default function Trends() {
   const { signals, loading, refetch } = useTrendSignals();
   const { products } = useProducts();
-  const { collections } = useCollections();
-  const { chapters } = useChapters();
+  const { collectionNames: collections, chapters } = useCollectionsContext();
   const [adding, setAdding] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [nicheFilter, setNicheFilter] = useState('');

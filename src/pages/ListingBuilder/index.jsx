@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import {
-  useProduct, useCollections, useCollectionObjects, useChapters, usePlaybooks, useConcept, useConcepts,
+  useProduct, usePlaybooks, useConcept, useConcepts,
   useListingGenerations, createProduct, updateProduct, createListingGeneration, linkGenerationsToProduct,
   useStorePolicies, useProductTemplates,
 } from '../../lib/hooks';
+import { useCollectionsContext } from '../../context/CollectionsContext';
 import { resizeImageForUpload } from '../../lib/image';
 import { nicheStyleGuides } from '../../data/collections';
 import { STAGES } from '../../data/stages';
@@ -37,9 +38,11 @@ export default function ListingBuilder() {
   // returning stale data; the new Version History section needs it live.
   const { generations: pastGenerations, refetch: refetchGenerations } = useListingGenerations(productId);
   const latestGeneration = pastGenerations[0] || null;
-  const { collections, refetch: refetchCollections } = useCollections();
-  const { collections: collectionObjs, refetch: refetchCollectionObjs } = useCollectionObjects();
-  const { chapters } = useChapters();
+  const {
+    collectionNames: collections, refetchCollectionNames: refetchCollections,
+    collectionObjects: collectionObjs, refetchCollectionObjects: refetchCollectionObjs,
+    chapters,
+  } = useCollectionsContext();
   const { playbooks } = usePlaybooks();
   // Approved Store Policy Library (Milestone C1) — active only; generation
   // resolves the effective Product Truth from these via

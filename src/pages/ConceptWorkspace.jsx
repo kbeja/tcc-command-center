@@ -4,9 +4,9 @@ import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/image';
 import { nowISO } from '../lib/utils';
 import ConfirmButton from '../components/ConfirmButton';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import {
   useConcept,
-  useCollections,
   updateConcept,
   archiveConcept,
   createConceptOutput,
@@ -685,7 +685,7 @@ function GeneratedOutputTab({ concept, refetch, conceptId, config, navigate, oth
   const [editBody, setEditBody] = useState('');
   const [selectedCollections, setSelectedCollections] = useState([]);
   const [pushing, setPushing] = useState(false);
-  const { collections } = useCollections();
+  const { collectionNames: collections } = useCollectionsContext();
 
   const current = concept.concept_outputs?.find(o => o.output_type === outputType && o.is_current);
   const allVersions = (concept.concept_outputs || [])

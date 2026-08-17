@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useCollectionObjects, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
 import { STAGES } from '../data/stages';
@@ -414,7 +415,7 @@ function pickNoteTarget({ matchedProduct, sparksInPriorityOrder, notesTexts }) {
 }
 
 export default function SessionSummaryParser({ products, onDone }) {
-  const { collections: collectionObjects } = useCollectionObjects();
+  const { collectionObjects } = useCollectionsContext();
   const { sparks: allSparks } = useSparks();
   // Unscoped — concepts within one paste can span different collections, so
   // this can't be pre-filtered the way a single-collection page would.

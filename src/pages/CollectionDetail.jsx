@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useCollectionObjects, updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts, useVisualTags, useCollectionTags, createVisualTag, applyTagToCollection, removeTagFromCollection } from '../lib/hooks';
+import { updateCollection, useSparks, useProducts, useResearchSessions, useTrendSignals, useConcepts, useVisualTags, useCollectionTags, createVisualTag, applyTagToCollection, removeTagFromCollection } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import ConceptChatImport from '../components/ConceptChatImport';
 import VisualTagPicker from '../components/VisualTagPicker';
 import KeywordDetail from '../components/KeywordDetail';
@@ -158,7 +159,7 @@ export default function CollectionDetail() {
   const name = decodeURIComponent(encodedName);
   const navigate = useNavigate();
 
-  const { collections, loading: colLoading, refetch } = useCollectionObjects();
+  const { collectionObjects: collections, collectionObjectsLoading: colLoading, refetchCollectionObjects: refetch } = useCollectionsContext();
   const { sparks } = useSparks();
   const { products } = useProducts();
   const { sessions, refetch: refetchSessions } = useResearchSessions(name);

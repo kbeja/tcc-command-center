@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProducts, useSparks, useTrendSignals, useCollectionObjects, getNeedsAttention, getPickUpProducts } from '../lib/hooks';
+import { useProducts, useSparks, useTrendSignals, getNeedsAttention, getPickUpProducts } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
 import { getNextReviewDates, daysBetween, today, seasonalWindows } from '../data/seasons';
 import ProductCard from '../components/ProductCard';
@@ -35,7 +36,7 @@ export default function Home() {
   const { products } = useProducts();
   const { sparks, refetch: refetchSparks } = useSparks();
   const { signals } = useTrendSignals();
-  const { collections: collectionObjects } = useCollectionObjects();
+  const { collectionObjects } = useCollectionsContext();
 
   const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
   const pickUps = getPickUpProducts(active, 3);

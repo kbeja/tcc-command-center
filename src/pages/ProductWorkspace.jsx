@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, useCollectionObjects, createResearchSession, useConcept, useConcepts, useListingGenerations, useListingReviews } from '../lib/hooks';
+import { useProduct, updateProduct, deleteProduct, useResearchSessions, usePlaybooks, createResearchSession, useConcept, useConcepts, useListingGenerations, useListingReviews } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS, STAGES, STAGE_ORDER } from '../data/stages';
 import { collectionKnowledge, nicheStyleGuides } from '../data/collections';
 import { daysBetween, today } from '../data/seasons';
@@ -978,7 +979,7 @@ export default function ProductWorkspace() {
   const photoPlaybook = playbooks.find(p => p.slug === 'listing-photos');
   const seoPlaybook = playbooks.find(p => p.slug === 'seo-standards');
   const brandVoicePlaybook = playbooks.find(p => p.slug === 'brand-voice');
-  const { collections: allCollections } = useCollectionObjects();
+  const { collectionObjects: allCollections } = useCollectionsContext();
   const collectionObj = allCollections.find(c => c.name === product?.collection);
 
   // Linked Concept (Phase 10) — manual picker only here (no push bridge lands

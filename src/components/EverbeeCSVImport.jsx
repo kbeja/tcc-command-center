@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { createResearchSession, useChapters } from '../lib/hooks';
+import { createResearchSession } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { assignBucketsToList, isLowQualityKeyword } from '../lib/keywords.jsx';
 import { nowISO } from '../lib/utils';
 
@@ -121,7 +122,7 @@ export default function EverbeeCSVImport({ products, onImported }) {
   const [nicheTag, setNicheTag] = useState('');
   const [parentNiche, setParentNiche] = useState('');
   const [importing, setImporting] = useState(false);
-  const { chapters } = useChapters();
+  const { chapters } = useCollectionsContext();
   const [result, setResult] = useState(null);
 
   function reset() {

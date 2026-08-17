@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, useCollectionObjects, useChapters, createCollection, useSparks, useResearchSessions, createImportSession, useVisualTags, createVisualTag, applyTagToConcept } from '../lib/hooks';
+import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, createCollection, useSparks, useResearchSessions, createImportSession, useVisualTags, createVisualTag, applyTagToConcept } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import VisualTagPicker from './VisualTagPicker';
 
 // Bidirectional case-insensitive substring match — same rule used for
@@ -88,8 +89,7 @@ function parsePasteBlock(raw) {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
-  const { collections: collectionObjects } = useCollectionObjects();
-  const { chapters } = useChapters();
+  const { collectionObjects, chapters } = useCollectionsContext();
   const { sparks: allSparks } = useSparks();
   const { sessions: allResearchSessions } = useResearchSessions();
   const { tags: allVisualTags } = useVisualTags();

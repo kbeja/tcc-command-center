@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { deleteResearchSession, deleteKeyword, useCollections, recomputeKeywordInterpretation } from '../lib/hooks';
+import { deleteResearchSession, deleteKeyword, recomputeKeywordInterpretation } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { supabase } from '../lib/supabase';
 import { BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { nowISO } from '../lib/utils';
@@ -174,7 +175,7 @@ export default function ResearchSessionCard({ session, onDeleted, onUpdated }) {
   const [kwSelected, setKwSelected] = useState(new Set());
   const [kwBulkTag, setKwBulkTag] = useState('');
   const [kwBulkDone, setKwBulkDone] = useState('');
-  const { collections } = useCollections();
+  const { collectionNames: collections } = useCollectionsContext();
   const kwCount = keywords.length;
   const statusStyle = STATUS_STYLES[session.status] || STATUS_STYLES['Complete'];
 

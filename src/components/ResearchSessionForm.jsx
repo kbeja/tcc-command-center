@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { createResearchSession, useCollections, useCollectionObjects, useChapters, createCollection } from '../lib/hooks';
+import { createResearchSession, createCollection } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { assignBucketsToList, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { nowISO } from '../lib/utils';
 
@@ -142,9 +143,7 @@ function KeywordRow({ kw, index, onChange, onRemove }) {
 }
 
 export default function ResearchSessionForm({ defaultCollection, defaultNiche, defaultParentNiche, onSaved, onCancel }) {
-  const { collections } = useCollections();
-  const { collections: collectionObjects } = useCollectionObjects();
-  const { chapters } = useChapters();
+  const { collectionNames: collections, collectionObjects, chapters } = useCollectionsContext();
   const [collection, setCollection] = useState(defaultCollection || defaultNiche || '');
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionStyleGuide, setNewCollectionStyleGuide] = useState('');

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { useResearchSessions, useCollections, useCollectionObjects, useChapters, useProducts, createCollection, deleteCollection, updateKeyword, deleteKeyword, recomputeKeywordInterpretation } from '../lib/hooks';
+import { useResearchSessions, useProducts, createCollection, deleteCollection, updateKeyword, deleteKeyword, recomputeKeywordInterpretation } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import KeywordExplore from '../components/KeywordExplore';
@@ -24,8 +25,7 @@ const KEYWORD_PRESETS = {
 const SEASONS = ['Halloween', 'Christmas', 'Valentine\'s Day', 'Mother\'s Day', 'Back to School', '4th of July', 'Summer', 'Spring', 'Fall'];
 
 function CollectionsManager({ refetch: refetchNames }) {
-  const { collections: collObjs, refetch } = useCollectionObjects();
-  const { chapters } = useChapters();
+  const { collectionObjects: collObjs, refetchCollectionObjects: refetch, chapters } = useCollectionsContext();
   const [newName, setNewName]           = useState('');
   const [newChapter, setNewChapter]     = useState('');
   const [newSeason, setNewSeason]       = useState('');
@@ -832,9 +832,7 @@ export default function Research() {
   const [filterChapter, setFilterChapter] = useState('');
   const [filterCollection, setFilterCollection] = useState(searchParams.get('collection') || '');
   const { sessions, loading, refetch } = useResearchSessions(filterCollection || undefined);
-  const { collections, refetch: refetchCollections } = useCollections();
-  const { collections: collectionObjects } = useCollectionObjects();
-  const { chapters } = useChapters();
+  const { collectionNames: collections, refetchCollectionNames: refetchCollections, collectionObjects, chapters } = useCollectionsContext();
   const [adding, setAdding] = useState(false);
   // KeywordList fetches its own keyword data independently (not from `sessions`
   // above), so saving a session from the Keywords tab left its list stale —

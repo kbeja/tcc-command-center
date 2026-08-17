@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useProducts } from './lib/hooks';
 import { WorkshopProvider, useWorkshopContext } from './context/WorkshopContext';
+import { CollectionsProvider } from './context/CollectionsContext';
 import Nav from './components/Nav';
 import CaptureButton from './components/CaptureButton';
 import Home from './pages/Home';
@@ -55,7 +56,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <WorkshopProvider>
-        <AppInner />
+        <CollectionsProvider>
+          <AppInner />
+        </CollectionsProvider>
       </WorkshopProvider>
     </BrowserRouter>
   );

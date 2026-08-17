@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
-  useProducts, useCompetitorListings, useTrendSignals, useChapters, createTrendSignal,
+  useProducts, useCompetitorListings, useTrendSignals, createTrendSignal,
   useVisualProfilesByListing, useVisualTags, createVisualTag, analyzeListing, applyTagToListingProfile, removeTagFromListingProfile,
 } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { useNavigate } from 'react-router-dom';
 import GoalCalculator from '../components/GoalCalculator';
 import EtsyCSVImport from '../components/EtsyCSVImport';
@@ -42,7 +43,7 @@ function listingStatus(p) {
 
 function ClusterCard({ cluster, creating, onCreate }) {
   const [selectedNiche, setSelectedNiche] = useState('');
-  const { chapters } = useChapters();
+  const { chapters } = useCollectionsContext();
   const shops = [...new Set(cluster.listings.map(l => l.shop_name).filter(Boolean))].slice(0, 3);
   return (
     <div style={{ padding: '10px 14px', border: 'var(--border)', borderRadius: 2, background: 'var(--warm-white)' }}>

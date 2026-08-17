@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
-import { createCollection, createResearchSession, useChapters } from '../lib/hooks';
+import { createCollection, createResearchSession } from '../lib/hooks';
+import { useCollectionsContext } from '../context/CollectionsContext';
 import { nowISO } from '../lib/utils';
 
 // ─── Column detection ─────────────────────────────────────────────────────────
@@ -333,7 +334,7 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
   const [newChapter, setNewChapter]  = useState('');
   const [saving, setSaving]     = useState(false);
   const [done, setDone]         = useState(false);
-  const { chapters } = useChapters();
+  const { chapters } = useCollectionsContext();
 
   const score = opportunityScore(keywords);
   const b1 = keywords.filter(k => k.bucket === 1).length;
