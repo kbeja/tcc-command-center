@@ -347,11 +347,11 @@ if (!pb) return { error: 'Playbook not found' };
 ---
 
 ## TRC-011 import_history table doesn't exist — 5 insert call sites silently no-op'd since written
-**Area:** Traceability · **Severity:** Medium · **Status:** done — migration written, awaiting Kristen to run it in Supabase SQL Editor
+**Area:** Traceability · **Severity:** Medium · **Status:** done — migration run by Kristen 2026-08-16, table live
 **File:** `src/components/EverbeeCSVImport.jsx` (x2), `src/components/EtsyCSVImport.jsx`, `src/components/PinterestCSVImport.jsx`, `src/components/WeeklyReview.jsx`
 **Description:** Discovered while writing the SEC-002 RLS migration — `import_history` was never created in the live database (confirmed via a failed migration run + REST API returning PGRST205). All 5 insert call sites had no error checking, so every import has silently no-op'd into it since each was written. Nothing reads from import_history anywhere, so this was never visibly broken — a dead audit trail, not a feature that visibly failed.
 **Fix:**
-1. Run `supabase/migrations/20260818_create_import_history.sql` in the Supabase SQL Editor — not yet run.
+1. Done — `supabase/migrations/20260818_create_import_history.sql` run in the Supabase SQL Editor 2026-08-16.
 2. Done — all 5 call sites now check `{error}`. In the 4 CSV importers, the import_history write is a secondary log on top of already-successful product/research writes, so a failure there surfaces as a non-blocking "⚠ history log failed to save" warning alongside the real success result — it doesn't get treated as if the whole import failed (which would risk Kristen re-importing and duplicating data that already saved fine). In WeeklyReview, the import_history write *is* the entire operation, so there a failure blocks the success state and shows a "⚠ Save failed" banner instead, matching TRC-010's pattern.
 
 ---
