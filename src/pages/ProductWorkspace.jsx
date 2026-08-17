@@ -13,6 +13,7 @@ import CollectionKnowledge from '../components/CollectionKnowledge';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import ReviewCheckpoints from '../components/ReviewCheckpoints';
+import ProductTiming from '../components/ProductTiming';
 import ConfirmButton from '../components/ConfirmButton';
 import { nowISO } from '../lib/utils';
 
@@ -1147,6 +1148,10 @@ export default function ProductWorkspace() {
       {/* ── Live Stats (only for Live / Reviewing) ── */}
       {isLive && (
         <>
+          <div style={{ marginBottom: 24 }}>
+            <ProductTiming product={product} onSaveLaunchDate={handleStatsSave} />
+          </div>
+          <hr className="rule" />
           <div style={{ marginBottom: 24 }}>
             <div className="section-label" style={{ marginBottom: 10 }}>Listing Stats</div>
             <LiveStats product={product} onSave={handleStatsSave} />

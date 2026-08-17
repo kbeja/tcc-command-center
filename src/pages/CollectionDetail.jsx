@@ -7,6 +7,7 @@ import VisualTagPicker from '../components/VisualTagPicker';
 import KeywordDetail from '../components/KeywordDetail';
 import { ClassificationBadge, ConfidenceBadge, StatusBadge, TrendIndicator, DisagreementFlag } from '../lib/keywords';
 import { buildContextHeader, field, section } from '../lib/context';
+import CollectionTiming from '../components/CollectionTiming';
 
 // Duplicated from Research.jsx/ResearchSessionForm.jsx (already-flagged drift,
 // not fixed here — see this phase's Risks notes) rather than an odd
@@ -576,6 +577,10 @@ export default function CollectionDetail() {
           )}
         </div>
       </div>
+
+      <hr className="rule" />
+
+      <CollectionTiming collection={collection} products={products} collections={collections} />
 
       <hr className="rule" />
 

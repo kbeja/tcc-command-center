@@ -11,8 +11,9 @@ import { processWithClaude } from '../../lib/claude';
 import { nowISO } from '../../lib/utils';
 import ProductTemplatesTab from './ProductTemplatesTab';
 import StorePoliciesTab from './StorePoliciesTab';
+import TimingTab from './TimingTab';
 
-const TABS = ['Inbox', 'Updates', 'Playbooks', 'Experiments', 'Proven Results', 'Templates', 'Policies'];
+const TABS = ['Inbox', 'Updates', 'Playbooks', 'Experiments', 'Proven Results', 'Templates', 'Policies', 'Timing'];
 
 const INPUT_TYPES = [
   { key: 'session_summary', label: 'Session Summary', placeholder: 'Paste Claude/ChatGPT session summary…' },
@@ -1035,6 +1036,7 @@ export default function Knowledge() {
       {activeTab === 'Proven Results' && <ProvenResultsTab />}
       {activeTab === 'Templates' && <ProductTemplatesTab />}
       {activeTab === 'Policies' && <StorePoliciesTab />}
+      {activeTab === 'Timing' && <TimingTab />}
     </div>
   );
 }

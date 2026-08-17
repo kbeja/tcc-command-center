@@ -1,9 +1,14 @@
-export const seasonalWindows = [
-  { name: 'Back to School', opens: '2026-08-01', peaks: '2026-08-20', collections: ['Kids Chapter', 'Tween Chapter', 'Mom Chapter'] },
-  { name: 'Holiday', opens: '2026-10-01', peaks: '2026-12-01', collections: ['All'] },
-  { name: "Father's Day", opens: '2027-05-01', peaks: '2027-06-10', collections: ['Dad Collection'] },
-  { name: "Mother's Day", opens: '2027-04-01', peaks: '2027-05-08', collections: ['Mom Chapter'] },
-];
+// The `seasonalWindows` constant that used to live here was removed in Phase
+// 22. It held four hardcoded windows with absolute one-off dates
+// (2026-08-01, 2027-05-08, ...) — no recurrence, no source attribution, no
+// research/design/build phases — and although Home.jsx imported it, nothing
+// in the app ever read it. Real seasonal windows are now persisted,
+// recurring and source-attributed: see supabase/migrations/
+// 20260820_timing_intelligence_phase22.sql and src/lib/timingIntelligence.js.
+//
+// The date helpers below are unrelated and very much alive — they are the
+// shared UTC day-math used by hooks.js, ProductWorkspace, ReviewCheckpoints,
+// listingReviews.js and the timing engine.
 
 import { nowISO } from '../lib/utils';
 

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProducts, useSparks, useTrendSignals, getNeedsAttention, getPickUpProducts } from '../lib/hooks';
+import { useProducts, useSparks, useTrendSignals, getNeedsAttention, getPickUpProducts, useNicheTimings } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
-import { getNextReviewDates, daysBetween, today, seasonalWindows } from '../data/seasons';
+import { getNextReviewDates, daysBetween, today } from '../data/seasons';
 import ProductCard from '../components/ProductCard';
 import SparkCard from '../components/SparkCard';
+import { TimingStateBadge } from '../components/TimingPanel';
+import { groupNichesByState, STATE_URGENCY_ORDER } from '../lib/timingIntelligence';
 
 function Section({ icon, title, badge, children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -44,8 +46,16 @@ export default function Home() {
   const inProgress = active.filter(p => !['Live', 'Idea'].includes(p.stage));
   const hotSparks = sparks.filter(s => s.temperature === 'hot');
   const coldSparks = sparks.filter(s => s.temperature === 'cold');
+  const { results: timingResults } = useNicheTimings(products, collectionObjects);
   const review = getNextReviewDates();
   const reviewListings = products.filter(p => p.stage === 'Live');
+
+  // Only the states that call for work now. Watch/evergreen/unknown niches are
+  // real but not actionable today, and listing all 69 would bury the handful
+  // that matter.
+  const ACTIONABLE = STATE_URGENCY_ORDER.slice(0, STATE_URGENCY_ORDER.indexOf('LATE_WINDOW') + 1);
+  const timingGroups = groupNichesByState(timingResults).filter(gr => ACTIONABLE.includes(gr.state));
+  const actionableCount = timingGroups.reduce((n, gr) => n + gr.niches.length, 0);
 
   // Trend signals with no product in pipeline
   const pipelineCollections = new Set(active.map(p => p.collection).filter(Boolean));
@@ -108,6 +118,35 @@ export default function Home() {
         </div>
         {reviewListings.slice(0, 5).map(p => <ProductCard key={p.id} product={p} />)}
       </Section>
+
+      {/* Opportunity Window — Phase 22. Additive only: the rest of Home is
+          untouched. Shows which niches are in an actionable timing state right
+          now, grouped by state. Deliberately no ordering within a group, no
+          score, and no "work on this first" — which to pick up is Portfolio
+          Intelligence's question, not this one's. */}
+      {timingGroups.length > 0 && (
+        <Section icon="🗓" title="Opportunity Window" badge={actionableCount}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
+            Where each niche sits in its window today, from recorded timing evidence.
+          </div>
+          {timingGroups.map(gr => (
+            <div key={gr.state} style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 5 }}><TimingStateBadge state={gr.state} size="sm" /></div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {gr.niches.map(r => (
+                  <span key={r.niche.id} style={{
+                    fontSize: '0.76rem', padding: '3px 9px', borderRadius: 10,
+                    background: 'rgba(43,41,38,0.05)', color: 'var(--charcoal)',
+                  }}>{r.niche.name}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+          <button className="btn btn-sm btn-ghost" onClick={() => navigate('/knowledge')}>
+            Open the timing library →
+          </button>
+        </Section>
+      )}
 
       {/* Needs Attention */}
       <Section icon="🔴" title="Needs Attention" badge={needsAttn.length + trendAlerts.length + p1WithNoProducts.length}>
