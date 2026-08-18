@@ -34,9 +34,23 @@ function pct(n) {
   return Number(n).toFixed(1) + '%';
 }
 
+// A missing number and a real zero are different findings and must not render
+// the same. This previously labelled any product whose `views` was NULL as
+// "0 views — discoverability problem, check SEO and tags", which asserts a
+// diagnosis from data nobody ever recorded. 21 of 22 Live products have never
+// had stats entered at all, so that badge was telling Kristen to fix SEO on
+// listings the app knows nothing about. Phase 23A's engine draws the same
+// null-vs-zero line (see computeFunnel in tccIntelligence.js).
 function listingStatus(p) {
+  // Whether stats were ever SAVED, not whether the column holds a number.
+  // 24 of 25 products have stats_updated_at null while carrying views values —
+  // mostly 0, some not — so the column value cannot distinguish "measured
+  // zero" from "never touched". stats_updated_at is the only field that
+  // actually records a human having entered anything.
+  const recorded = !!p.stats_updated_at;
   if ((p.mo_sales || 0) > 0) return { label: '✓', title: 'Has sales' };
-  if ((p.views || 0) === 0) return { label: '0 views', title: '0 views — discoverability problem, check SEO and tags' };
+  if (!recorded) return { label: 'No data', title: 'No performance data recorded for this listing yet — this is not a result, just an absence of evidence' };
+  if (p.views === 0) return { label: '0 views', title: '0 views recorded — discoverability problem, check SEO and tags' };
   if ((p.ad_spend || 0) > 0) return { label: '⚑ Ads', title: 'Ad spend active but no sales this month' };
   return { label: 'Review', title: 'Has views but 0 sales — check price, photos, or copy' };
 }
@@ -660,16 +674,24 @@ export default function Analytics() {
   }
 
   // Needs attention
+  // Every item here is a DIAGNOSIS, so each is gated on stats actually having
+  // been recorded for that product. Previously the 0-views branch fired for
+  // any product whose views column was 0 or null, which flagged 15 listings
+  // with "possible indexing issue" purely because nobody had ever entered
+  // their numbers — an alarming conclusion manufactured from absence. Same
+  // null-vs-zero discipline as Phase 23A's diagnose().
   const attention = [];
   live.forEach(p => {
+    const recorded = !!p.stats_updated_at;
     if ((p.ad_spend || 0) > 0 && (p.mo_sales || 0) === 0) {
       attention.push({ icon: '⚑', text: `${p.name} — ads running with 0 sales`, id: p.id });
     }
+    if (!recorded) return;
     if ((p.total_sales || 0) === 0 && (p.views || 0) > 10) {
       attention.push({ icon: '📊', text: `${p.name} — ${p.views} views, 0 sales — consider SEO audit`, id: p.id });
     }
-    if ((p.views || 0) === 0) {
-      attention.push({ icon: '📊', text: `${p.name} — 0 views, possible indexing issue`, id: p.id });
+    if (p.views === 0) {
+      attention.push({ icon: '📊', text: `${p.name} — 0 views recorded, possible indexing issue`, id: p.id });
     }
   });
 
@@ -869,6 +891,13 @@ export default function Analytics() {
               <tbody>
                 {tableListings.map(p => {
                   const status = listingStatus(p);
+                  // Numbers are shown only where stats were actually saved.
+                  // The columns hold values on products whose stats were never
+                  // entered (mostly 0, a few not) with no date attached, so
+                  // rendering them implies a measurement that never happened.
+                  // Display-gated rather than deleted — the underlying values
+                  // stay recoverable if their provenance is ever established.
+                  const rec = !!p.stats_updated_at;
                   return (
                     <tr
                       key={p.id}
@@ -881,9 +910,9 @@ export default function Analytics() {
                         <div style={{ fontWeight: 400, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
                         {p.collection && <div style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)', marginTop: 2 }}>{p.collection}</div>}
                       </td>
-                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{fmtN(p.views)}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{fmtN(p.mo_sales)}</td>
-                      <td style={{ textAlign: 'right', padding: '8px 8px', fontWeight: (p.mo_revenue || 0) > 0 ? 500 : 400 }}>{fmt$(p.mo_revenue)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{rec ? fmtN(p.views) : '—'}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{rec ? fmtN(p.mo_sales) : '—'}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', fontWeight: (p.mo_revenue || 0) > 0 ? 500 : 400 }}>{rec ? fmt$(p.mo_revenue) : '—'}</td>
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: (() => { const profit = p.printify_cost && p.mo_sales ? (p.mo_revenue || 0) - p.printify_cost * p.mo_sales : null; return profit === null ? 'var(--charcoal-soft)' : profit > 0 ? 'var(--success)' : 'var(--alert)'; })() }}>
                         {p.printify_cost && p.mo_sales ? fmt$((p.mo_revenue || 0) - p.printify_cost * p.mo_sales) : '—'}
                       </td>
@@ -896,12 +925,20 @@ export default function Analytics() {
                       <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>
                         {p.views > 0 && p.mo_revenue > 0 ? fmt$(((p.mo_revenue || 0) / p.views) * 1000) : '—'}
                       </td>
-                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{pct(p.conversion_rate)}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--charcoal-soft)' }}>{rec ? pct(p.conversion_rate) : '—'}</td>
                       <td style={{ textAlign: 'center', padding: '8px 8px' }}>
                         <span title={status.title} style={{
                           fontSize: '0.65rem', fontWeight: 500, padding: '2px 6px', borderRadius: 20,
-                          background: status.label === '✓' ? 'rgba(124,175,138,0.15)' : status.label === 'SEO' ? 'rgba(201,123,123,0.15)' : 'rgba(232,168,124,0.15)',
-                          color: status.label === '✓' ? '#2d6b3c' : status.label === 'SEO' ? '#7a2b2b' : '#7a4a1e',
+                          // 'No data' is deliberately neutral, not amber: an
+                          // absence of evidence is not a warning about the listing.
+                          background: status.label === '✓' ? 'rgba(124,175,138,0.15)'
+                            : status.label === 'SEO' ? 'rgba(201,123,123,0.15)'
+                            : status.label === 'No data' ? 'rgba(43,41,38,0.06)'
+                            : 'rgba(232,168,124,0.15)',
+                          color: status.label === '✓' ? '#2d6b3c'
+                            : status.label === 'SEO' ? '#7a2b2b'
+                            : status.label === 'No data' ? 'var(--charcoal-soft)'
+                            : '#7a4a1e',
                         }}>
                           {status.label}
                         </span>
