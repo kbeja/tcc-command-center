@@ -105,12 +105,69 @@ function extractEtsyListing() {
   };
 }
 
+
+// ── Shop listing inventory (Phase 23A) ─────────────────────────────────────
+// Reads the seller's own Shop Manager listings page to pair every listing's
+// Etsy id with its current title. This exists to solve one specific problem:
+// products.etsy_listing_id is unset on every TCC product, so nothing captured
+// from Etsy can be matched to a product, and matching on title is unsafe —
+// this shop really does contain two byte-identical titles belonging to
+// different listings with materially different performance.
+//
+// Selectors verified against the live page 2026-08-18: each listing is a
+// div.card containing exactly one /listings/{id} link and an h2 whose class
+// includes "card-title". Cards yielding zero or several ids are skipped
+// rather than guessed at, so a layout change loses listings loudly (a
+// count that doesn't match the page) instead of silently mispairing them.
+//
+// Captures identity only — id, title, status. No metrics: performance is
+// captured separately, per listing, where the numbers actually live.
+function extractShopListings() {
+  const cards = document.querySelectorAll('div.card');
+  const listings = [];
+  let skipped = 0;
+
+  for (const card of cards) {
+    const ids = [...new Set(
+      [...card.querySelectorAll('a[href]')]
+        .map(a => (a.getAttribute('href') || '').match(/listings?\/(\d{6,})/))
+        .filter(Boolean)
+        .map(m => m[1])
+    )];
+    const titleEl = card.querySelector('h2[class*="card-title"]') || card.querySelector('h2');
+    const title = (titleEl?.textContent || '').replace(/\s+/g, ' ').trim();
+
+    if (ids.length !== 1 || !title) { skipped++; continue; }
+
+    const statusEl = [...card.querySelectorAll('*')].find(
+      el => el.children.length === 0 && /^(Active|Draft|Inactive|Expired|Sold out)$/i.test((el.textContent || '').trim())
+    );
+
+    listings.push({
+      etsyListingId: ids[0],
+      title,
+      status: statusEl ? statusEl.textContent.trim() : null,
+    });
+  }
+
+  return {
+    isShopListingsPage: /\/your\/shops\/me\/tools\/listings/.test(location.pathname),
+    capturedAt: new Date().toISOString(),
+    cardsSeen: cards.length,
+    skipped,
+    listings,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'GET_SELECTION') {
     sendResponse({ selection: window.getSelection()?.toString() || '' });
   }
   if (message?.type === 'GET_ETSY_LISTING') {
     sendResponse(extractEtsyListing());
+  }
+  if (message?.type === 'GET_SHOP_LISTINGS') {
+    sendResponse(extractShopListings());
   }
   return true;
 });

@@ -64,6 +64,13 @@ export default function Popup() {
   const [etsyCapture, setEtsyCapture] = useState(null);
   const [etsyNotes, setEtsyNotes] = useState('');
 
+  // Set when the active tab is the seller's own Shop Manager listings page.
+  // Unlike every other capture here this one writes nothing: it hands the
+  // id/title pairs to TCC, where the human confirms each match. Automatic
+  // matching is unsafe because this shop contains duplicate listing titles.
+  const [shopListings, setShopListings] = useState(null);
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => {
     (async () => {
       const ok = await isConfigured();
@@ -86,6 +93,18 @@ export default function Popup() {
       // Only auto-detect Etsy context when the popup wasn't opened via an
       // explicit "capture this selection" click — that's a more specific,
       // deliberate choice that should win even on an Etsy listing page.
+      if (!pendingCapture && activeTab?.id) {
+        try {
+          const shop = await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_SHOP_LISTINGS' });
+          if (shop?.isShopListingsPage) {
+            setShopListings(shop);
+            return;
+          }
+        } catch {
+          // No content script here — fine, not the listings page then.
+        }
+      }
+
       if (!pendingCapture && activeTab?.id) {
         try {
           const listingInfo = await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_ETSY_LISTING' });
@@ -274,6 +293,57 @@ export default function Popup() {
             </button>
           </>
         )}
+      </div>
+    );
+  }
+
+  if (shopListings) {
+    const { listings, cardsSeen, skipped } = shopListings;
+    const dupes = listings.length - new Set(listings.map(l => l.title)).size;
+
+    async function copyForTcc() {
+      await navigator.clipboard.writeText(JSON.stringify({
+        capturedAt: shopListings.capturedAt,
+        listings,
+      }, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
+
+    return (
+      <div style={{ padding: '16px 18px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h2 style={{ fontSize: '1rem' }}>Shop Listings</h2>
+          <button className="btn btn-ghost btn-sm" onClick={() => chrome.runtime.openOptionsPage()} title="Settings">⚙</button>
+        </div>
+
+        <div style={{ fontSize: '0.82rem', marginBottom: 6 }}>
+          Found <strong>{listings.length}</strong> listing{listings.length === 1 ? '' : 's'} with an Etsy id.
+        </div>
+
+        {/* A card the parser couldn't read is reported, not ignored — a
+            silent shortfall would look identical to a shop with fewer
+            listings. */}
+        {skipped > 0 && (
+          <div style={{ fontSize: '0.75rem', color: '#7a4a1e', marginBottom: 6 }}>
+            ⚠ {skipped} of {cardsSeen} cards on this page couldn&rsquo;t be read. If that number looks wrong,
+            Etsy may have changed their layout — tell Claude before relying on this.
+          </div>
+        )}
+        {dupes > 0 && (
+          <div style={{ fontSize: '0.75rem', color: '#7a4a1e', marginBottom: 6 }}>
+            {dupes} listing{dupes === 1 ? '' : 's'} share a title with another. TCC will ask you to resolve those
+            by hand rather than guess.
+          </div>
+        )}
+        <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10, lineHeight: 1.5 }}>
+          Scroll to the bottom of the listings page first so every listing has loaded, then copy and paste
+          into TCC &rarr; Products &rarr; Link Etsy Listings.
+        </div>
+
+        <button className="btn btn-primary" style={{ width: '100%' }} onClick={copyForTcc}>
+          {copied ? '✓ Copied — paste into TCC' : `Copy ${listings.length} listings for TCC`}
+        </button>
       </div>
     );
   }

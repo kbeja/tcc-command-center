@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useProducts, getNeedsAttention, useLatestSessionDates } from '../lib/hooks';
 import { STAGE_ORDER } from '../data/stages';
 import ProductCard from '../components/ProductCard';
+import LinkEtsyListings from '../components/LinkEtsyListings';
 
 export default function Products() {
   const { products, loading } = useProducts();
   const [filter, setFilter] = useState('all');
+  const [linking, setLinking] = useState(false);
   const needsAttn = getNeedsAttention(products);
   const attnIds = new Set(needsAttn.map(p => p.id));
   const latestSessionDates = useLatestSessionDates();
@@ -38,7 +40,18 @@ export default function Products() {
   return (
     <div className="page">
       <div className="page-header">
-        <div className="page-title">Products</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <div className="page-title">Products</div>
+          {/* Surfaced here rather than buried in settings: until products
+              carry their Etsy listing id, no per-listing performance data can
+              be matched to anything. The prompt disappears once every product
+              is linked. */}
+          {products.some(p => !p.etsy_listing_id) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setLinking(v => !v)}>
+              {linking ? 'Close' : `🔗 Link Etsy listings (${products.filter(p => !p.etsy_listing_id).length} unlinked)`}
+            </button>
+          )}
+        </div>
         <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[['all', 'All'], ['live', 'Live'], ['development', 'In Progress'], ['paused', 'Paused/Killed']].map(([val, label]) => (
             <button
@@ -51,6 +64,8 @@ export default function Products() {
           ))}
         </div>
       </div>
+
+      {linking && <LinkEtsyListings onClose={() => setLinking(false)} />}
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
