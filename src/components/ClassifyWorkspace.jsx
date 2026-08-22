@@ -195,7 +195,7 @@ export default function ClassifyWorkspace() {
         title="Research sessions"
         done={sessionsDone}
         total={sessions.length}
-        hint="Classifying a session is what switches the Listing Builder's niche path on — until then it only ever matches on collection name."
+        hint="Set a session's niche, then use the button that appears to apply it to every keyword in that session. That connection is what lets the Listing Builder find keywords by niche rather than by matching collection names."
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {sessions.map(s => (
@@ -208,7 +208,7 @@ export default function ClassifyWorkspace() {
                 {s.collection || 'No collection'}
                 {s.niche && <span style={{ color: 'var(--charcoal-soft)' }}> · {s.niche}</span>}
                 <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.66rem' }}>
-                  {' '}· {s.source} · {s.date} · {(s.keywords || []).length} kw
+                  {' '}· {s.source} · {s.date} · {(s.keywords || []).length} keyword{(s.keywords || []).length !== 1 ? 's' : ''}
                 </span>
               </span>
               <NicheSelect
@@ -220,9 +220,11 @@ export default function ClassifyWorkspace() {
               {s.niche_id && (s.keywords || []).length > 0 && (
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
                   disabled={busy === `sk-${s.id}`}
-                  title="Link every keyword in this session to the same niche"
+                  title="Connect every keyword in this session to the niche above, so the Listing Builder can find them by niche instead of by collection name"
                   onClick={() => linkSessionKeywords(s)}>
-                  {busy === `sk-${s.id}` ? 'Linking…' : `Link ${(s.keywords || []).length} kw`}
+                  {busy === `sk-${s.id}`
+                    ? 'Linking…'
+                    : `Apply niche to ${(s.keywords || []).length} keyword${(s.keywords || []).length !== 1 ? 's' : ''}`}
                 </button>
               )}
             </div>
