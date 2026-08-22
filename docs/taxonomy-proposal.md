@@ -363,3 +363,114 @@ word if the name will bother you.
 lists crest, collegiate, varsity, line drawing, bootleg, vintage character, patchwork, minimal
 typography. If there are others you use regularly, they're worth seeding together in Phase 4 rather
 than accumulating one at a time.
+
+---
+
+## 10. Phase 2c build list — FOR REVIEW, nothing created yet
+
+28 new nodes. Derived from the §4 triage with the §9 decisions applied. The 10 broad
+niches already exist; everything below hangs off them.
+
+### 10.1 The consistency rule I applied
+
+Kristen's decision #1 was "hockey then hockey mom" — the *sport* is the sub-niche and the
+*person* is the specific. Applied uniformly, that generalises to:
+
+> **Sub-niche = the domain or activity. Specific niche = the buyer identity within it.**
+
+So Reading → Romance Reader, Hockey → Hockey Mom, Mahjong → Mahjong Player, Coffee →
+Coffee Lover. Flagging it because it is an extrapolation from one answer, and it is what
+makes Mahjong/Coffee two nodes each instead of one.
+
+### 10.2 HOBBIES — 15 nodes
+
+| Node | Level | From |
+|---|---|---|
+| Reading | sub | Reader Chapter · Reading Niche & Literary Interest |
+| — Book Lover | specific | Book Lover Apparel · Bibliophile & Literary Enthusiast |
+| — BookTok Reader | specific | BookTok & Modern Reader Culture |
+| — Romance Reader | specific | Cozy Romance · Spicy & Dark Romance Readers |
+| — Fantasy Reader | specific | Fantasy Reader |
+| — Kid Reader | specific | Kids Chapter (decision #2) |
+| Hockey | sub | Hockey |
+| — Hockey Mom | specific | Hockey (products) |
+| — Hockey Girlfriend | specific | Hockey (products — "Dibs on the Hockey Player") |
+| — Hockey Fan | specific | Hockey (products) |
+| Field Hockey | sub | Field Hockey Niche |
+| Mahjong | sub | Mahjong Apparel & Gifts · Mahjong Products |
+| — Mahjong Player | specific | as above |
+| Coffee | sub | Coffee & Caffeine Themed |
+| — Coffee Lover | specific | as above |
+
+### 10.3 RELATIONSHIPS — 3 nodes
+
+| Node | Level | From |
+|---|---|---|
+| Motherhood | sub | Mom Chapter — **TCC Extension** (§38) |
+| — Elder Millennial Mom | specific | Elder Millennial Chapter (+ aesthetic `90s Nostalgia`) |
+| Fatherhood | sub | Dad Gifts & Apparel |
+
+### 10.4 PETS — 2 nodes
+
+| Node | Level | From |
+|---|---|---|
+| Pet Owners | sub | Animal Lover Gifts |
+| — Dog Owner | specific | Dog Humor Apparel · Animal Meme (+ secondary tag `Funny`, §9.1) |
+
+### 10.5 PROFESSIONS — 2 nodes
+
+| Node | Level | From |
+|---|---|---|
+| Teachers | sub | Teacher Gifts & Apparel |
+| Librarians | sub | Library & Academic (decision #3) |
+
+### 10.6 FUNNY — 1 node
+
+| Node | Level | From |
+|---|---|---|
+| Unhinged | sub | Unhinged Apparel (decision #5) |
+
+`Funny & Meme Graphic Tees` and `Religious & Faith Apparel` map onto the existing **Funny**
+and **Christian** broad niches directly — no new node for either.
+
+### 10.7 SEASONAL — 5 nodes
+
+| Node | Level | From |
+|---|---|---|
+| Christmas | sub | Christmas & Holiday Gifts |
+| Halloween | sub | Halloween Apparel |
+| Back to School | sub | Back to School |
+| 4th of July | sub | 4th of July & American Patriotic |
+| Summer | sub | Summer Printables (overlay only — the collection itself is a Product Type) |
+
+Only the five with existing work. Each also gets a `niche_timing_niches` link to its Phase 22
+calendar entry, so it inherits real sourced launch windows. The calendar has ~25 more seasonal
+entries (Valentines, Easter, Thanksgiving, Mother's/Father's Day, St. Patrick's, Galentines,
+Hanukkah…) — see open question 4 below.
+
+### 10.8 The 5 surviving Collections and their niche links
+
+This is where the many-to-many earns its place — `Morally Gray Society` is genuinely both.
+
+| Collection | Linked niches |
+|---|---|
+| Morally Gray Society | Romance Reader **+** Fantasy Reader |
+| Spicy Books Social Club | Romance Reader |
+| Annotation Club | Reading |
+| Bookstore Weekend | Reading |
+| Reading Rituals | Reading |
+
+### 10.9 Open questions on this list
+
+1. **Romantasy Reader** — the brief names it repeatedly (§7, §31) as a distinct specific niche,
+   but no current collection, product or research session maps to it. Create it now as an empty
+   branch, or wait until there is work in it?
+2. **Motherhood has only one specific niche.** The 12 Mom Chapter products (Camp Mom, Comfortable
+   Mama, 90s mom, New Chapter Same Chaos, Late Bloomers…) do not split into obvious separate buyer
+   identities to me — they read as one audience in different moods. Leave Motherhood as a sub-niche
+   with just Elder Millennial Mom under it, or do you see distinct identities there?
+3. **Field Hockey has no specific niche.** Fine as a bare sub-niche for now?
+4. **Seasonal depth** — the five above, or seed the calendar's full seasonal set so the crossover
+   overlay has every holiday available from day one?
+5. **The §10.1 rule** — confirm sub = domain, specific = identity, which is what produces
+   Mahjong → Mahjong Player rather than a single Mahjong node.
