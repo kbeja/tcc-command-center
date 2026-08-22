@@ -328,7 +328,7 @@ export default function ConceptWorkspace() {
   async function handleAddConceptTag(tag) {
     let tagId = tag.id;
     if (!tagId) {
-      const { data, error } = await createVisualTag(tag.name);
+      const { data, error } = await createVisualTag(tag.name, tag.kind || null);
       if (error || !data) return;
       tagId = data.id;
     }

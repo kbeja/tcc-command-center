@@ -1706,10 +1706,14 @@ export function useVisualTags() {
 // already does by hand for createCollection(), centralized here since
 // every tag-creating call site (both pickers, Visual Language paste
 // ingestion) needs the identical recovery.
-export async function createVisualTag(name) {
+// kind is chosen at creation time in VisualTagPicker. Passing it here is what
+// keeps a newly-invented tag out of the Unsorted bucket -- the pool reached 54
+// unclassified tags precisely because there was nowhere to say what a tag was
+// at the moment it was created.
+export async function createVisualTag(name, kind = null) {
   const trimmed = (name || '').trim();
   if (!trimmed) return { data: null, error: new Error('Tag name required') };
-  const { data, error } = await supabase.from('visual_tags').insert({ name: trimmed }).select().single();
+  const { data, error } = await supabase.from('visual_tags').insert({ name: trimmed, kind }).select().single();
   if (error) {
     if (error.message?.toLowerCase().includes('unique')) {
       const { data: existing } = await supabase.from('visual_tags').select('*').ilike('name', trimmed).maybeSingle();

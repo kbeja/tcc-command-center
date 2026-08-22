@@ -314,7 +314,7 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
 
       if (selectedTags.length) {
         for (const t of selectedTags) {
-          const tagId = t.id || (await createVisualTag(t.name)).data?.id;
+          const tagId = t.id || (await createVisualTag(t.name, t.kind || null)).data?.id;
           if (tagId) await applyTagToConcept(savedConcept.id, tagId);
         }
       }

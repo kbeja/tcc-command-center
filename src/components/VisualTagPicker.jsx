@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TAG_KINDS, tagKindLabel, tagKindStyle, groupTagsByKind } from '../data/tagKinds';
 
 // Shared visual-tag picker — autocomplete over the existing vocabulary, with
 // an inline "+ Create ..." option when nothing matches. This is the expected
@@ -42,18 +43,28 @@ export default function VisualTagPicker({ allTags, appliedTags, onAdd, onRemove,
   function handleKeyDown(e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
+    // Enter picks the top suggestion, but never CREATES — a new tag needs a
+    // kind chosen explicitly, and silently creating an unsorted one on Enter
+    // is how the pool became 54 unclassified tags in the first place.
     if (suggestions[0]) pick(suggestions[0]);
-    else if (showCreateOption) pick({ name: query.trim() });
   }
 
   return (
     <div>
-      {appliedTags.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          {appliedTags.map(t => (
+      {appliedTags.length > 0 && groupTagsByKind(appliedTags).map(group => (
+        <div key={group.kind} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: '0.6rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: palette.text, opacity: 0.5, marginBottom: 3 }}>
+            {group.label}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {group.tags.map(t => (
             <span key={t.id || t.name} style={{
               display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.72rem',
-              padding: '3px 6px 3px 10px', borderRadius: 20, background: palette.pillBg, color: palette.pillText,
+              padding: '3px 6px 3px 10px', borderRadius: 20,
+              // Dark mode keeps the single palette pill — the four kind tints
+              // were chosen against the light background and lose contrast on
+              // black, and the group heading already says which kind it is.
+              ...(dark ? { background: palette.pillBg, color: palette.pillText } : tagKindStyle(t.kind)),
             }}>
               {t.name}
               <button type="button" onClick={() => onRemove(t)}
@@ -62,8 +73,9 @@ export default function VisualTagPicker({ allTags, appliedTags, onAdd, onRemove,
               </button>
             </span>
           ))}
+          </div>
         </div>
-      )}
+      ))}
       <div style={{ position: 'relative' }}>
         <input
           value={query}
@@ -84,13 +96,27 @@ export default function VisualTagPicker({ allTags, appliedTags, onAdd, onRemove,
             maxHeight: 180, overflowY: 'auto',
           }}>
             {suggestions.map(t => (
-              <div key={t.id} onMouseDown={() => pick(t)} style={{ padding: '6px 10px', fontSize: 13, cursor: 'pointer', color: palette.text }}>
-                {t.name}
+              <div key={t.id} onMouseDown={() => pick(t)}
+                style={{ padding: '6px 10px', fontSize: 13, cursor: 'pointer', color: palette.text, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                <span>{t.name}</span>
+                <span style={{ fontSize: '0.6rem', opacity: 0.6, whiteSpace: 'nowrap' }}>{tagKindLabel(t.kind)}</span>
               </div>
             ))}
             {showCreateOption && (
-              <div onMouseDown={() => pick({ name: query.trim() })} style={{ padding: '6px 10px', fontSize: 13, cursor: 'pointer', color: palette.createText }}>
-                + Create "{query.trim()}"
+              <div style={{ padding: '6px 10px', fontSize: 13, color: palette.createText }}>
+                <div style={{ marginBottom: 4 }}>+ Create &ldquo;{query.trim()}&rdquo; as:</div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {TAG_KINDS.map(k => (
+                    <button key={k} type="button"
+                      onMouseDown={() => pick({ name: query.trim(), kind: k })}
+                      style={{
+                        fontSize: '0.65rem', padding: '2px 8px', borderRadius: 20,
+                        border: 'none', cursor: 'pointer', ...tagKindStyle(k),
+                      }}>
+                      {tagKindLabel(k)}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
