@@ -1,0 +1,61 @@
+-- Research sessions can point at a niche (early slice of Phase 5)
+-- Run this in the Supabase SQL Editor (not auto-applied).
+--
+-- Purely additive: one nullable column. No existing read path changes, nothing
+-- is backfilled, and every current query keeps working untouched.
+--
+-- ---------------------------------------------------------------------------
+-- WHY THIS IS PULLED FORWARD OUT OF PHASE 5
+-- ---------------------------------------------------------------------------
+-- Keyword Explore used to default its save target to "create a new collection"
+-- with the AI cluster's own label pre-filled as the name. That is where most of
+-- the shop's 54 collections came from -- machine-named rows like "Book Lover
+-- Demographic Shirts" and "Color & Design Attributes" that were never markets
+-- anyone chose, plus the two duplicate Mahjong collections created by the same
+-- eRank research being imported a day apart under two different AI labels.
+--
+-- That default is now fixed. But fixing it alone would have made the real
+-- workflow WORSE: researching a genuinely new market is how new sub-niches get
+-- discovered, and if the only way to file that research is a collection, then
+-- every new market still lands in the wrong layer. Waiting until Phase 5 would
+-- mean three more phases of research accumulating as collection debt.
+--
+-- So research can now point at a niche directly. Markets belong in the
+-- taxonomy; collections stay rare and deliberate (five real ones exist).
+--
+-- ---------------------------------------------------------------------------
+-- WHY collection IS NOT REMOVED
+-- ---------------------------------------------------------------------------
+-- research_sessions.collection stays exactly as it is, and stays the field the
+-- Listing Builder joins on. Its replacement is a Phase 8 cutover with its own
+-- risk (that one .in('collection', cols) query is the entire keyword universe
+-- for every generation), and doing it here would smuggle the highest-risk
+-- change in the whole roadmap into a convenience fix.
+--
+-- For now a session may carry either, both, or neither. Neither is a legitimate
+-- state, not an incomplete one -- exploratory research has no home until the
+-- numbers say whether it is a real market (§10 "capture first, classify
+-- second", §35 progressive migration).
+--
+-- ON DELETE SET NULL, matching every other nullable FK this roadmap has added
+-- (concepts.spark_id, concepts.research_session_id, keyword_history.keyword_id):
+-- archiving or deleting a niche must never delete the research filed under it.
+-- The research is the evidence; the niche is just how it was labelled.
+
+ALTER TABLE research_sessions
+  ADD COLUMN IF NOT EXISTS niche_id uuid REFERENCES niches(id) ON DELETE SET NULL;
+
+-- "Which research covers this niche?" is the read this exists to serve, and it
+-- will run on every niche detail view.
+CREATE INDEX IF NOT EXISTS research_sessions_niche_id_idx ON research_sessions(niche_id);
+
+-- ---------------------------------------------------------------------------
+-- Verify (optional — run after the above)
+-- ---------------------------------------------------------------------------
+-- Expect the column to exist and every existing row to be NULL (nothing is
+-- backfilled here -- classifying existing research is Phase 9, one record at a
+-- time with approval, per §40).
+--
+-- SELECT count(*) AS total,
+--        count(niche_id) AS with_niche
+-- FROM research_sessions;

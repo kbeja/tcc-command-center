@@ -3,6 +3,7 @@ import { assignBucket, BucketBadge, BUCKET_STYLE } from '../lib/keywords';
 import { createCollection, createResearchSession } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { nowISO } from '../lib/utils';
+import NichePicker from './NichePicker';
 
 // ─── Column detection ─────────────────────────────────────────────────────────
 
@@ -345,6 +346,11 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
   const [targetColl, setTargetColl] = useState('');
   const [newCollName, setNewCollName] = useState(group.name);
   const [newChapter, setNewChapter]  = useState('');
+  // The niche is the real destination for a market. Collection stays available
+  // and unchanged (the Listing Builder still joins on it until Phase 8), but a
+  // newly-discovered sub-niche now has somewhere correct to land instead of
+  // being forced into a collection it should never have been.
+  const [nicheId, setNicheId]   = useState(null);
   const [saving, setSaving]     = useState(false);
   const [done, setDone]         = useState(false);
   const { chapters } = useCollectionsContext();
@@ -358,13 +364,15 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
   const upTrend = keywords.filter(k => k.trend === 'up').length;
 
   async function handleSave() {
-    // Empty targetColl is a deliberate choice — save this group's research without
-    // committing to a collection yet. Only block on a genuinely incomplete "new
+    // Empty targetColl is a deliberate choice — save this group's research
+    // without committing to a collection, which is now the default and is the
+    // right outcome when the research is filed against a niche instead (or
+    // against nothing yet). Only block on a genuinely incomplete "new
     // collection" entry (name field left blank).
     if (targetColl === '__new__' && !newCollName.trim()) return;
     setSaving(true);
     const collName = targetColl === '__new__' ? newCollName.trim() : targetColl;
-    await onStartCollection(group, keywords, collName || null, targetColl === '__new__', newChapter.trim() || null);
+    await onStartCollection(group, keywords, collName || null, targetColl === '__new__', newChapter.trim() || null, nicheId);
     setSaving(false);
     setDone(true);
     setConverting(false);
@@ -416,9 +424,23 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
         <div style={{ fontSize: '0.75rem', color: '#2d6b3c', fontWeight: 500 }}>✓ Saved to Research</div>
       ) : converting ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Niche first, collection second — the niche is where a market
+              belongs, and putting it above the collection dropdown is what
+              stops "which collection?" being the reflex question again.
+              allowCreate is on because discovering a NEW sub-niche is the whole
+              point of exploratory research: if creating one meant leaving this
+              page, the research would get filed under whatever already exists. */}
+          <NichePicker
+            value={nicheId}
+            onChange={setNicheId}
+            label="Niche"
+            allowCreate
+            compact
+            helpText="Where this market sits. Leave blank if the numbers haven't told you yet."
+          />
           <select value={targetColl} onChange={e => setTargetColl(e.target.value)}
             style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
-            <option value="">— Save uncategorized (not ready to decide) —</option>
+            <option value="">— No collection —</option>
             <option value="__new__">+ Create new collection</option>
             {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -436,7 +458,7 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
           )}
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save to Collection →'}
+              {saving ? 'Saving…' : 'Save research →'}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => setConverting(false)}>Cancel</button>
           </div>
@@ -574,7 +596,7 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
     setClustering(false);
   }
 
-  async function handleStartCollection(group, groupKws, collName, isNew, chapter) {
+  async function handleStartCollection(group, groupKws, collName, isNew, chapter, nicheId) {
     if (isNew) {
       const extra = chapter ? { chapter } : {};
       const { error } = await createCollection(collName, extra);
@@ -600,6 +622,7 @@ export default function KeywordExplore({ collections, onCollectionCreated }) {
     const { error: sessionErr } = await createResearchSession(
       {
         collection: collName || null,
+        niche_id: nicheId || null,
         date: nowISO().slice(0, 10),
         source: sourceLabel || 'Keyword Explore',
         status: 'Complete',
