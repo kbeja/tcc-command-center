@@ -1,69 +1,94 @@
--- Backfill products.went_live_at for existing Live listings
+-- Backfill products.went_live_at — CONSERVATIVE, 4 rows only
 -- Run this in the Supabase SQL Editor (not auto-applied).
 --
 -- ---------------------------------------------------------------------------
--- WHY THIS MATTERS MORE THAN ITS SIZE SUGGESTS
+-- WHY THIS MATTERS
 -- ---------------------------------------------------------------------------
--- Every one of the shop's 23 Live products currently has went_live_at = NULL.
--- That single empty column disables a surprising amount of the app:
+-- Every one of the shop's 23 Live products has went_live_at = NULL, and that
+-- single empty column disables far more than it looks like it should:
 --
---   * listingReviews.js  — no 30/60/90/120 checkpoint clock can start
---   * tccIntelligence.js — computeMaturity() returns NO_LAUNCH_DATE, so
---                          diagnose() returns INSUFFICIENT for every listing
---                          and the whole funnel diagnosis is inert
+--   * listingReviews.js   — no 30/60/90/120 checkpoint clock can start
+--   * tccIntelligence.js  — computeMaturity() returns NO_LAUNCH_DATE, so
+--                           diagnose() returns INSUFFICIENT for EVERY listing
+--                           and the whole funnel diagnosis is inert
 --   * timingIntelligence.js — no launched-before/after-target comparison
 --   * portfolioAnalysis.js  — no performance comparison by title strategy,
 --                             format, aesthetic or anything else
 --
--- So the learning loop cannot run at all until this is populated, no matter
--- what else gets built on top of it.
+-- So the learning loop cannot run at all until launch dates exist.
 --
 -- ---------------------------------------------------------------------------
--- WHY stage_updated_at IS A LEGITIMATE SOURCE HERE, NOT A GUESS
+-- WHY THIS ONLY TOUCHES 4 OF THE 23 — READ BEFORE WIDENING IT
 -- ---------------------------------------------------------------------------
--- timingIntelligence.js and tccIntelligence.js both carry explicit comments
--- refusing to infer went_live_at from created_at / updated_at / stage_updated_at.
--- That rule is about the ENGINES never silently substituting a proxy at read
--- time, and it stays intact — nothing in those files changes.
+-- An earlier draft of this migration backfilled all 23 from stage_updated_at.
+-- That was WRONG, and the reason is worth recording so it is not retried.
 --
--- This is a different thing: a one-time, human-authorised backfill. Kristen
--- confirmed on 2026-08-22 that moving a product to Live IS the launch event,
--- which makes stage_updated_at on a Live product a record of when that
--- happened, not a guess about it. The app now writes went_live_at directly at
--- that moment (ProductWorkspace.handleStageUpdate and the Listing Builder save
--- path), so this migration only ever has to cover history.
+-- Kristen pointed out that the dashboard was built AFTER her first listings
+-- were already live on Etsy. The data confirms it exactly: 18 of the 23 Live
+-- products share the identical created_at AND stage_updated_at of
+-- 2026-07-03 03:09:11 — a single bulk import (see supabase-migrate.sql, which
+-- migrated the old etsy_products table into products), two days after this
+-- repo's first commit on 2026-07-01.
 --
--- Confidence is not uniform, and the split is worth knowing:
---   * 21 of 23 products have stage_updated_at = created_at, meaning they were
---     created straight as Live. For those the date is as good as recorded.
---   * 2 products changed stage at some point after creation, so their
---     stage_updated_at is the LAST stage change, which may be later than the
---     actual launch. Those two are listed by the verification query at the
---     bottom so they can be eyeballed and hand-corrected in the Timing panel.
+-- For those 18, stage_updated_at records WHEN THE ROW WAS IMPORTED, not when
+-- the listing went live. Their true launch dates pre-date the dashboard's
+-- existence and are not recoverable from anything in this database. Writing
+-- 2026-07-03 into went_live_at for them would have manufactured 18 confident,
+-- wrong, official-looking launch dates — and every checkpoint, maturity
+-- reading and performance comparison downstream would have been silently
+-- anchored to a fiction. That is precisely the fabricated-evidence failure
+-- this project's rules exist to prevent.
 --
--- Deliberately scoped to stage = 'Live'. A Paused or Killed product's
--- stage_updated_at records when it was paused or killed, which is emphatically
--- not a launch date; if any of those were once live, set them by hand.
+-- One further row is excluded: the 2026-07-20 "Toes In The Sand Book Lover
+-- T-Shirt". It was created individually rather than in the bulk import, but
+-- there is no way to tell from the data whether it was created because it was
+-- being launched that day, or entered later to catalogue an older listing.
+-- Ambiguous, so it is left for a human rather than guessed at.
+--
+-- That leaves exactly the 4 Hockey listings created individually through the
+-- Listing Builder on 2026-08-17 and 2026-08-18, which Kristen independently
+-- confirmed went live about a week before 2026-08-22. For these, creation and
+-- launch genuinely were the same act.
+--
+-- THE REMAINING 19 NEED HUMAN ENTRY. Their real dates are visible in Etsy Shop
+-- Manager; the Timing panel on each Product Workspace has a launch-date field.
+-- The query at the bottom lists exactly which ones are outstanding.
+--
+-- Going forward this is a one-off: both stage->Live paths now write
+-- went_live_at at the moment it happens (ProductWorkspace.handleStageUpdate
+-- and the Listing Builder save path), so no future listing depends on a
+-- backfill.
+--
+-- Note the read-time engines are untouched: timingIntelligence.js and
+-- tccIntelligence.js still explicitly refuse to infer a launch date from
+-- created_at / updated_at / stage_updated_at. That rule is about the engines
+-- never silently substituting a proxy, and it stands. This is a one-time,
+-- human-authorised write for 4 rows whose provenance was individually checked.
 
 UPDATE products
 SET went_live_at = (stage_updated_at AT TIME ZONE 'UTC')::date
 WHERE stage = 'Live'
   AND went_live_at IS NULL
-  AND stage_updated_at IS NOT NULL;
+  AND stage_updated_at IS NOT NULL
+  -- Created individually through the Listing Builder, after the bulk import.
+  -- The explicit timestamp is the bulk-import signature; anything at that
+  -- exact instant is a migrated row, not a launch.
+  AND created_at <> timestamptz '2026-07-03 03:09:11+00'
+  AND created_at >= timestamptz '2026-08-01 00:00:00+00';
 
 -- ---------------------------------------------------------------------------
 -- Verify (optional — run after the above)
 -- ---------------------------------------------------------------------------
--- Expect 23 Live products with a launch date and 0 without.
+-- Expect exactly 4 with a date, 19 still without.
 --
 -- SELECT count(*) FILTER (WHERE went_live_at IS NOT NULL) AS with_date,
---        count(*) FILTER (WHERE went_live_at IS NULL)     AS without_date
+--        count(*) FILTER (WHERE went_live_at IS NULL)     AS needs_manual_entry
 -- FROM products WHERE stage = 'Live';
 --
--- The 2 lower-confidence rows — stage changed at some point after creation, so
--- check these two dates look right and correct them in the Timing panel if not:
+-- The 19 still needing a real date from Etsy Shop Manager — enter each in the
+-- Timing panel on its Product Workspace page:
 --
--- SELECT name, went_live_at, created_at::date AS created
+-- SELECT name, collection, created_at::date AS row_created
 -- FROM products
--- WHERE stage = 'Live' AND stage_updated_at <> created_at
--- ORDER BY went_live_at;
+-- WHERE stage = 'Live' AND went_live_at IS NULL
+-- ORDER BY collection, name;
