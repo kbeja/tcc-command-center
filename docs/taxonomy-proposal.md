@@ -2,30 +2,50 @@
 
 **Date:** 2026-08-21
 **Follows:** [taxonomy-architecture-audit.md](taxonomy-architecture-audit.md) (Phase 1)
-**Status:** Proposal for review. Nothing applied. No migration written yet.
+**Status:** Decisions resolved 2026-08-22 (§9). Phase 2a migration written — see `supabase/migrations/20260822_niche_taxonomy_phase2a.sql`. Not yet run.
 **Live data:** read from Supabase 2026-08-21 via `scripts/supabase-read.js`.
 
 ---
 
-## 1. The nine broad niches (fixed seed)
+## 1. The ten broad niches (fixed seed)
 
 From Taylor's 90-Day Challenge, confirmed by Kristen:
 
 `Wedding` · `Funny` · `Birthday` · `Relationships` · `Christian` · `Hobbies` · `Professions` · `Pets` · `Social Justice`
 
-These are the only Level-1 nodes. Everything else hangs beneath them, or is not taxonomy at all.
+Everything else hangs beneath these, or is not taxonomy at all.
 
-**Two tensions worth naming before we build on this** (neither blocks anything — flagging, not
-objecting):
+Plus a tenth, added by Kristen 2026-08-22 and marked as a TCC Extension (§38):
 
-- **`Funny` and `Birthday` are not customer identities**, which is what §3 says a niche level
-  should be. `Funny` is closer to a message/voice and `Birthday` to an occasion. They are in the
-  source framework, so they stay — but it means the "is this an identity?" test can't be the only
-  rule we use when deciding where something goes.
-- **There is no home for seasonal work** in the nine. Halloween, Christmas, Back to School and
-  4th of July are all live collections today. They must **not** become taxonomy nodes (§6 says
-  seasonal is an overlay). They belong in the Seasonal Overlay layer — and TCC already has the
-  right home for this: Phase 22's `timing_niches` + `timing_guidance` calendar.
+`Seasonal` — with Halloween, Christmas, Valentines etc. as its sub-niches.
+
+**One tension worth naming** (flagging, not objecting): **`Funny` and `Birthday` are not customer
+identities**, which is what §3 says a niche level should be. `Funny` is closer to a message/voice
+and `Birthday` to an occasion. They are in the source framework, so they stay — but it means "is
+this an identity?" can't be the only rule we use when deciding where something goes.
+
+### 1.1 Seasonal is a branch *and* a crossover — one vocabulary, two uses
+
+Kristen's decision: Seasonal gets its own branch, **and** the other nine can carry a seasonal
+crossover. Those are two *uses* of one vocabulary, not two vocabularies:
+
+| Case | Primary path | Seasonal overlay |
+|---|---|---|
+| A generic Halloween tee | `Seasonal → Halloween` | — |
+| A Hockey Mom Christmas gift | `Hobbies → Hockey → Hockey Mom` | `Seasonal → Christmas` |
+
+Both point at the **same** `Seasonal → Christmas` row. That is what keeps §36's "one canonical
+taxonomy source" true — a separate seasons table would mean two Christmas records free to drift
+apart, which is the exact failure this whole rework exists to end.
+
+This also supersedes my earlier recommendation to route seasonal collections into `timing_niches`
+instead of the taxonomy. Kristen's version is better: the seasonal *nodes* live in the taxonomy
+where they can be a primary path, and `niche_timing_niches` links them to the Phase 22 calendar so
+they inherit real sourced launch-window guidance rather than a guessed date. The calendar already
+carries the full vocabulary — Christmas, Halloween, Valentines Day, Easter, Thanksgiving,
+St. Patrick's Day, Mother's/Father's Day, Hanukkah, Back to School, 4th of July, Galentines,
+Oktoberfest, Christmas in July and more — so Phase 2c derives the sub-niches from there rather
+than inventing a list.
 
 ---
 
@@ -36,9 +56,9 @@ command center."*
 
 | Today | Becomes | Notes |
 |---|---|---|
-| **Chapter** (`collections.chapter`) | **Broad Niche** | Fixed set of 9. The term "Chapter" disappears from the app entirely. |
+| **Chapter** (`collections.chapter`) | **Broad Niche** | Fixed set of 10. The term "Chapter" disappears from the app entirely. |
 | `collections.parent_chapter` | — | Redundant second copy of the same idea, and it *disagrees* with `chapter` (Mom Chapter has `chapter='Mom'`, `parent_chapter='Mom Chapter'`). Retire. |
-| — (does not exist) | **Sub-Niche** | New Level 2. e.g. Reading, Sports, Sports Moms, Teachers. |
+| — (does not exist) | **Sub-Niche** | New Level 2. e.g. Reading, Hockey, Teachers, Christmas. |
 | — (does not exist) | **Specific Niche** | New Level 3. e.g. Hockey Mom, Romantasy Reader, Kindergarten Teacher. |
 | **Collection** (most of the 54 rows) | **Sub-Niche or Specific Niche** | The majority of today's "collections" are markets, not curated groups. |
 | **Collection** (a handful of rows) | **Collection** — unchanged | §5 is explicit: don't replace or remove Collections. They survive as a *curated* layer, just far smaller. |
@@ -60,7 +80,7 @@ Every one of the 54 existing collections goes to exactly one of these:
 | **Niche node** | A real market/buyer identity | new `niches` table |
 | **Collection** | A curated creative grouping | `collections`, kept |
 | **Aesthetic / Design Style** | A visual language | `visual_tags` (exists) |
-| **Seasonal Overlay** | An occasion or season | `timing_niches` (exists, Phase 22) |
+| **Seasonal node** | An occasion or season | `niches`, under the `Seasonal` branch — linked to `timing_niches` for launch windows (§1.1) |
 | **Product Type** | A format, not a market | `products.product_format` (exists, 17 values) |
 | **Retire** | Duplicate, catch-all, or a research bucket that was never a market | archived, records reassigned |
 
@@ -92,7 +112,7 @@ Row counts are live as of 2026-08-21. `P` = products, `R` = research sessions, `
 | **Dark Academia** | — | **Aesthetic** — §32 names this explicitly |
 | Cottage Library *(planned)* | — | **Aesthetic** |
 | Literary Minimalist *(planned)* | — | **Aesthetic** |
-| Library & Academic | R1 | ⚠️ **needs your call** — Professions → Librarian, or an aesthetic? |
+| Library & Academic | R1 | → **`Professions → Librarian`** (leaves the Reading branch) |
 
 ### 4.2 → HOBBIES · Sports
 
@@ -103,12 +123,13 @@ Hockey Fan.
 | Collection | Counts | Proposed |
 |---|---|---|
 | Hockey | P4 R7 | **Sub-Niche: Hockey**, with specifics **Hockey Mom** · **Hockey Girlfriend** · **Hockey Fan** |
-| Field Hockey Niche | R1 | **Specific: Field Hockey** (under Sub-Niche: Sports) |
+| Field Hockey Niche | R1 | **Sub-Niche: Field Hockey** (its own sport, siblings with Hockey) |
 
-Note §37 separates `Sports` from `Sports Moms`. Given the live data, I'd nest by **sport first**
-(Hockey → Hockey Mom / Hockey Girlfriend / Hockey Fan) rather than by role (Sports Moms → Hockey
-Mom). Reason: the shop's research, keywords and design language all cluster by sport, and role
-nests cleanly underneath. Flagging because it's a deliberate departure from §37 — easy to flip.
+**Confirmed by Kristen 2026-08-22:** nest by **sport first**. `Hobbies → Hockey → Hockey Mom`,
+`Hobbies → Football → Football Mom`. A hockey mom and a football mom are different customers with
+different keyword universes, so they need to be different specific niches — which only works if the
+sport is the sub-niche. This is a deliberate departure from §37's `Sports Moms → Hockey Mom`;
+"Sports" survives as a secondary tag for cross-sport questions, not as a level.
 
 ### 4.3 → HOBBIES · Other
 
@@ -128,12 +149,12 @@ nests cleanly underneath. Flagging because it's a deliberate departure from §37
 | Elder Millennial Chapter | R1 S1 | **Specific: Elder Millennial Mom** + Aesthetic `90s Nostalgia` |
 | Dad Gifts & Apparel | R1 | **Sub-Niche: Fatherhood** (drop "Gifts" — that's intent, §18) |
 | Gift for Her & Girlfriend | R1 | **Retire** → becomes Gift *intent* on keywords (§18) |
-| Kids Chapter | P4 | ⚠️ **needs your call** — see below |
+| Kids Chapter | P4 | **Dissolve** → `Hobbies → Reading → Kid Reader` |
 
-**On Kids Chapter:** all four products are *kids' book-lover tees* (Dinosaur Bookworm, Kids
-Bookworm Shirt, Funny Book Lover Kids Tee, Coquette Book Lover Tee). So it isn't a market — it's
-**Reading, with a child recipient**. Recommend: dissolve into `Hobbies → Reading → Kid Reader`,
-and let "kids" live as recipient intent + product sizing rather than as its own branch.
+**On Kids Chapter (confirmed):** all four products are *kids' book-lover tees* (Dinosaur Bookworm,
+Kids Bookworm Shirt, Funny Book Lover Kids Tee, Coquette Book Lover Tee). It was never a market —
+it's **Reading, with a child recipient**. It dissolves into `Hobbies → Reading → Kid Reader`, and
+"kids" lives as recipient intent + product sizing rather than as its own branch.
 
 ### 4.5 → PETS
 
@@ -141,7 +162,7 @@ and let "kids" live as recipient intent + product sizing rather than as its own 
 |---|---|---|
 | Animal Lover Gifts | R2 | **Sub-Niche: Pet Owners** (drop "Gifts") |
 | Dog Humor Apparel | R1 | **Specific: Dog Owner** + secondary tag `Funny` |
-| Animal Meme | R3 | **Specific: Dog Owner** or Pets×Funny crossover — ⚠️ **needs your call** |
+| Animal Meme | R3 | **Pets × Funny crossover** — primary `Pets → Dog Owner`, secondary tag `Funny` (per §9.1) |
 
 ### 4.6 → PROFESSIONS · CHRISTIAN · FUNNY
 
@@ -150,20 +171,26 @@ and let "kids" live as recipient intent + product sizing rather than as its own 
 | Teacher Gifts & Apparel | R1 | **Sub-Niche: Teachers** (Professions) |
 | Religious & Faith Apparel | R1 | **Broad: Christian** — no sub-niche yet |
 | Funny & Meme Graphic Tees | R2 | **Broad: Funny** — no sub-niche yet |
-| Unhinged Apparel | R1 | ⚠️ **needs your call** — Funny sub-niche, or a brand voice/aesthetic? |
+| Unhinged Apparel | R1 | **`Funny → Unhinged`** |
 
 ### 4.7 → AESTHETIC (`visual_tags`)
 
 Coastal & Niche Aesthetic · Vintage & Retro Apparel · Vintage Apparel *(duplicate — merge)* ·
 Comfort Colors & Casual Wear
 
-### 4.8 → SEASONAL OVERLAY (`timing_niches`)
+### 4.8 → SEASONAL (its own branch, per §1.1)
 
-Christmas & Holiday Gifts · Halloween Apparel · Back to School · 4th of July & American Patriotic ·
-Seasonal · Summer Printables *(planned)*
+| Collection | Proposed |
+|---|---|
+| Christmas & Holiday Gifts | **`Seasonal → Christmas`** |
+| Halloween Apparel | **`Seasonal → Halloween`** |
+| Back to School | **`Seasonal → Back to School`** |
+| 4th of July & American Patriotic | **`Seasonal → 4th of July`** |
+| Seasonal | **Retire** — catch-all, superseded by the branch itself |
+| Summer Printables *(planned)* | **Product Type** (printable) + `Seasonal → Summer` overlay |
 
-All six already have matching rows in the Phase 22 Taylor calendar seed. No new vocabulary needed —
-just the link.
+All of these already have matching rows in the Phase 22 Taylor calendar, so each new seasonal
+sub-niche gets a `niche_timing_niches` link rather than a new vocabulary.
 
 ### 4.9 → PRODUCT TYPE / RETIRE
 
@@ -178,17 +205,24 @@ just the link.
 
 ### 4.10 Triage summary
 
-| Destination | Count |
-|---|---|
-| Niche node (new taxonomy) | 22 → **17 after merges** |
-| Collection (kept, curated) | 5 |
-| Aesthetic | 8 |
-| Seasonal Overlay | 6 |
-| Product Type | 7 |
-| Retire | 8 |
+Recounted after the 2026-08-22 decisions. All 54 accounted for:
 
-**54 collections collapse to ~17 real niche nodes.** That is the shape of the problem: two thirds
-of what's currently called a "collection" was never a market.
+| Destination | Collections | Notes |
+|---|---|---|
+| Niche node | **29** | including 6 pairs that merge into one node each |
+| Collection (kept, curated) | 5 | Morally Gray Society, Annotation Club, Spicy Books Social Club, Bookstore Weekend, Reading Rituals |
+| Aesthetic (`visual_tags`) | 7 | Dark Academia, Cottage Library, Literary Minimalist, Coastal, Vintage & Retro (+dup), Comfort Colors |
+| Product Type | 7 | Graphic Tees, Comfort & Fit, Digital, Passive Income Guides, Scavenger Hunt, Party & Activity, Summer Printables |
+| Retire | 6 | General, Seasonal, Color & Design Attributes, Gift for Her, Core Trendy Book Shirts, Book Lover Demographic Shirts |
+| **Total** | **54** | |
+
+Those 29 collections produce roughly **25 taxonomy nodes** across sub and specific levels — fewer
+than 29 because of merges (two Mahjong rows, three Romance/Reader rows), and more in places because
+one collection can yield several specifics (`Hockey` alone becomes Hockey + Hockey Mom + Hockey
+Girlfriend + Hockey Fan).
+
+**The shape of the problem:** only 29 of 54 were ever markets. Nearly half of what is currently
+called a "collection" is an aesthetic, a product type, a season, or a catch-all.
 
 ---
 
@@ -286,14 +320,45 @@ Much lower risk, and it can ship incrementally.
 
 ---
 
-## 9. Decisions needed before Phase 2a
+## 9. Decisions — resolved 2026-08-22
 
-1. **Sports nesting** — by sport (`Hockey → Hockey Mom`) as proposed, or by role per §37
-   (`Sports Moms → Hockey Mom`)?
-2. **Kids Chapter** — dissolve into `Reading → Kid Reader` as proposed, or keep as its own branch?
-3. **Library & Academic** — Professions → Librarian, or an aesthetic?
-4. **Animal Meme** — a Pets specific niche, or a Pets × Funny crossover (primary Pets + secondary tag `Funny`)?
-5. **Unhinged Apparel** — a Funny sub-niche, or TCC brand voice (which would make it an aesthetic/voice tag, not taxonomy)?
-6. **`visual_tags` rename** — leave the name, or rename to `tags` now that it holds three kinds?
+| # | Question | Kristen's call |
+|---|---|---|
+| 1 | Sports nesting | **By sport.** `Hobbies → Hockey → Hockey Mom`, `Hobbies → Football → Football Mom`. Rationale: a hockey mom and a football mom are different customers with different keyword universes. This overrides §37's `Sports Moms → Hockey Mom` shape; "Sports" survives as a secondary tag for cross-sport queries, not as a level. |
+| 2 | Kids Chapter | **Dissolve** → `Hobbies → Reading → Kid Reader`. |
+| 3 | Library & Academic | **`Professions → Librarian`.** |
+| 4 | Animal Meme | **Pets × Funny crossover**, primary set by whichever is dominant. See the general rule below. |
+| 5 | Unhinged Apparel | **`Funny → Unhinged`.** |
+| 6 | Design styles | **Secondary tags**, not a taxonomy level and not their own field. |
+| 7 | Seasonal | **Its own broad niche** with Halloween/Christmas/etc. as sub-niches, *plus* a crossover overlay on the other nine. See §1.1. |
 
-Everything else in this document I'm confident enough to proceed on without a check-in.
+### 9.1 The crossover rule (generalising #4)
+
+"Whichever is dominant" works, but it's a coin-flip on close calls and it won't be remembered
+consistently six months from now. Proposing one rule instead, which resolves every crossover the
+same way:
+
+> **The primary path is always the buyer identity. Everything else becomes a secondary tag.**
+
+So Animal Meme → primary `Pets → Dog Owner`, secondary tag `Funny`. The person buying it is a dog
+owner; funny is *how* it's expressed, not *who* they are. Same rule gives Dog Humor Apparel the
+same shape, and it matches §3's own definition of what a Specific Niche represents.
+
+This is a proposal, not a decision I've applied — say if you'd rather keep it case-by-case.
+
+### 9.2 On #6 — where design styles landed
+
+Design Style, Aesthetic and Secondary Tag are all **tags**, distinguished by a `kind` column on the
+existing `visual_tags` table (`'aesthetic' | 'design_style' | 'secondary'`). No new tagging system,
+and §6's Design-Style-separate-from-Aesthetic split still holds — they're separate *kinds*, not
+separate tables.
+
+I'm leaving the table **named** `visual_tags` rather than renaming it to `tags`. It now holds
+slightly more than visual language, so the name is imperfect, but renaming costs updates to three
+junction tables and every hook that reads them, for zero functional gain. Easy to revisit; say the
+word if the name will bother you.
+
+**Still open, and I'd like more info when you have it:** the actual design-style vocabulary. §6
+lists crest, collegiate, varsity, line drawing, bootleg, vintage character, patchwork, minimal
+typography. If there are others you use regularly, they're worth seeding together in Phase 4 rather
+than accumulating one at a time.
