@@ -292,27 +292,65 @@ export default function ListingBuilder() {
   // terms adds that collection explicitly via extraCollections instead.
   const GLOBAL_COLLECTIONS = ['Global Keywords', 'General'];
 
+  // ─── Keyword universe: collection ∪ niche (Phase 10) ─────────────────────
+  // The single highest-risk change in this roadmap, done additively.
+  //
+  // Every generation's entire keyword universe has always come from ONE query:
+  // research_sessions matched on collection NAME. Replacing that with a niche
+  // join outright would today return NOTHING — 0 of 82 research sessions carry
+  // a niche_id, 0 of 660 keywords have a niche link — so a "cutover" would
+  // hand the builder an empty pool and silently produce listings with no
+  // research behind them. That failure would look exactly like a quiet day.
+  //
+  // So both paths run and their results are merged. Collection-matched
+  // sessions behave precisely as before; niche-matched ones are added as
+  // classification happens. The niche path contributes nothing until the first
+  // session is classified, which makes today's behaviour byte-identical and
+  // lets the taxonomy take over progressively rather than in one risky step.
+  //
+  // Sessions are deduped by id — a session that matches BOTH paths must appear
+  // once, or its keywords would be double-counted in every readiness number
+  // downstream.
+  async function fetchKeywordUniverse(cols, nicheIds) {
+    const byCollection = cols.length
+      ? supabase.from('research_sessions').select('*, keywords(*)').in('collection', cols)
+      : Promise.resolve({ data: [] });
+    const byNiche = nicheIds.length
+      ? supabase.from('research_sessions').select('*, keywords(*)').in('niche_id', nicheIds)
+      : Promise.resolve({ data: [] });
+
+    const [{ data: a }, { data: b }] = await Promise.all([byCollection, byNiche]);
+    const seen = new Map();
+    for (const row of [...(a || []), ...(b || [])]) {
+      if (!seen.has(row.id)) seen.set(row.id, row);
+    }
+    return [...seen.values()];
+  }
+
   useEffect(() => {
-    if (!form.collection) { setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return; }
+    // A niche alone is now enough to have a keyword universe — a product
+    // classified to Hockey Mom but filed under no collection previously got
+    // nothing at all.
+    if (!form.collection && !product?.primary_niche_id) {
+      setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return;
+    }
     const cols = [...new Set([form.collection, ...extraCollections, ...GLOBAL_COLLECTIONS].filter(Boolean))];
-    supabase.from('research_sessions').select('*, keywords(*)')
-      .in('collection', cols)
-      .then(({ data }) => {
-        const rows = data || [];
+    const nicheIds = [product?.primary_niche_id].filter(Boolean);
+    fetchKeywordUniverse(cols, nicheIds)
+      .then(rows => {
         setSessions(rows);
         setSelectedSessionIds(new Set(rows.map(s => s.id)));
       });
     supabase.from('collections').select('last_verified').eq('name', form.collection).single()
       .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
-  }, [form.collection, extraCollections]);
+  }, [form.collection, extraCollections, product?.primary_niche_id]);
 
   function refetchSessions() {
-    if (!form.collection) return;
+    if (!form.collection && !product?.primary_niche_id) return;
     const cols = [...new Set([form.collection, ...extraCollections, ...GLOBAL_COLLECTIONS].filter(Boolean))];
-    supabase.from('research_sessions').select('*, keywords(*)')
-      .in('collection', cols)
-      .then(({ data }) => {
-        const rows = data || [];
+    const nicheIds = [product?.primary_niche_id].filter(Boolean);
+    fetchKeywordUniverse(cols, nicheIds)
+      .then(rows => {
         setSessions(rows);
         setSelectedSessionIds(prev => {
           const next = new Set(prev);

@@ -1,4 +1,5 @@
 import { checkFormatCompatibility, checkBrandMention, computeDiscussionPermissions } from '../../lib/productTruth';
+import { intentAdvisory } from '../../data/searchIntents';
 import { resolveEffectiveProductTruth } from '../../lib/storePolicies';
 
 // Turns form state into the canonical Product Truth object -- the thing
@@ -74,9 +75,26 @@ export function buildGenerationContext({ form, keywords, styleGuide, brandStyleG
       compatibleKeywords.push(k);
     }
   }
+  // §7's ordering: niche relevance, then SEARCH INTENT, then product match,
+  // then season, and only then bucket/opportunity analysis. Product match is
+  // the hard gate above — it is binary and safety-critical, and it is the bug
+  // Milestone A exists to prevent. Intent and season are carried as ANNOTATIONS
+  // rather than filters, deliberately: §13 warns against rigid automatic rules
+  // here without testing, and unlike format there is no objectively wrong
+  // answer — a Gift-intent term on a self-purchase listing is often exactly
+  // right. The model is told what each keyword is for and why a term might not
+  // fit; it is not silently denied the term.
+  //
+  // Keywords with no intent set carry none, which is honest: 0 of 660 are
+  // classified today, and inventing one would be exactly the fabricated
+  // classification §40 rules out.
   const keywordPool = compatibleKeywords.map(k => ({
     keyword: k.keyword, keywordId: k.id, volume: k.volume ?? null, competition: k.competition ?? null,
     score: k.score ?? null, source: k._source || null, bucket: k.bucket ?? null,
+    searchIntent: k.search_intent || null,
+    intentNote: k.search_intent
+      ? intentAdvisory(k.search_intent, { isSeasonalListing: !!season })
+      : null,
   }));
   const researchSourcesUsed = [...new Set(compatibleKeywords.map(k => k._source).filter(Boolean))];
 

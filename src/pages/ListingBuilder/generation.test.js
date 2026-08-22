@@ -5,7 +5,7 @@
 // module, not a mandate to backfill coverage for the rest of the file's
 // existing untested functions.
 import { describe, it, expect } from 'vitest';
-import { buildOutputFromGeneration, extractHistoryDisplay } from './generation.js';
+import { buildOutputFromGeneration, extractHistoryDisplay, buildGenerationContext } from './generation.js';
 
 function generationRow(overrides) {
   return {
@@ -132,5 +132,62 @@ describe('extractHistoryDisplay', () => {
   it('handles a completely null/undefined generation without throwing', () => {
     expect(extractHistoryDisplay(null)).toEqual({ validationWarnings: [], researchSourcesUsed: [], excludedKeywordsDisplay: [] });
     expect(extractHistoryDisplay(undefined)).toEqual({ validationWarnings: [], researchSourcesUsed: [], excludedKeywordsDisplay: [] });
+  });
+});
+
+// ─── Phase 10: §7 filter ordering ──────────────────────────────────────────
+// Product match stays the hard gate; search intent rides along as an
+// annotation. These pin the boundary between the two, because collapsing them
+// in either direction is the failure mode: gating on intent would silently
+// drop legitimate terms, and merely annotating format would reintroduce the
+// exact cross-format bug Milestone A exists to prevent.
+describe('search intent annotation (§5, §7)', () => {
+  function ctx(keywords, overrides = {}) {
+    return buildGenerationContext({
+      form: { productFormat: 't-shirt', collection: 'Hockey', ...overrides.form },
+      keywords,
+      allCollectionNames: ['Hockey'],
+      approvedPolicies: [],
+      ...overrides,
+    });
+  }
+
+  it('carries a human-set intent through to the pool', () => {
+    const { keywordPool } = ctx([{ id: '1', keyword: 'hockey mom', search_intent: 'Identity' }]);
+    expect(keywordPool[0].searchIntent).toBe('Identity');
+  });
+
+  it('leaves intent null when unclassified rather than inferring one', () => {
+    // 0 of 660 keywords are classified today; a guessed intent would be
+    // exactly the fabricated classification §40 rules out.
+    const { keywordPool } = ctx([{ id: '1', keyword: 'hockey mom' }]);
+    expect(keywordPool[0].searchIntent).toBe(null);
+    expect(keywordPool[0].intentNote).toBe(null);
+  });
+
+  it('notes a seasonal term on a non-seasonal listing without excluding it', () => {
+    const { keywordPool } = ctx(
+      [{ id: '1', keyword: 'hockey mom christmas gift', search_intent: 'Seasonal' }],
+      { season: '' },
+    );
+    expect(keywordPool).toHaveLength(1);            // still eligible
+    expect(keywordPool[0].intentNote).toMatch(/seasonal/i);
+  });
+
+  it('drops the note once the listing is actually seasonal', () => {
+    const { keywordPool } = ctx(
+      [{ id: '1', keyword: 'hockey mom christmas gift', search_intent: 'Seasonal' }],
+      { season: 'Christmas' },
+    );
+    expect(keywordPool[0].intentNote).toBe(null);
+  });
+
+  it('still hard-excludes a format-incompatible keyword regardless of intent', () => {
+    // Intent must never rescue a wrong-format term — that is the Milestone A bug.
+    const { keywordPool, excludedKeywords } = ctx([
+      { id: '1', keyword: 'hockey mom sweatshirt', search_intent: 'Product' },
+    ]);
+    expect(keywordPool).toHaveLength(0);
+    expect(excludedKeywords[0].reason).toMatch(/format/i);
   });
 });

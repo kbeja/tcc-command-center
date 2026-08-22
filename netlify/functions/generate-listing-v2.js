@@ -84,6 +84,12 @@ function keywordPoolBlock(pool) {
     if (k.volume != null) parts.push(`vol ${k.volume}`);
     if (k.competition != null) parts.push(`comp ${k.competition}`);
     if (k.source) parts.push(k.source);
+    // §5/§7 — a keyword's search intent is a property of the term, set by a
+    // human in Research, not something to infer from the text here. Shown when
+    // it exists and simply absent when it does not: an unclassified keyword
+    // must never arrive looking classified.
+    if (k.searchIntent) parts.push(`intent: ${k.searchIntent}`);
+    if (k.intentNote) parts.push(`note: ${k.intentNote}`);
     return `  - ${parts.join(' · ')}`;
   }).join('\n');
 }
@@ -156,7 +162,7 @@ The keyword pool you're given has ALREADY been filtered to exclude anything that
 
 YOUR TASK, IN THIS ORDER:
 1. Identify the Primary Search Intent — the single clearest phrase describing what a shopper would search for to find this exact product. It does not have to be the highest-volume keyword in the pool; it has to accurately describe the product as sold. Status: "validated" if it exactly matches a phrase in the supplied pool, "supported" if it's not an exact match but the pool contains close semantic/product evidence for the same territory, "unvalidated" if you're inferring it purely from Product Truth/collection/audience with no supporting research at all. Never mark "validated" unless you can name the exact matching pool phrase.
-2. Classify every keyword you reference into exactly one of: ${RELEVANCE_CATEGORIES.join(', ')}.
+2. Classify every keyword you reference into exactly one of: ${RELEVANCE_CATEGORIES.join(', ')}. Where a keyword arrives carrying an "intent:" label, that is a human's own classification of what shoppers mean by it — treat it as given and never re-derive or contradict it. A "note:" is a caution, not a prohibition: weigh it, and if you use the term anyway, say why in that keyword's reasoning.
 3. Note research gaps: "critical" for a product/listing accuracy problem, "research_opportunity" for a clearly missing but useful search phrase, "optional_test" for a future nice-to-have comparison. Do not invent a gap just because the pool is small — only flag a real, specific gap.
 4. Write the listing — title, tags, description, image prompts (see IMAGE PROMPT PLAN below) — using only the Primary Search Intent, your relevance-classified supporting keywords, and Product Truth.
 
