@@ -2658,3 +2658,93 @@ export async function deleteResearchEvidence(id, storagePath) {
   if (storagePath) await supabase.storage.from('research-evidence').remove([storagePath]);
   return supabase.from('research_evidence').delete().eq('id', id);
 }
+
+// ─── Analysis records (Phase 9 / §4, §26) ──────────────────────────────────
+// Durable, human-editable analysis, kept deliberately separate from the
+// machine-derived interpretation columns on `keywords`. Those are recomputed
+// and overwritten every time new evidence lands; these are not. The columns
+// answer "what do the numbers say right now"; these answer "what did we
+// conclude, when, and did it hold".
+//
+// §40's "AI can suggest, human approves durable decisions" is enforced by
+// data here rather than by convention: an AI-authored row is created with
+// status 'proposed' and nothing downstream may treat it as settled until a
+// human flips it to 'approved'.
+
+export function useAnalysisRecords({ scopeType = undefined, scopeId = undefined, pendingOnly = false } = {}) {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('analysis_records').select('*').order('created_at', { ascending: false });
+    if (scopeType) q = q.eq('scope_type', scopeType);
+    if (scopeId) q = q.eq('scope_id', scopeId);
+    if (pendingOnly) q = q.in('status', ['draft', 'proposed']);
+    const { data } = await q;
+    setRecords(data || []);
+    setLoading(false);
+  }, [scopeType, scopeId, pendingOnly]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { records, loading, refetch: fetch };
+}
+
+// scopeLabel is denormalized at write time on purpose: scope_id carries no FK
+// (see the migration for why), so a niche that is later archived or renamed
+// would otherwise leave an analysis whose subject is unreadable. A written
+// judgment outliving its subject is the expected case, not an edge case.
+export async function createAnalysisRecord({
+  scopeType, scopeId = null, scopeLabel = null,
+  evidenceSnapshot = null, interpretation = null, decision = null,
+  hypothesis = null, learning = null, findings = null,
+  authoredBy = 'human', status = 'draft',
+}) {
+  const now = nowISO();
+  const { data, error } = await supabase
+    .from('analysis_records')
+    .insert({
+      scope_type: scopeType,
+      scope_id: scopeId,
+      scope_label: scopeLabel,
+      evidence_snapshot: evidenceSnapshot,
+      interpretation, decision, hypothesis, learning,
+      findings,
+      authored_by: authoredBy,
+      // An AI-authored record can never be created already-approved, whatever
+      // the caller asks for. This is the one place that rule can be enforced
+      // once rather than trusted at every call site.
+      status: authoredBy === 'ai' && status === 'approved' ? 'proposed' : status,
+      created_at: now,
+      updated_at: now,
+    })
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function updateAnalysisRecord(id, updates) {
+  const { data, error } = await supabase
+    .from('analysis_records')
+    .update({ ...updates, updated_at: nowISO() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// Approval is always an explicit human act and always stamps a time, so
+// "when did we decide this" is answerable later without reading history.
+export async function approveAnalysisRecord(id) {
+  return updateAnalysisRecord(id, { status: 'approved', approved_at: nowISO() });
+}
+
+// Superseding rather than deleting: an analysis that turned out wrong is
+// evidence about how TCC reasons, and deleting it would quietly erase the
+// learning §26 is trying to accumulate.
+export async function supersedeAnalysisRecord(id) {
+  return updateAnalysisRecord(id, { status: 'superseded' });
+}
+
+export async function deleteAnalysisRecord(id) {
+  return supabase.from('analysis_records').delete().eq('id', id);
+}

@@ -5,6 +5,8 @@ import { RESEARCH_STATUSES } from '../lib/keywordIntelligence';
 import { ClassificationBadge, ConfidenceBadge, StatusBadge, TrendIndicator, DisagreementFlag } from '../lib/keywords';
 import { SEARCH_INTENTS, SEARCH_INTENT_HINTS } from '../data/searchIntents';
 import KeywordNicheLinks from './KeywordNicheLinks';
+import AnalysisPanel from './AnalysisPanel';
+import { findKeywordFindings } from '../lib/analysis';
 
 // A source's own trend_data series (when it provides one) is preferred over
 // this app's own recorded volume readings over time — it's the source's
@@ -182,6 +184,28 @@ export default function KeywordDetail({ keywordId, onClose, onUpdated }) {
               >
                 {RESEARCH_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+            </div>
+
+            {/* Analysis (§4, §26) — deterministic findings above, human
+                judgment below, deliberately not blended. The findings are
+                recomputed every render from the same ledger the source
+                comparison below renders raw. */}
+            <div style={{ marginBottom: 18, paddingTop: 14, borderTop: '1px solid rgba(43,41,38,0.1)' }}>
+              <AnalysisPanel
+                scopeType="keyword"
+                scopeId={keywordId}
+                scopeLabel={kw.keyword}
+                findings={findKeywordFindings(kw, history, { niches: [] })}
+                evidenceSnapshot={{
+                  keyword: kw.keyword,
+                  classification: kw.classification,
+                  confidence: kw.confidence,
+                  readings: (history || []).map(h => ({
+                    source: h.source, volume: h.volume, competition: h.competition,
+                    data_date: h.data_date,
+                  })),
+                }}
+              />
             </div>
 
             {/* Source comparison — always kept visibly separate per source, never merged into one number */}
