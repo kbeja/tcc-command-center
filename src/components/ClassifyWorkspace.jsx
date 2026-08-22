@@ -138,6 +138,27 @@ export default function ClassifyWorkspace() {
     setTimeout(() => setMsg(''), 4000);
   }
 
+  // A whole session of cross-niche terms — "General" holds 101 of them. This
+  // is deliberately a separate action from the niche dropdown rather than an
+  // option inside it: that dropdown answers "which market does this belong
+  // to", and a universal term belongs to none. Offering "Universal" there
+  // would collapse the exact distinction the cluster exists to keep.
+  async function markSessionUniversal(session) {
+    if (!universalCluster) return;
+    const kws = session.keywords || [];
+    if (!kws.length) return;
+    setBusy(`su-${session.id}`);
+    let added = 0;
+    for (const k of kws) {
+      const { error } = await addKeywordToCluster(universalCluster.id, k.id);
+      if (!error) added++;
+    }
+    setBusy(null);
+    await refetchClusters();
+    setMsg(`Added ${added} keyword${added !== 1 ? 's' : ''} to the universal pool — they'll now appear in every listing.`);
+    setTimeout(() => setMsg(''), 5000);
+  }
+
   async function setIntent(keywordId, intent) {
     setBusy(`k-${keywordId}`);
     await setKeywordSearchIntent(keywordId, intent);
@@ -212,7 +233,7 @@ export default function ClassifyWorkspace() {
         title="Research sessions"
         done={sessionsDone}
         total={sessions.length}
-        hint="Set a session's niche, then use the button that appears to apply it to every keyword in that session. That connection is what lets the Listing Builder find keywords by niche rather than by matching collection names."
+        hint="Set a session's niche, then use the button that appears to apply it to every keyword in that session — that connection is what lets the Listing Builder find keywords by niche rather than by matching collection names. For a session of cross-niche terms like General, use Mark universal instead: those stay niche-less and pool into every listing."
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {sessions.map(s => (
@@ -234,6 +255,14 @@ export default function ClassifyWorkspace() {
                 disabled={busy === `s-${s.id}`}
                 onChange={v => setSessionNiche(s.id, v)}
               />
+              {universalCluster && (s.keywords || []).length > 0 && (
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
+                  disabled={busy === `su-${s.id}`}
+                  title="These terms apply to any listing regardless of market — custom, gift for her, plus sized. They get pooled into every generation and stay niche-less."
+                  onClick={() => markSessionUniversal(s)}>
+                  {busy === `su-${s.id}` ? 'Adding…' : 'Mark universal'}
+                </button>
+              )}
               {s.niche_id && (s.keywords || []).length > 0 && (
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
                   disabled={busy === `sk-${s.id}`}
