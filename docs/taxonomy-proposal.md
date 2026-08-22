@@ -327,16 +327,17 @@ Much lower risk, and it can ship incrementally.
 | 1 | Sports nesting | **By sport.** `Hobbies → Hockey → Hockey Mom`, `Hobbies → Football → Football Mom`. Rationale: a hockey mom and a football mom are different customers with different keyword universes. This overrides §37's `Sports Moms → Hockey Mom` shape; "Sports" survives as a secondary tag for cross-sport queries, not as a level. |
 | 2 | Kids Chapter | **Dissolve** → `Hobbies → Reading → Kid Reader`. |
 | 3 | Library & Academic | **`Professions → Librarian`.** |
-| 4 | Animal Meme | **Pets × Funny crossover**, primary set by whichever is dominant. See the general rule below. |
+| 4 | Animal Meme | **Pets × Funny crossover** — primary `Pets → Dog Owner`, secondary tag `Funny`, per the rule in §9.1. |
 | 5 | Unhinged Apparel | **`Funny → Unhinged`.** |
 | 6 | Design styles | **Secondary tags**, not a taxonomy level and not their own field. |
 | 7 | Seasonal | **Its own broad niche** with Halloween/Christmas/etc. as sub-niches, *plus* a crossover overlay on the other nine. See §1.1. |
+| 8 | Crossover rule | **Accepted** — primary path = buyer identity, everything else = secondary tag. See §9.1. |
+| 9 | Seasonal crossover scope | **All nine** other broad niches can carry a seasonal overlay — no subset. |
 
-### 9.1 The crossover rule (generalising #4)
+### 9.1 The crossover rule (generalising #4) — ACCEPTED 2026-08-22
 
-"Whichever is dominant" works, but it's a coin-flip on close calls and it won't be remembered
-consistently six months from now. Proposing one rule instead, which resolves every crossover the
-same way:
+"Whichever is dominant" works, but it's a coin-flip on close calls and wouldn't be applied
+consistently six months from now. One rule instead, which resolves every crossover the same way:
 
 > **The primary path is always the buyer identity. Everything else becomes a secondary tag.**
 
@@ -344,7 +345,7 @@ So Animal Meme → primary `Pets → Dog Owner`, secondary tag `Funny`. The pers
 owner; funny is *how* it's expressed, not *who* they are. Same rule gives Dog Humor Apparel the
 same shape, and it matches §3's own definition of what a Specific Niche represents.
 
-This is a proposal, not a decision I've applied — say if you'd rather keep it case-by-case.
+This is now the standing rule for every future crossover, not just Animal Meme.
 
 ### 9.2 On #6 — where design styles landed
 
