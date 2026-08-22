@@ -2354,3 +2354,38 @@ export async function unlinkNicheCollection(nicheId, collectionId) {
     .eq('niche_id', nicheId)
     .eq('collection_id', collectionId);
 }
+
+// ─── Competitor Title Patterns (Phase 7 / §17) ─────────────────────────────
+// Marketplace evidence for the §15–16 title debate: what do real Etsy listings
+// that actually sell look like? Reads competitor_listings.product_name, which
+// already holds 3,000 real titles, and measures them via the pure classifier in
+// ./titlePatterns.js. Nothing is written — patterns are derived on read, which
+// is what keeps this clear of §29's "no full historical competitor/title
+// reclassification".
+//
+// minSales filters server-side rather than pulling everything and discarding
+// most of it: §17 asks about BEST SELLERS specifically, and a pattern shared by
+// thousands of listings that barely sell is not evidence of anything. The cap
+// exists because this runs inside the Listing Builder, where a multi-thousand
+// row fetch on every mount would be felt.
+export function useCompetitorTitlePatterns({ minSales = 100, category = null, limit = 1000 } = {}) {
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    setLoading(true);
+    let q = supabase
+      .from('competitor_listings')
+      .select('product_name, est_sales, category')
+      .gte('est_sales', minSales)
+      .order('est_sales', { ascending: false })
+      .limit(limit);
+    if (category) q = q.eq('category', category);
+    const { data } = await q;
+    setListings(data || []);
+    setLoading(false);
+  }, [minSales, category, limit]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { listings, loading, refetch: fetch };
+}

@@ -1,4 +1,65 @@
+import { useMemo } from 'react';
 import { TITLE_STRATEGIES, LEGACY_TITLE_STRATEGY_LABELS, INTENT_STATUS_STYLE } from './constants';
+import { useCompetitorTitlePatterns } from '../../lib/hooks';
+import { summarizeTitlePatterns, TITLE_PATTERN_LABELS, ETSY_TITLE_MAX } from '../../lib/titlePatterns';
+
+// ─── Marketplace title evidence (§17, §25) ─────────────────────────────────
+// Sits beside the title strategy picker because this is where the choice is
+// actually made. §25 requires three evidence streams to stay separately
+// visible — platform guidance, marketplace behaviour, TCC's own results — so
+// this panel reports ONLY what competitor titles measurably do. It states no
+// recommendation and never highlights a strategy button.
+//
+// The survivorship caveat is rendered, not just known: these listings have
+// sales history that is itself a ranking signal, so they may rank DESPITE
+// their titles rather than because of them. Showing the number without that
+// sentence would turn a correlation into advice.
+function MarketplaceTitleEvidence() {
+  const { listings, loading } = useCompetitorTitlePatterns({ minSales: 100 });
+  const summary = useMemo(() => summarizeTitlePatterns(listings), [listings]);
+
+  if (loading) return null;
+  if (!summary.sampleSize) return null;
+
+  const rows = Object.entries(summary.percentages)
+    .filter(([, pct]) => pct > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const shortPct = summary.percentages.short_descriptive || 0;
+
+  return (
+    <div style={{
+      marginTop: 10, padding: '10px 12px', borderRadius: 3,
+      background: 'var(--charcoal-faint)', border: '1px solid rgba(43,41,38,0.08)',
+    }}>
+      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--charcoal-soft)', marginBottom: 6 }}>
+        What competitor titles actually do
+        <span style={{ fontWeight: 400, opacity: 0.7 }}>
+          {' '}&mdash; {summary.sampleSize} listings with 100+ est. sales, avg {summary.averageLength} of {ETSY_TITLE_MAX} chars
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {rows.map(([key, pct]) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.7rem' }}>
+            <span style={{ width: 34, textAlign: 'right', fontWeight: 600 }}>{pct}%</span>
+            <span style={{
+              height: 6, borderRadius: 3, background: 'rgba(124,175,138,0.45)',
+              width: `${Math.max(pct, 1) * 1.6}px`, flexShrink: 0,
+            }} />
+            <span style={{ color: 'var(--charcoal-soft)' }}>
+              {TITLE_PATTERN_LABELS[key]} <span style={{ opacity: 0.6 }}>({summary.counts[key]})</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: '0.64rem', color: 'var(--charcoal-soft)', marginTop: 7, lineHeight: 1.5 }}>
+        Only {shortPct}% are short and descriptive, which is what Etsy&rsquo;s own guidance favours.
+        Worth weighing carefully rather than copying: these listings carry sales history that is itself a
+        ranking signal, so they may rank <em>despite</em> their titles rather than because of them &mdash;
+        and a new listing has none of that cushion.
+      </div>
+    </div>
+  );
+}
 import ResearchEvidence from './ResearchEvidence';
 
 // Zone 2 — Search Strategy (Milestone B). The page's center of gravity:
@@ -88,6 +149,7 @@ export default function Zone2SearchStrategy({
             Current: {LEGACY_TITLE_STRATEGY_LABELS[form.titleStrategy]} (legacy — historical value, not selectable above; pick a strategy to replace it)
           </div>
         )}
+        <MarketplaceTitleEvidence />
       </div>
 
       {/* Bucket coverage — informational only, same B1≥1/B2≥3/B3≥1 thresholds
