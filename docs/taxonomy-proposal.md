@@ -505,21 +505,44 @@ Autism Awareness · International Women's Day
 Plus **Summer**, which is not in the calendar at all but is needed for the Summer Printables
 overlay — so 26 nodes in total.
 
-### 11.2 Tier B — borderline, needs your call (10)
+### 11.2 Tier B — RESOLVED 2026-08-22: "should fall under the correct broad niches"
 
-These are genuinely calendar-anchored, but they double as something else. Under the §9.1 crossover
-rule the buyer identity is the primary path and the season is the overlay — which argues they
-belong here as *overlays*, not as primary paths.
+Kristen's call: these do **not** become Seasonal nodes. Each goes to whichever broad niche is
+actually correct, and its calendar entry attaches as *timing guidance* via `niche_timing_niches`
+rather than as a taxonomy node.
 
-| Entry | The tension |
-|---|---|
-| Football Season · Baseball/Softball Season · Soccer Season · Winter Sports · Summer Sports | Real annual windows, but the buyer is a Hobbies → sport identity. Useful as an overlay on `Hobbies → Football`, not as a home for the product. |
-| Teacher Events · Principal Month · Midwifery Week | Profession-linked observances with real annual spikes. Same shape: overlay on `Professions → Teachers`. |
-| Company Holiday Parties · White Elephant/Gag Gifts | Christmas-adjacent gifting windows. Arguably sub-cases of Christmas rather than peers of it. |
+This is the mechanism §1.1 was designed for, working as intended: **a season is not a place in the
+tree, it is a window attached to a node.** `Hobbies → Football` is the market; "Football Season" is
+when to launch into it.
 
-**Recommendation: create all 10.** They cost nothing sitting unused, and each is a real annual spike
-you would otherwise have no way to tag. Football Season in particular pairs directly with the
-sport sub-niches this taxonomy just created.
+| Calendar entry | Becomes | New node? |
+|---|---|---|
+| Football Season | `Hobbies → Football` | yes |
+| Soccer Season | `Hobbies → Soccer` | yes |
+| Baseball/Softball Season | `Hobbies → Baseball` **+** `Hobbies → Softball` | yes ×2 — see q1 |
+| Winter Sports | `Hobbies → Winter Sports` | yes — see q2 |
+| Summer Sports | `Hobbies → Summer Sports` | yes — see q2 |
+| Teacher Events | `Professions → Teachers` | **no** — already created in Phase 2c; timing link only |
+| Principal Month | `Professions → Principals` | yes |
+| Midwifery Week | `Professions → Midwives` | yes |
+| Company Holiday Parties | `Seasonal → Company Holiday Parties` | yes — Seasonal *is* its correct broad niche |
+| White Elephant/Gag Gifts | `Seasonal → White Elephant / Gag Gifts` | yes — see q3 |
+
+The two Seasonal ones stay in Seasonal because that genuinely is their correct broad niche, and
+their calendar windows differ from Christmas's own (Christmas launches 8–11, both of these 10–11),
+so folding them into Christmas would lose real timing guidance.
+
+**Three questions before this is built:**
+
+1. **Baseball/Softball** — Taylor tracks them as one entry. Split into two sub-niches (different
+   buyers, different keywords, per the same reasoning that separated hockey from football), or keep
+   as one `Baseball/Softball` node?
+2. **Winter Sports / Summer Sports** — these are *groupings*, not sports. Under the sport-first rule
+   they sit awkwardly beside Hockey and Football. Create them as sub-niches anyway, skip them, or
+   treat them as secondary tags across the individual sports?
+3. **White Elephant / Gag Gifts** — Seasonal as proposed, or `Funny`? The humor is the product; the
+   Christmas window is the timing. The §9.1 rule points at Funny with a Seasonal overlay, but there
+   is no buyer *identity* here at all, which is where that rule stops helping.
 
 ### 11.3 Tier C — not seasonal, do NOT create here (33)
 
