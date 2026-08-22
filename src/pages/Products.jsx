@@ -3,9 +3,10 @@ import { useProducts, getNeedsAttention, useLatestSessionDates } from '../lib/ho
 import { STAGE_ORDER } from '../data/stages';
 import ProductCard from '../components/ProductCard';
 import LinkEtsyListings from '../components/LinkEtsyListings';
+import LaunchDateBackfill from '../components/LaunchDateBackfill';
 
 export default function Products() {
-  const { products, loading } = useProducts();
+  const { products, loading, refetch } = useProducts();
   const [filter, setFilter] = useState('all');
   const [linking, setLinking] = useState(false);
   const needsAttn = getNeedsAttention(products);
@@ -66,6 +67,12 @@ export default function Products() {
       </div>
 
       {linking && <LinkEtsyListings onClose={() => setLinking(false)} />}
+
+      {/* Renders itself only while some live listing still lacks a launch
+          date, and vanishes once they all have one. Sits above the list
+          because a missing date silently disables that listing's entire
+          review/diagnosis path — see the component's own header. */}
+      {!loading && <LaunchDateBackfill products={products} onSaved={refetch} />}
 
       {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
