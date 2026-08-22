@@ -2030,7 +2030,12 @@ export function useNicheTimings(products = [], collections = []) {
   const { niches, loading: l1, refetch: r1 } = useTimingNiches();
   const { guidance, loading: l2, refetch: r2 } = useTimingGuidance();
   const { notes, loading: l3, refetch: r3 } = useTimingGuidanceNotes();
-  const { links, loading: l4, refetch: r4 } = useNicheCollections();
+  // MUST be the TIMING junction, not the taxonomy one. These are two different
+  // tables with near-identical names (timing_niche_collections vs
+  // niche_collections) and this line silently read the wrong one for a while:
+  // the rename that was supposed to prevent exactly this confusion missed this
+  // call site, because the grep for consumers excluded hooks.js itself.
+  const { links, loading: l4, refetch: r4 } = useTimingNicheCollections();
   const { profiles, loading: l5, refetch: r5 } = useLeadTimeProfiles();
 
   const results = useMemo(
