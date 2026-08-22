@@ -7,6 +7,12 @@ import { FORMAT_TAXONOMY_VERSION } from '../../lib/productTruth';
 export const GENERATION_VERSION = `milestone-a-${FORMAT_TAXONOMY_VERSION}`;
 
 export const TITLE_STRATEGIES = [
+  // Hybrid is the default -- see TITLE_STRATEGY_INSTRUCTIONS in
+  // netlify/functions/generate-listing-v2.js for the reasoning (front zone
+  // carries click-through, tail carries matching coverage). The other two stay
+  // selectable so title strategy remains a real, comparable experiment
+  // dimension in Portfolio rather than a house rule nobody can test.
+  { key: 'hybrid', label: 'Hybrid' },
   { key: 'buyer_clear', label: 'Buyer Clear' },
   { key: 'expanded_keyword_test', label: 'Expanded Keyword Test' },
   { key: 'manual', label: 'Manual' },

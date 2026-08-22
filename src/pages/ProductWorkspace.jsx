@@ -1024,7 +1024,22 @@ export default function ProductWorkspace() {
   }
 
   async function handleStageUpdate(stage) {
-    const { error } = await updateProduct(id, { stage, stage_updated_at: nowISO() });
+    // Moving a product to Live IS the launch event (Kristen, 2026-08-22), so
+    // this is where went_live_at gets recorded — it is a real observed moment,
+    // not an inference from created_at/updated_at, which is what every
+    // downstream consumer needs it to be (see timingIntelligence.js and
+    // tccIntelligence.js, both of which explicitly refuse to guess it).
+    //
+    // Only ever set, never overwritten: a product moved Live → Paused → Live
+    // keeps its original launch date, because the 30/60/90/120 checkpoint
+    // clock and every performance comparison are anchored to the first launch.
+    // Re-launching would otherwise silently reset a listing's whole history.
+    // The date stays hand-editable in the Timing panel for corrections.
+    const patch = { stage, stage_updated_at: nowISO() };
+    if (stage === 'Live' && !product?.went_live_at) {
+      patch.went_live_at = nowISO().split('T')[0];   // date-only, matching the column
+    }
+    const { error } = await updateProduct(id, patch);
     if (error) { setSaveError(error.message); return; }
     setSaveError('');
     setStageSaved(true);

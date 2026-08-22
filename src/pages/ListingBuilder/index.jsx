@@ -96,7 +96,7 @@ export default function ListingBuilder() {
     // Provenance only (Milestone C1) — records that a human explicitly
     // applied this template via TemplateMatchBar; never read by generation.
     productTemplateId: null,
-    titleStrategy: 'buyer_clear',
+    titleStrategy: 'hybrid',
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -125,12 +125,12 @@ export default function ListingBuilder() {
       productionTime: product.production_time || '', shippingPolicy: product.shipping_policy || '',
       fulfillmentProvider: product.fulfillment_provider || '',
       productTemplateId: product.product_template_id || null,
-      // Only overwrite the live 'buyer_clear' default if this product was
+      // Only overwrite the live 'hybrid' default if this product was
       // actually generated under the new taxonomy — a legacy value (or one
       // of the 2 backfilled legacy_* strings) intentionally doesn't match
       // any of the 3 picker options, so the picker just shows none
       // selected rather than silently relabeling old history.
-      titleStrategy: product.title_strategy || 'buyer_clear',
+      titleStrategy: product.title_strategy || 'hybrid',
     }));
     if (product.concept_id) setLinkedConceptId(product.concept_id);
     if (product.live_title) {
@@ -615,7 +615,7 @@ export default function ListingBuilder() {
       shipping_policy: form.shippingPolicy || null,
       fulfillment_provider: form.fulfillmentProvider || null,
       product_template_id: form.productTemplateId || null,
-      title_strategy: form.titleStrategy || 'buyer_clear',
+      title_strategy: form.titleStrategy || 'hybrid',
     };
   }
 
@@ -651,6 +651,11 @@ export default function ListingBuilder() {
       live_tags:         editTags.filter(Boolean).join(', ') || null,
       concept_id:        linkedConceptId || null,
       stage_updated_at:  nowISO(),
+      // Saving straight to Live from the builder is a launch, same rule as
+      // ProductWorkspace's stage tracker — this is the path that created the
+      // four Hockey listings, all of which ended up with no launch date at all
+      // and therefore no checkpoint clock and no diagnosable performance.
+      ...(saveStage === 'Live' ? { went_live_at: nowISO().split('T')[0] } : {}),
       ...productTruthUpdates(),
       ...(Object.keys(editDesc).length > 0 ? { generated_description: editDesc } : {}),
       ...(editPrompts.length > 0 ? { generated_image_prompts: editPrompts } : {}),

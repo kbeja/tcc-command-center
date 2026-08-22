@@ -88,7 +88,36 @@ function keywordPoolBlock(pool) {
   }).join('\n');
 }
 
+// WHY `hybrid` IS THE DEFAULT (SEO amendment §15–§16)
+//
+// Etsy's official guidance favours short, clear, readable titles. Current Etsy
+// best sellers overwhelmingly do the opposite — long, comma-separated,
+// keyword-rich. TCC deliberately follows neither camp wholesale, because the
+// two are answering different questions (the amendment's own §21):
+//
+//   Query matching — can Etsy tell this listing is relevant to a search?
+//     More distinct relevant phrases in the title = more queries matched.
+//     This is what the long best-seller titles are buying.
+//   Ranking / CTR — among matching listings, is this one worth showing and
+//     clicking? A title that reads like keyword soup lowers click-through and
+//     conversion, which feed ranking. This is what Etsy's guidance is about.
+//
+// The resolution is positional, not a split-the-difference compromise. Only
+// the FRONT of a title survives truncation in search results, so that is the
+// only part most shoppers ever read — it carries the whole CTR burden. The
+// tail is effectively invisible to humans but still indexed, so extra matching
+// coverage there is close to free.
+//
+// One caveat worth keeping in mind before treating best-seller titles as
+// proof: those listings have years of sales and engagement history, which is
+// itself a huge ranking signal. They may rank DESPITE their titles rather than
+// because of them, and a brand-new listing has none of that cushion. That is
+// why this stays a named, switchable strategy with performance tracked against
+// it (products.title_strategy, already a Portfolio comparison dimension)
+// rather than a hardcoded house rule — TCC's own shop data should eventually
+// settle this, not an argument about whose guidance is better.
 const TITLE_STRATEGY_INSTRUCTIONS = {
+  hybrid: 'Build the title in two zones. FRONT ZONE — roughly the first 50-60 characters, the only part most shoppers ever see before search results truncate it: lead with the single strongest phrase that exactly matches this product and the primary search intent, written so it reads naturally to a human. This zone carries click-through, so it must never read as keyword soup. TAIL — the remainder, up to 140 characters total: add further DISTINCT researched phrases from the pool that genuinely describe this same product, for broader search coverage. Every phrase must be materially different from the others; never restate the same phrase with trivial word-order changes, and never add a phrase merely to consume characters. If the pool has nothing further worth adding, stop early — a shorter accurate title beats a padded one. Absolute rule across both zones: never combine phrases that imply different products (e.g. a sweatshirt listing must never carry a "shirt" or "hoodie" phrase), regardless of how strong that phrase\'s search numbers look.',
   buyer_clear: 'Write a natural, scannable, product-forward title a real shopper would say out loud. Under 140 characters. Do not pad with extra comma-separated phrases just to use more characters, and do not force any particular keyword to lead — put whatever reads most naturally and clearly first.',
   expanded_keyword_test: 'Naturally weave in more of the relevant supporting search phrases than the buyer_clear style would, for broader search-term coverage — but every phrase used must still read naturally in context, stay under 140 characters, and never include a keyword that was excluded or that conflicts with Product Truth. This is an experiment variant, not a return to rigid bucket-ordering rules.',
   manual: 'The shop owner intends to write or heavily edit this title herself. You may return an empty string, or a single natural, accurate suggestion if the evidence clearly points to one — do not over-invest in this field.',
@@ -118,7 +147,7 @@ STYLING DIRECTION (hero and any lifestyle role showing the garment worn): prefer
 Return image_prompts as an array of {role, prompt} objects, one per included role, in the order listed above (hero first).`;
 
 function buildSystemPrompt({ titleStrategy }) {
-  const titleInstruction = TITLE_STRATEGY_INSTRUCTIONS[titleStrategy] || TITLE_STRATEGY_INSTRUCTIONS.buyer_clear;
+  const titleInstruction = TITLE_STRATEGY_INSTRUCTIONS[titleStrategy] || TITLE_STRATEGY_INSTRUCTIONS.hybrid;
   return `You are an Etsy listing specialist for TCC (The Current Chapter), a print-on-demand shop.
 
 PRODUCT TRUTH OVERRIDES EVERYTHING. The product's confirmed physical facts and what topics you're permitted to discuss are stated explicitly in the user message — never contradict them, never infer beyond them, never fill a gap with a plausible-sounding guess. A keyword's existence or popularity in the research pool is never itself a reason to claim a product fact.
