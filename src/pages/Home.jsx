@@ -1,29 +1,48 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProducts, useSparks, useTrendSignals, getNeedsAttention, getPickUpProducts, useNicheTimings } from '../lib/hooks';
+import { supabase } from '../lib/supabase';
+import { useProducts, useSparks, useNicheTimings, useNiches } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { STAGE_NEXT_ACTIONS, STAGE_PILL_CLASS } from '../data/stages';
-import { getNextReviewDates, daysBetween, today } from '../data/seasons';
-import ProductCard from '../components/ProductCard';
-import SparkCard from '../components/SparkCard';
 import { TimingStateBadge } from '../components/TimingPanel';
-import { groupNichesByState, STATE_URGENCY_ORDER } from '../lib/timingIntelligence';
+import { buildOpportunities, summarizeOpportunities } from '../lib/opportunities';
+import { TIMING_STATE_LABEL } from '../lib/timingIntelligence';
+
+// ─── Home ──────────────────────────────────────────────────────────────────
+// Rebuilt because the previous version reported five counters that all said
+// "everything": Needs Attention 25, Review Queue 25 listings, of 25 live
+// products. Every one of those was really saying "no performance data has been
+// imported", phrased as though the shop were failing — technically accurate and
+// informationally empty.
+//
+// The rule applied throughout: show what is actionable, or say plainly that
+// something is missing. Never a count that is really an absence in disguise.
+//
+// What was cut, and why:
+//   Needs Attention — 19 of 25 listings were flagged for "30+ days live with
+//     no sales", but zero listings have ANY sales recorded, so it was
+//     measuring the absence of an import.
+//   Review Queue    — same population, same reason.
+//   Idea Vault count— §10 is explicit that Cold means safely captured, not
+//     overdue; "369 cold" on a dashboard is exactly the backlog framing it
+//     rules out.
+//   Pick up where you left off — surfaced whatever was least recently touched,
+//     which meant an ON HOLD product stalled 42 days: the least actionable
+//     thing in the shop, presented as the first thing to do.
 
 function Section({ icon, title, badge, children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{ borderTop: '1px solid rgba(43,41,38,0.1)', marginBottom: 0 }}>
+    <div style={{ borderTop: '1px solid rgba(43,41,38,0.1)' }}>
       <button
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '16px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '14px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
         onClick={() => setOpen(!open)}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>{icon}</span>
           <span style={{ fontSize: '0.72rem', fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{title}</span>
           {badge !== undefined && badge !== null && (
-            <span style={{ background: 'var(--charcoal-faint)', borderRadius: 20, padding: '1px 8px', fontSize: '0.65rem', fontWeight: 600 }}>
-              {badge}
-            </span>
+            <span style={{ background: 'var(--charcoal-faint)', borderRadius: 20, padding: '1px 8px', fontSize: '0.65rem', fontWeight: 600 }}>{badge}</span>
           )}
         </div>
         <span style={{ fontSize: '0.65rem', color: 'var(--charcoal-soft)' }}>{open ? '▲' : '▼'}</span>
@@ -33,49 +52,148 @@ function Section({ icon, title, badge, children, defaultOpen = false }) {
   );
 }
 
+function Stat({ label, value, tone }) {
+  return (
+    <span style={{ fontSize: '0.72rem', color: tone || 'var(--charcoal-soft)' }}>
+      <strong style={{ color: tone || 'var(--charcoal)' }}>{value}</strong> {label}
+    </span>
+  );
+}
+
+// One open window. Timing on the left, what you have for it on the right —
+// research, ideas, and existing coverage together, because any one of them
+// alone is not a decision.
+function OpportunityCard({ o, onOpenNiche }) {
+  const days = o.timing.daysRemaining;
+  return (
+    <div style={{
+      border: o.isUncovered ? '1px solid rgba(124,175,138,0.5)' : '1px solid rgba(43,41,38,0.1)',
+      background: o.isUncovered ? 'rgba(124,175,138,0.06)' : 'transparent',
+      borderRadius: 3, padding: '10px 12px', marginBottom: 8,
+    }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+        <TimingStateBadge state={o.timing.state} size="sm" />
+        <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{o.niche.name}</span>
+        {days != null && Number.isFinite(days) && (
+          <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
+            {days} day{days !== 1 ? 's' : ''} left in this phase
+          </span>
+        )}
+        {o.isUncovered && (
+          <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#2d6b3c', background: 'rgba(124,175,138,0.22)', padding: '1px 7px', borderRadius: 10 }}>
+            nothing live here yet
+          </span>
+        )}
+      </div>
+
+      {o.needsLink ? (
+        // Not an empty niche — an unknowable one. Says so, and says what fixes
+        // it, rather than rendering zeros that look like a verdict.
+        <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+          No collection linked to this niche, so TCC can&rsquo;t tell what research or products relate to it.
+          {' '}
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.65rem', padding: '1px 6px' }} onClick={onOpenNiche}>
+            Link one →
+          </button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: o.bestKeyword ? 4 : 0 }}>
+            <Stat label={`live product${o.liveCount !== 1 ? 's' : ''}`} value={o.liveCount}
+              tone={o.liveCount === 0 ? '#2d6b3c' : undefined} />
+            {o.inProgressCount > 0 && <Stat label="in progress" value={o.inProgressCount} />}
+            <Stat label={`keyword${o.keywordCount !== 1 ? 's' : ''} researched`} value={o.keywordCount} />
+            {o.linkedSparks.length > 0 && <Stat label="ideas filed here" value={o.linkedSparks.length} />}
+          </div>
+
+          {o.bestKeyword && (
+            <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+              Strongest term: <strong>{o.bestKeyword.keyword}</strong>
+              {o.bestKeyword.volume != null && ` · ${o.bestKeyword.volume.toLocaleString()} searches`}
+            </div>
+          )}
+
+          {o.suggestedSparks.length > 0 && (
+            // Deliberately worded as a suggestion and kept visually apart from
+            // "ideas filed here" — these matched on text, nobody classified
+            // them, and presenting a guess as a fact is how it becomes one.
+            <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginTop: 4, fontStyle: 'italic' }}>
+              {o.suggestedSparks.length} unfiled spark{o.suggestedSparks.length !== 1 ? 's' : ''} mention
+              {o.suggestedSparks.length === 1 ? 's' : ''} &ldquo;{o.niche.name}&rdquo; — may or may not belong here.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const { products } = useProducts();
-  const { sparks, refetch: refetchSparks } = useSparks();
-  const { signals } = useTrendSignals();
+  const { sparks } = useSparks();
   const { collectionObjects } = useCollectionsContext();
-
-  const active = products.filter(p => !['Killed', 'Paused'].includes(p.stage));
-  const pickUps = getPickUpProducts(active, 3);
-  const needsAttn = getNeedsAttention(products);
-  const inProgress = active.filter(p => !['Live', 'Idea'].includes(p.stage));
-  const hotSparks = sparks.filter(s => s.temperature === 'hot');
-  const coldSparks = sparks.filter(s => s.temperature === 'cold');
   const { results: timingResults } = useNicheTimings(products, collectionObjects);
-  const review = getNextReviewDates();
-  const reviewListings = products.filter(p => p.stage === 'Live');
+  const { niches } = useNiches();
 
-  // Only the states that call for work now. Watch/evergreen/unknown niches are
-  // real but not actionable today, and listing all 69 would bury the handful
-  // that matter.
-  const ACTIONABLE = STATE_URGENCY_ORDER.slice(0, STATE_URGENCY_ORDER.indexOf('LATE_WINDOW') + 1);
-  const timingGroups = groupNichesByState(timingResults).filter(gr => ACTIONABLE.includes(gr.state));
-  const actionableCount = timingGroups.reduce((n, gr) => n + gr.niches.length, 0);
+  // The bridge between Taylor's calendar and TCC's own taxonomy. Without it
+  // every opportunity routes through timing_niche_collections, which has zero
+  // rows — so nothing would ever be measurable.
+  const [nicheTimingLinks, setNicheTimingLinks] = useState([]);
+  useEffect(() => {
+    supabase.from('niche_timing_niches').select('niche_id, timing_niche_id')
+      .then(({ data }) => setNicheTimingLinks(data || []));
+  }, []);
 
-  // Trend signals with no product in pipeline
-  const pipelineCollections = new Set(active.map(p => p.collection).filter(Boolean));
-  const trendAlerts = signals.filter(s =>
-    s.status === 'pursue' && (!s.collection || !pipelineCollections.has(s.collection))
-  );
+  // Keywords with their session's collection, for the research half of each
+  // opportunity. Fetched here rather than via a hook because Home is the only
+  // consumer and it needs exactly this shape.
+  const [keywords, setKeywords] = useState([]);
+  useEffect(() => {
+    supabase.from('keywords')
+      .select('keyword, volume, research_sessions(collection, niche_id)')
+      .not('research_session_id', 'is', null)
+      .then(({ data }) => setKeywords(data || []));
+  }, []);
 
-  // Priority 1 collections with no products in pipeline
-  const p1WithNoProducts = collectionObjects.filter(c =>
-    c.priority === 'priority_1' && c.status !== 'archived' &&
-    !products.some(p => p.collection === c.name && !['Killed', 'Paused'].includes(p.stage))
-  );
-
-  // Watch signals with revisit_date within 7 days
-  const todayStr = today();
-  const trendComingUp = signals.filter(s => {
-    if (s.status !== 'watch' || !s.revisit_date) return false;
-    const days = daysBetween(todayStr, s.revisit_date);
-    return days >= 0 && days <= 7;
+  const allOpportunities = buildOpportunities({
+    timingResults, products, keywords, sparks, nicheTimingLinks, niches,
   });
+  const summary = summarizeOpportunities(allOpportunities);
+
+  // Split before rendering. Taylor's calendar covers the WHOLE Etsy market —
+  // 69 niches including Honeymoon, Maternity and Bachelorette — and this shop
+  // sells into about six of them. On the first real run those unlinked niches
+  // filled the top of the page with windows for markets that aren't hers,
+  // which is exactly the noise this page was rebuilt to remove.
+  //
+  // They aren't dropped, because an unlinked niche might be one worth entering.
+  // They're just moved below the ones where something is actually knowable.
+  const opportunities = allOpportunities.filter(o => !o.needsLink);
+  const unlinked = allOpportunities.filter(o => o.needsLink);
+
+  const live = products.filter(p => p.stage === 'Live');
+  const inProgress = products.filter(p => !['Live', 'Idea', 'Killed', 'Paused'].includes(p.stage));
+
+  // The honest state of the data behind everything above. Each line is a
+  // specific missing input with a specific fix, not a health score — an empty
+  // dashboard should say what would fill it.
+  const noPerf = live.filter(p => !p.stats_updated_at).length;
+  const unclassifiedProducts = products.filter(p => !p.primary_niche_id && !['Killed', 'Paused'].includes(p.stage)).length;
+  const gaps = [
+    noPerf > 0 && {
+      text: `${noPerf} live listing${noPerf !== 1 ? 's have' : ' has'} no performance data — review checkpoints and diagnosis stay dark until it's imported.`,
+      action: 'Products', to: '/products',
+    },
+    summary.needingLink > 0 && {
+      text: `${summary.needingLink} niche${summary.needingLink !== 1 ? 's are' : ' is'} in an open window but linked to no collection, so nothing can be measured for ${summary.needingLink !== 1 ? 'them' : 'it'}.`,
+      action: 'Timing library', to: '/knowledge',
+    },
+    unclassifiedProducts > 0 && {
+      text: `${unclassifiedProducts} active product${unclassifiedProducts !== 1 ? 's have' : ' has'} no niche.`,
+      action: 'Classify', to: '/research',
+    },
+  ].filter(Boolean);
 
   return (
     <div className="page">
@@ -84,138 +202,100 @@ export default function Home() {
         <div style={{ height: 1, background: 'rgba(43,41,38,0.1)' }} />
       </div>
 
-      {/* Pick Up Where You Left Off */}
-      {pickUps.length > 0 && (
-        <div style={{ background: 'var(--warm-white)', border: '1px solid rgba(43,41,38,0.12)', borderRadius: 2, padding: 20, marginBottom: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>⭐ pick up where you left off</div>
-          {pickUps.map((p, i) => {
-            const daysInStage = p.stage_updated_at ? Math.floor((Date.now() - new Date(p.stage_updated_at).getTime()) / 86400000) : null;
-            const isStalled = daysInStage !== null && daysInStage > 14;
-            return (
-              <div key={p.id} style={{ marginBottom: i < pickUps.length - 1 ? 14 : 0, paddingBottom: i < pickUps.length - 1 ? 14 : 0, borderBottom: i < pickUps.length - 1 ? '1px solid rgba(43,41,38,0.08)' : 'none' }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: i === 0 ? '1.2rem' : '0.95rem', fontWeight: 400, marginBottom: 4 }}>
-                  {p.name}
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                  <span className={`stage-pill ${STAGE_PILL_CLASS[p.stage]}`}>{p.stage}</span>
-                  {p.confidence && <span className="confidence-badge">{p.confidence}</span>}
-                  {isStalled && <span style={{ fontSize: '0.6rem', color: '#7a4a1e', background: 'rgba(232,168,124,0.2)', padding: '1px 6px', borderRadius: 10 }}>stalled {daysInStage}d</span>}
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', flex: 1 }}>{STAGE_NEXT_ACTIONS[p.stage]}</div>
-                  <button className="btn btn-primary btn-sm" onClick={() => navigate(`/products/${p.id}`)}>Continue →</button>
-                </div>
-              </div>
-            );
-          })}
+      {/* ── Build this now ── */}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem' }}>Build this now</span>
+          {summary.uncovered > 0 && (
+            <span style={{ fontSize: '0.72rem', color: '#2d6b3c' }}>
+              {summary.uncovered} open window{summary.uncovered !== 1 ? 's' : ''} with nothing live
+            </span>
+          )}
         </div>
-      )}
-
-      {/* Review Queue */}
-      <Section icon="📅" title="Review Queue" badge={`${reviewListings.length} listings · ${review.daysAway}d`}>
-        <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)', marginBottom: 12 }}>
-          Next review Saturday in {review.daysAway} day{review.daysAway !== 1 ? 's' : ''}{review.isMonthly ? ' (Monthly)' : ' (Bi-weekly)'}
+        <div style={{ fontSize: '0.73rem', color: 'var(--charcoal-soft)', marginBottom: 10, lineHeight: 1.5 }}>
+          Niches whose timing window is open right now, with what you already have for each.
+          Ordered by how soon the window closes &mdash; not by any score.
         </div>
-        {reviewListings.slice(0, 5).map(p => <ProductCard key={p.id} product={p} />)}
-      </Section>
 
-      {/* Opportunity Window — Phase 22. Additive only: the rest of Home is
-          untouched. Shows which niches are in an actionable timing state right
-          now, grouped by state. Deliberately no ordering within a group, no
-          score, and no "work on this first" — which to pick up is Portfolio
-          Intelligence's question, not this one's. */}
-      {timingGroups.length > 0 && (
-        <Section icon="🗓" title="Opportunity Window" badge={actionableCount}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 10 }}>
-            Where each niche sits in its window today, from recorded timing evidence.
+        {opportunities.length === 0 ? (
+          <div style={{ fontSize: '0.8rem', color: 'var(--charcoal-soft)', padding: '10px 0' }}>
+            {unlinked.length
+              ? `None of the niches you sell into has an open window today. ${unlinked.length} other${unlinked.length !== 1 ? 's are' : ' is'} open in the calendar — see below.`
+              : 'No niche is in an actionable window today. That’s a real answer, not a missing one — the calendar simply has nothing opening right now.'}
           </div>
-          {timingGroups.map(gr => (
-            <div key={gr.state} style={{ marginBottom: 10 }}>
-              <div style={{ marginBottom: 5 }}><TimingStateBadge state={gr.state} size="sm" /></div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {gr.niches.map(r => (
-                  <span key={r.niche.id} style={{
-                    fontSize: '0.76rem', padding: '3px 9px', borderRadius: 10,
-                    background: 'rgba(43,41,38,0.05)', color: 'var(--charcoal)',
-                  }}>{r.niche.name}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-          <button className="btn btn-sm btn-ghost" onClick={() => navigate('/knowledge')}>
-            Open the timing library →
-          </button>
-        </Section>
-      )}
-
-      {/* Needs Attention */}
-      <Section icon="🔴" title="Needs Attention" badge={needsAttn.length + trendAlerts.length + p1WithNoProducts.length}>
-        {needsAttn.length === 0 && trendAlerts.length === 0 && p1WithNoProducts.length === 0 ? (
-          <div style={{ fontSize: '0.82rem', color: 'var(--charcoal-soft)' }}>Nothing needs attention right now.</div>
         ) : (
           <>
-            {needsAttn.map(p => <ProductCard key={p.id} product={p} alert />)}
-            {p1WithNoProducts.map(c => (
-              <div key={c.id} style={{ border: '1px solid rgba(43,41,38,0.12)', borderRadius: 2, padding: '12px 14px', marginBottom: 8, background: 'var(--warm-white)' }}>
-                <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 4 }}>Priority 1 — No products yet</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 4 }}>{c.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>{c.chapter} · 0 products in pipeline</div>
-                <button className="btn btn-sm btn-ghost" onClick={() => navigate('/sparks')}>Activate a spark →</button>
-              </div>
+            {opportunities.slice(0, 6).map(o => (
+              <OpportunityCard key={o.niche.id} o={o} onOpenNiche={() => navigate('/knowledge')} />
             ))}
-            {trendAlerts.map(s => (
-              <div key={s.id} style={{ background: 'rgba(124,175,138,0.1)', border: '1px solid var(--success)', borderRadius: 2, padding: '12px 14px', marginBottom: 8 }}>
-                <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#2d6b3c', marginBottom: 4 }}>🟢 Trend Signal — Pursue</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 4 }}>{s.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
-                  Score {s.score}/25 · {s.collection || '⚑ No collection assigned'} · No product in pipeline
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-sm btn-primary" onClick={() => navigate(s.collection ? `/sparks?collection=${encodeURIComponent(s.collection)}` : '/sparks')}>Activate a spark →</button>
-                  <button className="btn btn-sm btn-ghost" onClick={() => navigate('/trends')}>View signal</button>
-                </div>
-              </div>
-            ))}
+            {opportunities.length > 6 && (
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/knowledge')}>
+                {opportunities.length - 6} more open window{opportunities.length - 6 !== 1 ? 's' : ''} →
+              </button>
+            )}
           </>
         )}
-      </Section>
 
-      {/* Coming Up */}
-      {trendComingUp.length > 0 && (
-        <Section icon="📅" title="Coming Up" badge={trendComingUp.length}>
-          {trendComingUp.map(s => {
-            const days = daysBetween(todayStr, s.revisit_date);
-            return (
-              <div key={s.id} style={{ border: 'var(--border)', borderRadius: 2, padding: '12px 14px', marginBottom: 8, background: 'var(--warm-white)' }}>
-                <div style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--charcoal-soft)', marginBottom: 4 }}>👁 Watch — Revisit {days === 0 ? 'today' : `in ${days}d`}</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1rem', marginBottom: 4 }}>{s.name}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>{s.collection} · Score {s.score}/25</div>
-                <button className="btn btn-sm btn-ghost" onClick={() => navigate('/trends')}>View in Trend Radar →</button>
-              </div>
-            );
-          })}
+        {unlinked.length > 0 && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)', marginTop: 10, lineHeight: 1.5 }}>
+            {unlinked.length} other niche{unlinked.length !== 1 ? 's are' : ' is'} in an open window but
+            {unlinked.length !== 1 ? ' aren’t' : ' isn’t'} linked to anything you sell &mdash; {unlinked.slice(0, 4).map(o => o.niche.name).join(', ')}
+            {unlinked.length > 4 ? `, and ${unlinked.length - 4} more` : ''}.
+            {' '}These come from the full Etsy calendar, so most won&rsquo;t be yours.
+            {' '}
+            <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.65rem', padding: '1px 6px' }} onClick={() => navigate('/knowledge')}>
+              Link one if it is →
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── In progress ── */}
+      {inProgress.length > 0 && (
+        <Section icon="✅" title="In progress" badge={inProgress.length} defaultOpen>
+          {inProgress.map(p => (
+            <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
+              <span style={{ flex: '1 1 200px', fontSize: '0.82rem' }}>{p.name}</span>
+              <span className={`stage-pill ${STAGE_PILL_CLASS[p.stage]}`}>{p.stage}</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', flex: '1 1 160px' }}>
+                {STAGE_NEXT_ACTIONS[p.stage]}
+              </span>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.66rem' }} onClick={() => navigate(`/products/${p.id}`)}>
+                Open →
+              </button>
+            </div>
+          ))}
         </Section>
       )}
 
-      {/* In Progress */}
-      <Section icon="✅" title="In Progress" badge={inProgress.length}>
-        {inProgress.map(p => <ProductCard key={p.id} product={p} />)}
-      </Section>
-
-      {/* Sparks */}
-      <Section icon="💡" title="Idea Vault" badge={`${hotSparks.length} hot · ${coldSparks.length} cold`}>
-        {hotSparks.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div className="section-label">Hot</div>
-            {hotSparks.map(s => <SparkCard key={s.id} spark={s} onAction={refetchSparks} />)}
+      {/* ── What's missing ── */}
+      {gaps.length > 0 && (
+        <Section icon="🔌" title="Waiting on data" badge={gaps.length}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {gaps.map((g, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: '0.76rem' }}>
+                <span style={{ flex: '1 1 300px', color: 'var(--charcoal-soft)' }}>{g.text}</span>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.66rem' }} onClick={() => navigate(g.to)}>
+                  {g.action} →
+                </button>
+              </div>
+            ))}
           </div>
-        )}
-        {coldSparks.slice(0, 3).map(s => <SparkCard key={s.id} spark={s} onAction={refetchSparks} />)}
-        {coldSparks.length > 3 && (
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/sparks')} style={{ marginTop: 4 }}>
-            See all {coldSparks.length} ideas →
-          </button>
-        )}
+        </Section>
+      )}
+
+      {/* ── Shop at a glance ── */}
+      <Section icon="📦" title="Shop at a glance">
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: '0.78rem' }}>
+          <Stat label="live listings" value={live.length} />
+          <Stat label="in progress" value={inProgress.length} />
+          <Stat label="ideas captured" value={sparks.filter(s => !s.archived_at).length} />
+          <Stat label="niches in an open window" value={summary.total} />
+        </div>
+        <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 8, lineHeight: 1.5 }}>
+          Counts only. Captured ideas are not a to-do list &mdash; an idea can sit for months and that is
+          the system working, not a backlog.
+        </div>
       </Section>
     </div>
   );
