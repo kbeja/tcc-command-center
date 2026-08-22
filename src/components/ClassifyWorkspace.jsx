@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { useNiches, setKeywordSearchIntent, linkKeywordToNiche } from '../lib/hooks';
+import { useNiches, setKeywordSearchIntent, linkKeywordToNiche, useKeywordClusters, addKeywordToCluster, removeKeywordFromCluster } from '../lib/hooks';
 import { flattenForPicker, nichePath } from '../lib/niches';
 import { SEARCH_INTENTS } from '../data/searchIntents';
 
@@ -145,6 +145,23 @@ export default function ClassifyWorkspace() {
     load();
   }
 
+  // The universal cluster — terms that belong to no market and pool into every
+  // listing. Deliberately not a niche: giving "gift for her" one would claim it
+  // belongs to a single market and hide it from every other listing.
+  const { clusters, refetch: refetchClusters } = useKeywordClusters();
+  const universalCluster = clusters.find(c => c.is_universal) || null;
+  const universalIds = new Set(universalCluster?.keywordIds || []);
+  const [uniSearch, setUniSearch] = useState('');
+
+  async function toggleUniversal(keywordId, isIn) {
+    if (!universalCluster) return;
+    setBusy(`u-${keywordId}`);
+    if (isIn) await removeKeywordFromCluster(universalCluster.id, keywordId);
+    else await addKeywordToCluster(universalCluster.id, keywordId);
+    setBusy(null);
+    refetchClusters();
+  }
+
   const unclassifiedSessions = sessions.filter(s => !s.niche_id);
   const keywordsNeedingIntent = allKeywords.filter(k => !k.search_intent);
 
@@ -233,6 +250,59 @@ export default function ClassifyWorkspace() {
             <div style={{ fontSize: '0.72rem', color: '#2d6b3c' }}>All sessions classified.</div>
           )}
         </div>
+      </Section>
+
+      {/* ── Universal keywords ── */}
+      <Section
+        title="Universal keywords"
+        done={universalIds.size}
+        total={universalIds.size || 1}
+        hint="Terms that apply to any listing regardless of market — custom, personalized, gift for her, plus sized. These get pooled into every generation and deliberately have NO niche, because claiming one would hide them from every other listing."
+      >
+        {!universalCluster ? (
+          <div style={{ fontSize: '0.74rem', color: '#7a2b2b' }}>
+            The Universal / Cross-Niche cluster doesn&rsquo;t exist yet — run the migration for it first.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
+              {universalIds.size} keyword{universalIds.size !== 1 ? 's' : ''} in the pool.
+              Search your research to add more — check the box to include a term.
+            </div>
+            <input
+              value={uniSearch}
+              onChange={e => setUniSearch(e.target.value)}
+              placeholder="Search keywords, e.g. gift for her"
+              style={{ marginBottom: 8, maxWidth: 320 }}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 320, overflowY: 'auto' }}>
+              {allKeywords
+                .filter(k => universalIds.has(k.id) || (uniSearch.trim() && k.keyword.toLowerCase().includes(uniSearch.trim().toLowerCase())))
+                // Same text can appear in several sessions; show it once.
+                .filter((k, i, arr) => arr.findIndex(x => x.keyword.toLowerCase() === k.keyword.toLowerCase()) === i)
+                .slice(0, 120)
+                .map(k => {
+                  const isIn = universalIds.has(k.id);
+                  return (
+                    <label key={k.id} style={{
+                      display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.76rem',
+                      padding: '3px 6px', borderRadius: 3, cursor: 'pointer',
+                      background: isIn ? 'rgba(124,175,138,0.1)' : 'transparent',
+                    }}>
+                      <input type="checkbox" checked={isIn} disabled={busy === `u-${k.id}`}
+                        onChange={() => toggleUniversal(k.id, isIn)} style={{ width: 'auto', margin: 0 }} />
+                      <span>{k.keyword}</span>
+                    </label>
+                  );
+                })}
+              {!uniSearch.trim() && universalIds.size === 0 && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
+                  Nothing added yet. Search above to find terms like &ldquo;gift for her&rdquo; or &ldquo;custom&rdquo;.
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </Section>
 
       {/* ── Keyword intent ── */}

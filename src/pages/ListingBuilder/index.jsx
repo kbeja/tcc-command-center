@@ -290,6 +290,13 @@ export default function ListingBuilder() {
   // e.g. Halloween/Christmas terms leaking into evidence for non-seasonal
   // products with no way to turn it off. A listing that actually wants those
   // terms adds that collection explicitly via extraCollections instead.
+  //
+  // SUPERSEDED but still load-bearing: the Universal / Cross-Niche keyword
+  // cluster (keyword_clusters.is_universal) is the real mechanism now, and
+  // fetchKeywordUniverse pools it below. This name list stays until those
+  // keywords have actually been moved into that cluster — deleting it first
+  // would silently stop pooling "gift for her" and "custom" into every
+  // listing, with nothing on screen to indicate it had happened.
   const GLOBAL_COLLECTIONS = ['Global Keywords', 'General'];
 
   // ─── Keyword universe: collection ∪ niche (Phase 10) ─────────────────────
@@ -312,19 +319,85 @@ export default function ListingBuilder() {
   // once, or its keywords would be double-counted in every readiness number
   // downstream.
   async function fetchKeywordUniverse(cols, nicheIds) {
+    // Three paths, merged. Each answers a different question, and dropping any
+    // one of them loses keywords that legitimately belong in the pool.
+    //
+    //   1. BY COLLECTION — the original behaviour, matching research_sessions
+    //      on collection NAME. Still the only path with real coverage today.
+    //   2. BY SESSION NICHE — whole sessions classified to this listing's
+    //      niche. Coarse: it pulls in every keyword in the session, which is
+    //      right for a single-topic import and wrong for a mixed one.
+    //   3. BY KEYWORD NICHE — individual keywords linked to this niche via
+    //      keyword_niches. This is the precise one, and the reason mixed
+    //      research sessions stop being a problem: a session covering three
+    //      niches contributes only the keywords that actually belong to THIS
+    //      one, rather than all of them.
+    //
+    // Path 3 was the gap. keyword_niches has been many-to-many since Phase 8a
+    // precisely so a term can serve several markets, but nothing read it — so
+    // per-keyword links were being written and then ignored at the only moment
+    // they mattered.
     const byCollection = cols.length
       ? supabase.from('research_sessions').select('*, keywords(*)').in('collection', cols)
       : Promise.resolve({ data: [] });
-    const byNiche = nicheIds.length
+    const bySessionNiche = nicheIds.length
       ? supabase.from('research_sessions').select('*, keywords(*)').in('niche_id', nicheIds)
       : Promise.resolve({ data: [] });
+    // Keyword ids linked to this niche directly, then the sessions holding
+    // them. Two hops because keywords live under sessions in this shape.
+    const byKeywordNiche = nicheIds.length
+      ? supabase.from('keyword_niches').select('keyword_id').in('niche_id', nicheIds)
+      : Promise.resolve({ data: [] });
+    // Universal terms — "gift for her", "custom", "plus sized" — belong to no
+    // market and pool into every listing. Previously this was the hardcoded
+    // GLOBAL_COLLECTIONS name list, which broke silently if either collection
+    // was renamed. Now it is a real flag on a cluster.
+    const universal = supabase
+      .from('keyword_clusters')
+      .select('keyword_cluster_keywords(keyword_id)')
+      .eq('is_universal', true)
+      .neq('status', 'archived');
 
-    const [{ data: a }, { data: b }] = await Promise.all([byCollection, byNiche]);
-    const seen = new Map();
+    const [{ data: a }, { data: b }, { data: kn }, { data: uni }] =
+      await Promise.all([byCollection, bySessionNiche, byKeywordNiche, universal]);
+
+    const sessions = new Map();
     for (const row of [...(a || []), ...(b || [])]) {
-      if (!seen.has(row.id)) seen.set(row.id, row);
+      // Deduped by session id — a session matching more than one path must
+      // appear once, or its keywords are double-counted in every readiness
+      // number downstream.
+      if (!sessions.has(row.id)) sessions.set(row.id, row);
     }
-    return [...seen.values()];
+
+    // Keyword ids wanted from sessions we have NOT already pulled in whole.
+    const wantedKeywordIds = new Set([
+      ...(kn || []).map(r => r.keyword_id),
+      ...(uni || []).flatMap(c => (c.keyword_cluster_keywords || []).map(k => k.keyword_id)),
+    ]);
+    for (const sess of sessions.values()) {
+      for (const k of sess.keywords || []) wantedKeywordIds.delete(k.id);
+    }
+
+    if (wantedKeywordIds.size) {
+      const { data: extra } = await supabase
+        .from('keywords')
+        .select('*, research_sessions(*)')
+        .in('id', [...wantedKeywordIds]);
+
+      // Regroup loose keywords under their own sessions so the rest of the
+      // pipeline — which reasons in sessions, and lets you toggle them — sees
+      // one consistent shape rather than a second parallel list.
+      for (const k of extra || []) {
+        const sess = k.research_sessions;
+        if (!sess) continue;
+        const { research_sessions: _drop, ...keyword } = k;
+        if (!sessions.has(sess.id)) sessions.set(sess.id, { ...sess, keywords: [] });
+        const target = sessions.get(sess.id);
+        if (!target.keywords.some(x => x.id === keyword.id)) target.keywords.push(keyword);
+      }
+    }
+
+    return [...sessions.values()];
   }
 
   useEffect(() => {
