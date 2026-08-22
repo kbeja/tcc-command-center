@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { useSparks, updateSpark, archiveSpark, useConceptsBySpark } from '../lib/hooks';
+import { useSparks, updateSpark, archiveSpark, useConceptsBySpark, useNiches } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { supabase } from '../lib/supabase';
 import SparkCard from '../components/SparkCard';
 import ConceptChatImport from '../components/ConceptChatImport';
 import { nowISO } from '../lib/utils';
+import { SPARK_TYPES, normalizeSparkType } from '../data/sparkTypes';
 
 export default function Sparks() {
   const [searchParams] = useSearchParams();
@@ -13,6 +14,9 @@ export default function Sparks() {
   const { sparks, loading, refetch } = useSparks();
   const { collectionNames: collections, collectionObjects, chapters } = useCollectionsContext();
   const { conceptsBySparkId } = useConceptsBySpark();
+  // Read once here and threaded into every card — see SparkCard's note on why
+  // it must not call useNiches() itself.
+  const { niches } = useNiches();
   const [conceptSourceSpark, setConceptSourceSpark] = useState(null);
   const [search, setSearch] = useState('');
   const [chapterFilter, setChapterFilter] = useState('');
@@ -42,7 +46,7 @@ export default function Sparks() {
     const matchChapter = sparkMatchesChapter(s, chapterFilter);
     const matchColl = !collectionFilter || s.collection_tag === collectionFilter;
     const matchSpecific = !specificCollection || s.collection_tag === specificCollection;
-    const matchType = !typeFilter || (s.idea_type || 'Product Idea') === typeFilter;
+    const matchType = !typeFilter || normalizeSparkType(s.idea_type) === typeFilter;
     return matchSearch && matchChapter && matchColl && matchSpecific && matchType;
   });
 
@@ -180,6 +184,7 @@ export default function Sparks() {
               onAction={refetch}
               linkedConcepts={conceptsBySparkId[s.id] || []}
               onCreateConcept={setConceptSourceSpark}
+              niches={niches}
             />
           ))}
         </div>
@@ -241,9 +246,7 @@ export default function Sparks() {
           </select>
           <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All types</option>
-            <option value="Product Idea">Product Idea</option>
-            <option value="Strategy Idea">Strategy Idea</option>
-            <option value="Tool/Resource">Tool/Resource</option>
+            {SPARK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
 
@@ -278,6 +281,7 @@ export default function Sparks() {
                 onAction={refetch}
                 linkedConcepts={conceptsBySparkId[s.id] || []}
                 onCreateConcept={setConceptSourceSpark}
+                niches={niches}
               />
             </div>
           </div>

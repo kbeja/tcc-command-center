@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { createSpark } from '../lib/hooks';
-
-const IDEA_TYPES = ['Product Idea', 'Strategy Idea', 'Tool/Resource'];
+import { SPARK_TYPES, DEFAULT_SPARK_TYPE, SPARK_TYPE_HINTS } from '../data/sparkTypes';
 
 export default function CaptureField({ onClose }) {
   const [text, setText] = useState('');
-  const [ideaType, setIdeaType] = useState('Product Idea');
+  const [ideaType, setIdeaType] = useState(DEFAULT_SPARK_TYPE);
   const [saved, setSaved] = useState(false);
   const ref = useRef(null);
 
@@ -37,7 +36,7 @@ export default function CaptureField({ onClose }) {
           style={{ marginBottom: 10 }}
         />
         <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-          {IDEA_TYPES.map(t => (
+          {SPARK_TYPES.map(t => (
             <button
               key={t}
               onClick={() => setIdeaType(t)}

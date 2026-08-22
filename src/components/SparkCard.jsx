@@ -4,24 +4,27 @@ import { useCollectionsContext } from '../context/CollectionsContext';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import ConfirmButton from './ConfirmButton';
+import NichePicker from './NichePicker';
+import { SPARK_TYPES, SPARK_TYPE_STYLES, normalizeSparkType } from '../data/sparkTypes';
+import { nichePath } from '../lib/niches';
 
-const IDEA_TYPES = ['Product Idea', 'Strategy Idea', 'Tool/Resource'];
-
-const TYPE_STYLES = {
-  'Product Idea':   { background: 'rgba(124,175,138,0.15)', color: '#2d6b3c' },
-  'Strategy Idea':  { background: 'rgba(107,130,168,0.15)', color: '#2d4270' },
-  'Tool/Resource':  { background: 'rgba(232,168,124,0.2)',  color: '#7a4a1e' },
-};
-
-export default function SparkCard({ spark, onAction, linkedConcepts = [], onCreateConcept }) {
+// `niches` is passed in rather than fetched here on purpose. useNiches() opens
+// a realtime channel per call, and the Idea Vault renders hundreds of cards at
+// once — fetching per card would open hundreds of Supabase subscriptions. The
+// list is read once in Sparks.jsx and threaded down for the display pill; the
+// NichePicker (which does call useNiches) only mounts while one card is being
+// edited, so at most one extra channel exists at a time.
+export default function SparkCard({ spark, onAction, linkedConcepts = [], onCreateConcept, niches = [] }) {
   const navigate = useNavigate();
   const { collectionNames: collections } = useCollectionsContext();
   const [confirm, setConfirm] = useState(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingCollection, setEditingCollection] = useState(false);
   const [collection, setCollection] = useState(spark.collection_tag || '');
-  const [ideaType, setIdeaType] = useState(spark.idea_type || 'Product Idea');
+  const [ideaType, setIdeaType] = useState(normalizeSparkType(spark.idea_type));
   const [editingType, setEditingType] = useState(false);
+  const [nicheId, setNicheId] = useState(spark.primary_niche_id || null);
+  const [editingNiche, setEditingNiche] = useState(false);
 
   // Evaluate panel state
   const [evaluating, setEvaluating] = useState(false);
@@ -72,6 +75,15 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
     await updateSpark(spark.id, { idea_type: val });
   }
 
+  // Saved immediately on change rather than behind an edit/confirm step. A
+  // spark is a low-ceremony object -- if classifying one costs three clicks,
+  // 369 unclassified sparks stay unclassified.
+  async function handleNicheSave(val) {
+    setNicheId(val);
+    await updateSpark(spark.id, { primary_niche_id: val });
+    onAction?.();
+  }
+
   function computeSuggestion(answers) {
     const { collection: c, market: m, identity: i } = answers;
     if (c === 'yes' && m === 'yes' && i === 'yes') return 'activate';
@@ -98,7 +110,13 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
     }
   }
 
-  const typeStyle = TYPE_STYLES[ideaType] || TYPE_STYLES['Product Idea'];
+  const typeStyle = SPARK_TYPE_STYLES[ideaType] || SPARK_TYPE_STYLES['Product / Concept'];
+  // Full path, not just the leaf — "Hockey" and "Field Hockey" are only
+  // distinguishable in context, and the pill is the only place the
+  // classification is visible from the list.
+  const nicheLabel = nicheId
+    ? nichePath(niches.find(n => n.id === nicheId), niches) || null
+    : null;
 
   const SUGGESTION_LABELS = {
     activate: { label: 'Activate → move to Pipeline', btn: 'btn-primary' },
@@ -143,7 +161,7 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
               autoFocus
               style={{ fontSize: '0.72rem', padding: '2px 6px', height: 'auto' }}
             >
-              {IDEA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {SPARK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           ) : (
             <button
@@ -154,6 +172,41 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
               }}
             >
               {ideaType}
+            </button>
+          )}
+
+          {/* Niche — the primary taxonomy path (Phase 3). Sits before the
+              collection pill because the niche is now the main question and
+              the collection the rarer one. */}
+          {editingNiche ? (
+            <div style={{ minWidth: 230 }}>
+              <NichePicker
+                value={nicheId}
+                onChange={async val => { await handleNicheSave(val); setEditingNiche(false); }}
+                label={null}
+                compact
+                allowCreate
+              />
+              <button
+                onClick={() => setEditingNiche(false)}
+                style={{ fontSize: '0.62rem', marginTop: 3, border: 'none', background: 'transparent', color: 'var(--charcoal-soft)', cursor: 'pointer', padding: 0 }}
+              >
+                done
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditingNiche(true)}
+              title={nicheLabel || 'Assign a niche'}
+              style={{
+                fontSize: '0.68rem', padding: '2px 8px', borderRadius: 20,
+                background: nicheId ? 'rgba(124,175,138,0.15)' : 'var(--charcoal-faint)',
+                color: nicheId ? '#2d6b3c' : 'var(--charcoal-soft)',
+                border: 'none', cursor: 'pointer', maxWidth: 240,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}
+            >
+              {nicheLabel || '+ niche'}
             </button>
           )}
 

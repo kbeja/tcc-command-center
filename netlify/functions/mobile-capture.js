@@ -80,7 +80,11 @@ async function handleRequest(event) {
     const { data, error } = await supabase.from('sparks').insert({
       content,
       collection_tag: collectionTag || null,
-      idea_type: 'Product Idea',
+      // Kept in sync by hand with DEFAULT_SPARK_TYPE in src/data/sparkTypes.js.
+      // This function cannot import from src/ (it is bundled separately by
+      // esbuild), the same duplication analyze-visual.js already lives with for
+      // its taxonomy list.
+      idea_type: 'Product / Concept',
       temperature: 'cold',
       created_at: now,
       updated_at: now,
