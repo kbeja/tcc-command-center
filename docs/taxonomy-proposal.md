@@ -474,3 +474,72 @@ This is where the many-to-many earns its place — `Morally Gray Society` is gen
    overlay has every holiday available from day one?
 5. **The §10.1 rule** — confirm sub = domain, specific = identity, which is what produces
    Mahjong → Mahjong Player rather than a single Mahjong node.
+
+---
+
+## 11. The Seasonal branch — FOR REVIEW
+
+Kristen approved seeding "the calendar's full seasonal set" (§9 decision 7 / §10.9 q4). But the
+Phase 22 calendar is **not** a seasonal set — it is 69 mixed entries, and most are life events or
+evergreen niches, not calendar-anchored seasons. Splitting them is a judgment call, so it is here
+for review rather than in the migration.
+
+Note also that the calendar's months are *listing/launch* months, not event months (Christmas sits
+at 8–11), so the months cannot be used to detect seasonality automatically.
+
+### 11.1 Tier A — unambiguous, propose creating (25)
+
+Fixed-date holidays and annually recurring observances.
+
+**Holidays** — Christmas · Christmas in July · Halloween · Thanksgiving · Easter · Valentines Day ·
+Galentines · St. Patrick's Day · 4th of July · Hanukkah · Cinco De Mayo · Mardis Gras · Oktoberfest ·
+Earth Day
+
+**Awareness observances** — Black History Month · Pride Month · Breast Cancer Awareness ·
+Autism Awareness · International Women's Day
+
+**School calendar** — Back to School · 100th Day of School · Spring Break · Graduation
+
+**Dated gifting** — Mother's Day · Father's Day
+
+Plus **Summer**, which is not in the calendar at all but is needed for the Summer Printables
+overlay — so 26 nodes in total.
+
+### 11.2 Tier B — borderline, needs your call (10)
+
+These are genuinely calendar-anchored, but they double as something else. Under the §9.1 crossover
+rule the buyer identity is the primary path and the season is the overlay — which argues they
+belong here as *overlays*, not as primary paths.
+
+| Entry | The tension |
+|---|---|
+| Football Season · Baseball/Softball Season · Soccer Season · Winter Sports · Summer Sports | Real annual windows, but the buyer is a Hobbies → sport identity. Useful as an overlay on `Hobbies → Football`, not as a home for the product. |
+| Teacher Events · Principal Month · Midwifery Week | Profession-linked observances with real annual spikes. Same shape: overlay on `Professions → Teachers`. |
+| Company Holiday Parties · White Elephant/Gag Gifts | Christmas-adjacent gifting windows. Arguably sub-cases of Christmas rather than peers of it. |
+
+**Recommendation: create all 10.** They cost nothing sitting unused, and each is a real annual spike
+you would otherwise have no way to tag. Football Season in particular pairs directly with the
+sport sub-niches this taxonomy just created.
+
+### 11.3 Tier C — not seasonal, do NOT create here (33)
+
+These belong to other broad niches or to no taxonomy at all. Listing them so the decision is
+explicit rather than silent.
+
+| Group | Entries | Where they actually belong |
+|---|---|---|
+| Wedding lifecycle | Bachelor · Bachelorette · Bridal Shower · Bridesmaid/Maid of Honor Proposal · Best Man Proposal · Engagement/Getting Married · Honeymoon/Just Married · Officiant Gifts · Godparent Proposal | **Wedding** broad niche |
+| Baby / family lifecycle | Baby Shower · Babymoon · Gender Reveal · Maternity · Baptism · Infertility/IVF | **Relationships** |
+| Birthday | Birthday Themes · Birthday Theme *(two label variants of one niche)* | **Birthday** broad niche |
+| Life events | Divorce/Breakup · New Homeowner · General Retirement · Teacher Retirement · Graduation Party | Relationships / Professions |
+| Travel & gatherings | Family Reunion · Family Vacation · Girls Trip | not date-fixed |
+| Evergreen interests | Book Reading · Camping & Outdoors · Fitness/Health · Running Events · Geography · Zodiac · Pet Related · Hobbies · Professions | **Hobbies / Pets / Professions** — several already exist |
+
+Nothing in Tier C is deleted or changed; these stay exactly as they are in `timing_niches`. This
+only says they do not become Seasonal taxonomy nodes.
+
+### 11.4 What each created node also gets
+
+A `niche_timing_niches` link to its calendar entry, so the Seasonal branch inherits real sourced
+launch windows from Taylor's calendar rather than a guessed date. That link is the whole reason
+§1.1 put seasonal in the taxonomy instead of a separate seasons table.
