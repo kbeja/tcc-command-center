@@ -152,7 +152,15 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
     // on it, same treatment SessionSummaryParser gives an unmatched match.
     let withSpark;
     if (sourceSpark) {
-      withSpark = { ...result, spark_id: sourceSpark.id, sourceSparkMatched: true };
+      // Inherit the spark's niche here too — the paste path is the same
+      // Spark -> Concept lineage as quick-create, just with a design brief
+      // attached, so it should not lose the classification.
+      withSpark = {
+        ...result,
+        spark_id: sourceSpark.id,
+        sourceSparkMatched: true,
+        primary_niche_id: result.primary_niche_id || sourceSpark.primary_niche_id || null,
+      };
     } else if (result.source_spark_text) {
       const matchedSpark = allSparks.find(s => looseTextMatch(s.content, result.source_spark_text));
       withSpark = { ...result, spark_id: matchedSpark?.id || null, sourceSparkMatched: !!matchedSpark };
@@ -204,6 +212,11 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
       typography_notes: '', mood_keywords: [], product_types: [], seasonal_flag: '',
       emotional_trigger: '', kittl_prompt: '', raw_import: '',
       spark_id: sourceSpark.id,
+      // §11 inheritance: a concept made from a spark starts with the spark's
+      // classification rather than asking for it again. A default, not a lock
+      // -- the picker in the preview can change it before saving, which is why
+      // this is copied in application code and not by a DB trigger.
+      primary_niche_id: sourceSpark.primary_niche_id || null,
     };
     setParsed(seed);
     setEditedConcept({ ...seed });

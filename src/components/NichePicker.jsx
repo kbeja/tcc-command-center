@@ -30,6 +30,11 @@ export default function NichePicker({
   allowClear = true,
   disabled = false,
   levels = null,               // e.g. ['specific'] to restrict; null = any level
+  // Restrict to one branch, e.g. 'Seasonal' for a seasonal-overlay picker.
+  // The overlay reads from the SAME niches table rather than a separate
+  // seasons list -- see docs/taxonomy-proposal.md §1.1 for why one vocabulary
+  // used two ways is the whole point.
+  pathPrefix = null,
   helpText = null,
   compact = false,
   // Discovering a new market IS the research workflow -- if creating a niche
@@ -47,9 +52,14 @@ export default function NichePicker({
   const [busy, setBusy] = useState(false);
 
   const options = useMemo(() => {
-    const all = flattenForPicker(niches);
-    return levels ? all.filter(o => levels.includes(o.level)) : all;
-  }, [niches, levels]);
+    let all = flattenForPicker(niches);
+    if (levels) all = all.filter(o => levels.includes(o.level));
+    if (pathPrefix) {
+      // Exclude the branch root itself: "Seasonal" alone is not a season.
+      all = all.filter(o => o.path.startsWith(pathPrefix) && o.path !== pathPrefix);
+    }
+    return all;
+  }, [niches, levels, pathPrefix]);
 
   // The currently-selected niche may be archived (classified before it was
   // retired). It is deliberately still rendered, appended to the list, rather

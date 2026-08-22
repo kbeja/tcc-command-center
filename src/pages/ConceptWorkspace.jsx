@@ -5,6 +5,7 @@ import { resizeImageForUpload } from '../lib/image';
 import { nowISO } from '../lib/utils';
 import ConfirmButton from '../components/ConfirmButton';
 import { useCollectionsContext } from '../context/CollectionsContext';
+import NichePicker from '../components/NichePicker';
 import {
   useConcept,
   updateConcept,
@@ -291,6 +292,14 @@ export default function ConceptWorkspace() {
   if (loading) return <div className="page"><div style={{ color: 'var(--charcoal-soft)', padding: 24 }}>Loading…</div></div>;
   if (!concept) return <div className="page"><div style={{ color: 'var(--charcoal-soft)', padding: 24 }}>Concept not found.</div></div>;
 
+  // Phase 4: the concept's own classification. Saved on change rather than on
+  // blur -- these are pickers, not free text, so there is no half-typed state
+  // worth waiting for.
+  async function handleNicheSave(field, val) {
+    await updateConcept(id, { [field]: val });
+    refetch();
+  }
+
   async function handleFieldBlur(field, value) {
     await updateConcept(id, { [field]: value || null });
     setFieldSaved(field);
@@ -388,6 +397,27 @@ export default function ConceptWorkspace() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Classification (Phase 4) — the niche is the market this concept
+          serves; the seasonal overlay is the §1.1 crossover, pointing at the
+          SAME niches table so a Christmas concept and a generic Christmas
+          product reference one row rather than two drifting ones. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 18 }}>
+        <NichePicker
+          value={concept.primary_niche_id || null}
+          onChange={val => handleNicheSave('primary_niche_id', val)}
+          label="Niche"
+          allowCreate
+          helpText="Who this concept is for."
+        />
+        <NichePicker
+          value={concept.seasonal_niche_id || null}
+          onChange={val => handleNicheSave('seasonal_niche_id', val)}
+          label="Seasonal overlay"
+          pathPrefix="Seasonal"
+          helpText="Optional — only if this concept is tied to a season or occasion."
+        />
       </div>
 
       {/* Tab bar */}
