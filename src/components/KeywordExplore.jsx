@@ -329,7 +329,20 @@ function GroupCard({ group, keywords, collections, onStartCollection, onRename, 
   const [nameEdit, setNameEdit] = useState(false);
   const [name, setName]         = useState(group.name);
   const [converting, setConverting] = useState(false);
-  const [targetColl, setTargetColl] = useState('__new__');
+  // Defaults to "no collection" rather than "__new__". Previously this
+  // defaulted to creating a NEW collection pre-named with the AI cluster's own
+  // label, so every clustered group saved from here minted a collection unless
+  // the dropdown was actively changed. That is where most of the shop's 54
+  // collections came from -- including the two duplicate Mahjong ones (same
+  // eRank research imported a day apart under two AI labels) and the ones with
+  // obviously machine-generated names like "Book Lover Demographic Shirts" and
+  // "Color & Design Attributes", which were never markets Kristen chose.
+  //
+  // Creating a collection is now a deliberate act. Saving research with no
+  // collection is a first-class outcome, not an incomplete state -- exploratory
+  // research legitimately has no home until the numbers say whether it is a
+  // real market (§10 "capture first, classify second").
+  const [targetColl, setTargetColl] = useState('');
   const [newCollName, setNewCollName] = useState(group.name);
   const [newChapter, setNewChapter]  = useState('');
   const [saving, setSaving]     = useState(false);
