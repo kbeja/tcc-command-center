@@ -142,3 +142,125 @@ describe('merging with the AI validation status', () => {
     expect(result.headline).toBe('ready_with_caution');
   });
 });
+
+// ─── Phase 6: Listing Search Setup dimensions ──────────────────────────────
+function dimOf(result, key) {
+  return result.dimensions.find(d => d.key === key);
+}
+
+// §12's point is that Etsy relevance goes beyond title + tags, and §24 is
+// explicit that the panel is guidance rather than a gate. These tests pin both
+// halves: the dimensions appear and read correctly, and none of them can ever
+// escalate a listing to needs_research.
+
+describe('search setup — opt-in', () => {
+  it('adds no new dimensions when no Phase 6 values are passed', () => {
+    const keys = computeListingReadiness(baseInput()).dimensions.map(d => d.key);
+    expect(keys).not.toContain('etsy_category');
+    expect(keys).not.toContain('etsy_attributes');
+    expect(keys).not.toContain('title');
+    expect(keys).not.toContain('tags');
+    expect(keys).not.toContain('hero_image');
+  });
+});
+
+describe('etsy category', () => {
+  it('is ok only once confirmed', () => {
+    const r = computeListingReadiness(baseInput({ etsyCategory: 'Clothing > Tops', etsyCategoryConfirmed: true }));
+    expect(dimOf(r, 'etsy_category').state).toBe('ok');
+  });
+
+  it('is caution when set but unconfirmed — a path alone is a draft', () => {
+    const r = computeListingReadiness(baseInput({ etsyCategory: 'Clothing > Tops' }));
+    expect(dimOf(r, 'etsy_category').state).toBe('caution');
+  });
+
+  it('distinguishes never-looked-at (pending) from reviewed-and-rejected (caution)', () => {
+    // Explicit null means "this listing tracks a category and it is unset" ->
+    // a pending row. Only omitting the field entirely (undefined) suppresses
+    // the dimension, which is what keeps the five original dimensions intact
+    // for callers that never pass Phase 6 values at all.
+    const explicitNull = computeListingReadiness(baseInput({ etsyCategory: null, etsyCategoryConfirmed: null }));
+    expect(dimOf(explicitNull, 'etsy_category').state).toBe('pending');
+    const untouched = computeListingReadiness(baseInput({ etsyCategory: '' }));
+    expect(dimOf(untouched, 'etsy_category').state).toBe('pending');
+    const rejected = computeListingReadiness(baseInput({ etsyCategoryConfirmed: false }));
+    expect(dimOf(rejected, 'etsy_category').state).toBe('caution');
+  });
+});
+
+describe('etsy attributes', () => {
+  it('is ok when marked complete', () => {
+    const r = computeListingReadiness(baseInput({
+      etsyAttributes: [{ name: 'Neckline', value: 'Crew' }], etsyAttributesComplete: true,
+    }));
+    expect(dimOf(r, 'etsy_attributes').state).toBe('ok');
+  });
+
+  it('counts only fully-filled pairs, and never invents a denominator', () => {
+    const r = computeListingReadiness(baseInput({
+      etsyAttributes: [{ name: 'Neckline', value: 'Crew' }, { name: 'Sleeve', value: '' }],
+    }));
+    expect(dimOf(r, 'etsy_attributes').state).toBe('caution');
+    expect(dimOf(r, 'etsy_attributes').detail).toContain('1 attribute');
+    expect(dimOf(r, 'etsy_attributes').detail).not.toMatch(/of \d/);
+  });
+
+  it('is pending with an empty list', () => {
+    expect(dimOf(computeListingReadiness(baseInput({ etsyAttributes: [] })), 'etsy_attributes').state).toBe('pending');
+  });
+});
+
+describe('title', () => {
+  it('reports length against Etsy\u2019s 140 limit', () => {
+    const r = computeListingReadiness(baseInput({ title: 'Hockey Mom Sweatshirt' }));
+    expect(dimOf(r, 'title').state).toBe('ok');
+    expect(dimOf(r, 'title').detail).toContain('of 140');
+  });
+
+  it('cautions over 140 characters', () => {
+    const r = computeListingReadiness(baseInput({ title: 'x'.repeat(141) }));
+    expect(dimOf(r, 'title').state).toBe('caution');
+  });
+
+  it('does not penalise a short title — §15 forbids a short-title rule', () => {
+    expect(dimOf(computeListingReadiness(baseInput({ title: 'Hockey Mom Tee' })), 'title').state).toBe('ok');
+  });
+});
+
+describe('tags', () => {
+  it('is ok at 13', () => {
+    const tags = Array.from({ length: 13 }, (_, i) => `tag ${i}`);
+    expect(dimOf(computeListingReadiness(baseInput({ tags })), 'tags').state).toBe('ok');
+  });
+
+  it('cautions below 13 without demanding filler', () => {
+    const r = computeListingReadiness(baseInput({ tags: ['hockey mom', 'hockey tee'] }));
+    expect(dimOf(r, 'tags').state).toBe('caution');
+    expect(dimOf(r, 'tags').detail).toContain('genuinely fit');
+  });
+
+  it('flags tags over Etsy\u2019s 20-character limit', () => {
+    const r = computeListingReadiness(baseInput({ tags: ['a'.repeat(21)] }));
+    expect(dimOf(r, 'tags').state).toBe('caution');
+    expect(dimOf(r, 'tags').detail).toContain('20-character');
+  });
+});
+
+describe('hero image', () => {
+  it('separates approved, rejected and unreviewed', () => {
+    expect(dimOf(computeListingReadiness(baseInput({ heroImageApproved: true })), 'hero_image').state).toBe('ok');
+    expect(dimOf(computeListingReadiness(baseInput({ heroImageApproved: false })), 'hero_image').state).toBe('caution');
+    expect(dimOf(computeListingReadiness(baseInput({ heroImageApproved: null })), 'hero_image').state).toBe('pending');
+  });
+});
+
+describe('search setup is guidance, never a gate (§24)', () => {
+  it('cannot push a listing to needs_research on its own', () => {
+    const r = computeListingReadiness(baseInput({
+      etsyCategory: '', etsyAttributes: [], title: '', tags: [], heroImageApproved: false,
+    }));
+    expect(r.dimensions.some(d => ['etsy_category', 'etsy_attributes', 'title', 'tags', 'hero_image'].includes(d.key) && d.state === 'attention')).toBe(false);
+    expect(r.headline).not.toBe('needs_research');
+  });
+});

@@ -1,0 +1,88 @@
+-- Phase 6 — Listing Search Setup: Etsy category, attributes, and readiness flags
+-- Run this in the Supabase SQL Editor (not auto-applied).
+--
+-- Five nullable columns on products. Nothing backfilled, nothing existing
+-- touched.
+--
+-- ---------------------------------------------------------------------------
+-- WHY THIS EXISTS
+-- ---------------------------------------------------------------------------
+-- §12 of the SEO amendment: Etsy's own guidance says search relevance is not
+-- limited to title and tags — category, attributes, description and listing
+-- quality all feed it. The audit found ZERO support for category or attributes
+-- anywhere in the codebase, which makes the Listing Builder a title+tag
+-- generator rather than the "Etsy Listing Search + Conversion Setup" §12 asks
+-- for. This is the gap.
+--
+-- ---------------------------------------------------------------------------
+-- WHY CATEGORY IS FREE TEXT AND NOT A REFERENCE TABLE
+-- ---------------------------------------------------------------------------
+-- §13 is explicit: "Do not hard-code Etsy category names indefinitely. Etsy
+-- category taxonomy can change." Three options were considered:
+--
+--   1. Import Etsy's category tree     — rejected. It changes without notice,
+--      there is no sync mechanism here, and a stale tree that LOOKS canonical
+--      is worse than no tree: it would quietly offer categories that no longer
+--      exist while hiding new ones.
+--   2. A TCC-maintained reference table — rejected for this phase. Same
+--      staleness risk plus a permanent maintenance chore, for a shop with 28
+--      products spanning a handful of categories.
+--   3. Free text + an explicit human confirmation — chosen.
+--
+-- The stored value is the category path exactly as Etsy shows it, e.g.
+-- "Clothing > Women's Clothing > Tops & Tees > T-shirts", which is what gets
+-- copied out of the listing editor anyway. etsy_category_confirmed is the
+-- part that actually matters: it records that a human checked this is the MOST
+-- SPECIFIC applicable category, which is the thing §13 asks to be prompted
+-- about. A path with no confirmation is a draft, not an answer.
+--
+-- ---------------------------------------------------------------------------
+-- WHY ATTRIBUTES ARE JSONB AND NOT COLUMNS
+-- ---------------------------------------------------------------------------
+-- Etsy attributes are defined PER CATEGORY — a t-shirt has neckline and sleeve
+-- length, a mug has capacity, an ornament has none of those. There is no fixed
+-- column set that could be right, so jsonb holding [{name, value}] is the only
+-- honest shape. Not a junction table: attributes have no identity or reuse
+-- across products, they are just this listing's answers, which is exactly the
+-- case jsonb is for (same reasoning as listing_generations.research_gaps).
+--
+-- etsy_attributes_complete is again the human judgment, and again the load-
+-- bearing field: nothing here can know how many attributes a given Etsy
+-- category offers, so counting entries would prove nothing. §13's warning
+-- against "rigid automatic rules here without testing" is why this is a flag a
+-- person sets rather than a rule that infers.
+--
+-- ---------------------------------------------------------------------------
+-- HERO IMAGE
+-- ---------------------------------------------------------------------------
+-- §23 wants a hero-image readiness check and §24 lists it in the pre-publish
+-- panel. Only the flag lands here — the actual quality checks (design readable
+-- at thumbnail size, product type obvious, colour matches the listing) depend
+-- on the existing mockup/visual system and are deferred. A flag with no
+-- analysis behind it is honest; an analysis invented to fill the flag would
+-- not be.
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS etsy_category            text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS etsy_category_confirmed  boolean;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS etsy_attributes          jsonb;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS etsy_attributes_complete boolean;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS hero_image_approved      boolean;
+
+-- All three booleans are nullable on purpose, and NULL is a distinct third
+-- state from false: NULL means "not looked at yet" and renders as pending,
+-- false means "looked at and it is not right" and renders as attention. A NOT
+-- NULL DEFAULT false would have collapsed those into one, making every one of
+-- the 28 existing products claim its category had been reviewed and rejected.
+-- Same unknown-vs-confirmed-no distinction Product Truth's three booleans
+-- already use (see the Milestone A migration).
+
+-- ---------------------------------------------------------------------------
+-- Verify (optional — run after the above)
+-- ---------------------------------------------------------------------------
+-- Expect 28 products, all five columns NULL on every row.
+--
+-- SELECT count(*) AS total,
+--        count(etsy_category)       AS with_category,
+--        count(etsy_attributes)     AS with_attributes,
+--        count(hero_image_approved) AS hero_reviewed
+-- FROM products;

@@ -20,6 +20,11 @@ const HEADLINE_RANK = { ready: 0, ready_with_caution: 1, needs_research: 2 };
 function buildDimensions({
   hasGenerated, productFormat, primarySearchIntent, primaryIntentStatus,
   usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount, validationWarnings,
+  // Phase 6 — Listing Search Setup (§13, §24). All optional: a caller that
+  // passes none of them gets exactly the five original dimensions, so every
+  // existing call site keeps its previous behaviour.
+  etsyCategory, etsyCategoryConfirmed, etsyAttributes, etsyAttributesComplete,
+  heroImageApproved, title, tags,
 }) {
   const dimensions = [];
 
@@ -121,6 +126,101 @@ function buildDimensions({
   }
   dimensions.push({ key: 'generation_validation', state: genValidationState, detail: genValidationDetail });
 
+  // ── Phase 6: Listing Search Setup ────────────────────────────────────────
+  // §12's core point is that Etsy relevance is not just title + tags. These
+  // dimensions are GUIDANCE, never blocking (§24 says so explicitly), so none
+  // of them can reach 'attention' — the worst any returns is 'caution'.
+  // Publishing without a confirmed category is a worse listing, not a broken
+  // one, and a panel that shouts is a panel that gets ignored.
+  //
+  // NULL vs false matters throughout: null means "not looked at yet"
+  // (pending), false means "looked at, not right" (caution). Collapsing them
+  // would make every never-touched product claim it had been reviewed.
+
+  if (etsyCategory !== undefined || etsyCategoryConfirmed !== undefined) {
+    let state, detail;
+    if (etsyCategoryConfirmed === true) {
+      state = 'ok';
+      detail = etsyCategory ? `${etsyCategory} — confirmed most specific.` : 'Confirmed.';
+    } else if (etsyCategoryConfirmed === false) {
+      state = 'caution';
+      detail = 'Category marked as not yet the most specific one.';
+    } else if (etsyCategory) {
+      state = 'caution';
+      detail = `${etsyCategory} — set, but not confirmed as the most specific.`;
+    } else {
+      state = 'pending';
+      detail = 'No Etsy category recorded.';
+    }
+    dimensions.push({ key: 'etsy_category', state, detail });
+  }
+
+  if (etsyAttributes !== undefined || etsyAttributesComplete !== undefined) {
+    const filled = Array.isArray(etsyAttributes)
+      ? etsyAttributes.filter(a => a && a.name && a.value).length
+      : 0;
+    let state, detail;
+    if (etsyAttributesComplete === true) {
+      state = 'ok';
+      detail = filled ? `${filled} attribute${filled !== 1 ? 's' : ''} recorded, marked complete.` : 'Marked complete.';
+    } else if (filled) {
+      // Deliberately not "n of N" — nothing here knows how many attributes a
+      // given Etsy category offers, so a denominator would be invented.
+      state = 'caution';
+      detail = `${filled} attribute${filled !== 1 ? 's' : ''} recorded, not yet marked complete.`;
+    } else {
+      state = 'pending';
+      detail = 'No Etsy attributes recorded.';
+    }
+    dimensions.push({ key: 'etsy_attributes', state, detail });
+  }
+
+  if (title !== undefined) {
+    const t = (title || '').trim();
+    dimensions.push({
+      key: 'title',
+      state: t ? 'ok' : 'pending',
+      // 140 is Etsy's own field limit, not a TCC style rule — §15 forbids
+      // inventing a short-title rule, not respecting the platform maximum.
+      detail: t
+        ? (t.length > 140 ? `${t.length} characters — over Etsy's 140 limit.` : `${t.length} of 140 characters.`)
+        : 'No title yet.',
+    });
+    if (t.length > 140) dimensions[dimensions.length - 1].state = 'caution';
+  }
+
+  if (tags !== undefined) {
+    const list = (tags || []).map(x => (x || '').trim()).filter(Boolean);
+    const overlong = list.filter(x => x.length > 20).length;
+    let state, detail;
+    if (!list.length) {
+      state = 'pending';
+      detail = 'No tags yet.';
+    } else if (overlong) {
+      state = 'caution';
+      detail = `${overlong} tag${overlong !== 1 ? 's' : ''} over Etsy's 20-character limit.`;
+    } else if (list.length < 13) {
+      // §19 is explicit that unrelated filler is worse than a short set, so
+      // this stays a note rather than a demand for 13.
+      state = 'caution';
+      detail = `${list.length} of 13 tag slots used — only add more if they genuinely fit.`;
+    } else {
+      state = 'ok';
+      detail = 'All 13 tag slots used.';
+    }
+    dimensions.push({ key: 'tags', state, detail });
+  }
+
+  if (heroImageApproved !== undefined) {
+    dimensions.push({
+      key: 'hero_image',
+      state: heroImageApproved === true ? 'ok' : heroImageApproved === false ? 'caution' : 'pending',
+      detail: heroImageApproved === true ? 'Hero image approved.'
+        : heroImageApproved === false ? 'Hero image flagged as not ready.'
+        : 'Hero image not reviewed.',
+    });
+  }
+
   return dimensions;
 }
 
@@ -153,10 +253,14 @@ export function computeListingReadiness({
   hasGenerated, productFormat, primarySearchIntent, primaryIntentStatus,
   usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount,
   validationWarnings, aiValidationStatus,
+  etsyCategory, etsyCategoryConfirmed, etsyAttributes, etsyAttributesComplete,
+  heroImageApproved, title, tags,
 }) {
   const dimensions = buildDimensions({
     hasGenerated, productFormat, primarySearchIntent, primaryIntentStatus,
     usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount, validationWarnings,
+    etsyCategory, etsyCategoryConfirmed, etsyAttributes, etsyAttributesComplete,
+    heroImageApproved, title, tags,
   });
 
   if (!hasGenerated) {
