@@ -605,6 +605,15 @@ export async function createResearchSession(session, keywords) {
         data_window: k.data_window ?? null,
         trend_data: k.trend_data ?? null,
         source_score: k.source_score ?? null,
+        // Phase 8b — Etsy Marketplace Insights fields. Null for every other
+        // source, which is exactly the point: the ledger stays honest about
+        // which source knew what, and no column is ever shared across sources
+        // (§3's "no mystery score" guaranteed structurally, not by policy).
+        conversion_class: k.conversion_class ?? null,
+        trend_pct: k.trend_pct ?? null,
+        similar_terms: k.similar_terms?.length ? k.similar_terms : null,
+        price_range: k.price_range ?? null,
+        source_caveat: k.source_caveat ?? null,
         research_session_id: s.id,
         recorded_at: now,
       };
@@ -2547,4 +2556,105 @@ export async function addKeywordToCluster(clusterId, keywordId) {
 export async function removeKeywordFromCluster(clusterId, keywordId) {
   return supabase.from('keyword_cluster_keywords')
     .delete().eq('cluster_id', clusterId).eq('keyword_id', keywordId);
+}
+
+// ─── Research Evidence — the screenshot trail (Phase 8b / §16) ─────────────
+// §16 rules out a fake automatic Etsy importer and asks instead for
+// Screenshot -> extraction suggestion -> HUMAN REVIEW -> structured data,
+// with the original evidence stored where practical. These functions cover
+// the capture and review ends; nothing here extracts anything, and §29
+// explicitly rules out automatic OCR without review.
+//
+// reviewed_at NULL is the meaningful state — captured but not yet turned into
+// data. That is a queue, not a defect, which is why the "unreviewed" read gets
+// its own partial index in the migration.
+
+export function useResearchEvidence({ sessionId = undefined, nicheId = undefined, unreviewedOnly = false } = {}) {
+  const [evidence, setEvidence] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase.from('research_evidence').select('*').order('created_at', { ascending: false });
+    if (sessionId) q = q.eq('research_session_id', sessionId);
+    if (nicheId) q = q.eq('niche_id', nicheId);
+    if (unreviewedOnly) q = q.is('reviewed_at', null);
+    const { data } = await q;
+    setEvidence(data || []);
+    setLoading(false);
+  }, [sessionId, nicheId, unreviewedOnly]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { evidence, loading, refetch: fetch };
+}
+
+// Uploads to the research-evidence bucket, then records the row. Deliberately
+// two steps with the row written second: an orphaned file in storage is
+// invisible clutter, whereas a row pointing at a file that failed to upload is
+// a broken record that looks real. Fail toward the harmless one.
+export async function uploadResearchEvidence(file, { sessionId = null, nicheId = null, source = null, capturedAt = null, label = null, notes = null } = {}) {
+  if (!file) return { data: null, error: new Error('No file provided') };
+
+  const ext = (file.name?.split('.').pop() || 'png').toLowerCase();
+  const stamp = nowISO().replace(/[:.]/g, '-');
+  const path = `${nicheId || 'unfiled'}/${stamp}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('research-evidence')
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (uploadError) return { data: null, error: uploadError };
+
+  const { data, error } = await supabase
+    .from('research_evidence')
+    .insert({
+      research_session_id: sessionId,
+      niche_id: nicheId,
+      source,
+      storage_path: path,
+      mime_type: file.type || null,
+      size_bytes: file.size ?? null,
+      // The date the SCREEN showed, not the upload date — Etsy's panel reports
+      // a trailing 30-day window, so when it was captured matters more than
+      // when it happened to be filed.
+      captured_at: capturedAt || null,
+      label,
+      notes,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // Roll the file back so a failed insert doesn't leave an unreferenced
+    // object behind — same rollback discipline createResearchSession uses.
+    await supabase.storage.from('research-evidence').remove([path]);
+    return { data: null, error };
+  }
+  return { data, error: null };
+}
+
+// Signed URL, because the bucket is private. Short-lived on purpose: these are
+// display links inside the app, not something to paste anywhere.
+export async function getResearchEvidenceUrl(storagePath, expiresInSeconds = 3600) {
+  const { data, error } = await supabase.storage
+    .from('research-evidence')
+    .createSignedUrl(storagePath, expiresInSeconds);
+  return { url: data?.signedUrl || null, error };
+}
+
+// Marks evidence as turned into data. Never sets it automatically — §16's
+// whole point is that a human stands between the screenshot and the numbers.
+export async function markResearchEvidenceReviewed(id, { sessionId = undefined } = {}) {
+  const patch = { reviewed_at: nowISO() };
+  if (sessionId !== undefined) patch.research_session_id = sessionId;
+  const { data, error } = await supabase
+    .from('research_evidence')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function deleteResearchEvidence(id, storagePath) {
+  if (storagePath) await supabase.storage.from('research-evidence').remove([storagePath]);
+  return supabase.from('research_evidence').delete().eq('id', id);
 }

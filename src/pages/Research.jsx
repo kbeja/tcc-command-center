@@ -5,6 +5,7 @@ import { useResearchSessions, useProducts, createCollection, deleteCollection, u
 import { useCollectionsContext } from '../context/CollectionsContext';
 import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
+import EtsyInsightsCapture from '../components/EtsyInsightsCapture';
 import KeywordExplore from '../components/KeywordExplore';
 import KeywordDetail from '../components/KeywordDetail';
 import ConfirmButton from '../components/ConfirmButton';
@@ -890,6 +891,7 @@ export default function Research() {
           <button className={`btn btn-sm ${tab === 'sessions' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('sessions')}>Sessions</button>
           <button className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('collections')}>Collections</button>
           <button className={`btn btn-sm ${tab === 'explore' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('explore')}>Explore</button>
+          <button className={`btn btn-sm ${tab === 'etsy' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab('etsy')}>Etsy Insights</button>
         </div>
       </div>
 
@@ -918,6 +920,8 @@ export default function Research() {
       {tab === 'collections' && (
         <CollectionsManager refetch={refetchCollections} />
       )}
+
+      {tab === 'etsy' && <EtsyInsightsCapture onSaved={() => setTab('sessions')} />}
 
       {tab === 'explore' && (
         <KeywordExplore
