@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   useNicheTimings, useTimingSources, useLeadTimeProfiles, useProducts,
   createLeadTimeProfile, updateLeadTimeProfile, archiveLeadTimeProfile,
-  linkNicheToCollection, unlinkNicheFromCollection,
+  linkTimingNicheToCollection, unlinkTimingNicheFromCollection,
   setGuidanceNoteType, splitGuidanceNote, createTimingNiche,
 } from '../../lib/hooks';
 import { useCollectionsContext } from '../../context/CollectionsContext';
@@ -352,7 +352,7 @@ function CollectionLinker({ result, collections, onChanged }) {
   async function add() {
     if (!pick) return;
     setBusy(true); setError(null);
-    const { error: err } = await linkNicheToCollection(result.niche.id, pick);
+    const { error: err } = await linkTimingNicheToCollection(result.niche.id, pick);
     setBusy(false);
     if (err) { setError(err.message); return; }
     setPick(''); onChanged();
@@ -360,7 +360,7 @@ function CollectionLinker({ result, collections, onChanged }) {
 
   async function remove(cid) {
     setBusy(true); setError(null);
-    const { error: err } = await unlinkNicheFromCollection(result.niche.id, cid);
+    const { error: err } = await unlinkTimingNicheFromCollection(result.niche.id, cid);
     setBusy(false);
     if (err) { setError(err.message); return; }
     onChanged();

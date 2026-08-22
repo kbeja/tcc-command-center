@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { createCollection, updateCollection } from '../lib/hooks';
 import { useSparks, useProducts } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
+import NicheTree from '../components/NicheTree';
 const PRIORITY_ORDER = ['flagship', 'priority_1', 'priority_2', 'supporting', 'archived'];
 
 const PRIORITY_LABELS = {
@@ -87,6 +88,11 @@ export default function Collections() {
   const [saving, setSaving] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [filterChapter, setFilterChapter] = useState('');
+  // Phase 2b: the niche taxonomy lives here rather than in its own nav item,
+  // because the Phase 2c triage is a side-by-side decision -- "is this
+  // collection a niche, an aesthetic, or a product type?" -- and splitting the
+  // two across pages would turn one judgment into constant tab-hopping.
+  const [tab, setTab] = useState('collections');
 
   function sparkCount(name) {
     return sparks.filter(s => s.collection_tag === name && !s.archived_at).length;
@@ -132,15 +138,35 @@ export default function Collections() {
       <div className="page-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div className="page-title">Collections</div>
+            <div className="page-title">Niches &amp; Collections</div>
             <div style={{ fontSize: '0.78rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>
-              {collections.filter(c => c.status !== 'archived').length} active
+              {collections.filter(c => c.status !== 'archived').length} active collection{collections.filter(c => c.status !== 'archived').length !== 1 ? 's' : ''}
             </div>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>+ Add</button>
+          {tab === 'collections' && (
+            <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>+ Add</button>
+          )}
         </div>
-        {/* Chapter filter bar */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+          <button
+            className={`btn btn-sm ${tab === 'collections' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setTab('collections')}
+          >
+            Collections
+          </button>
+          <button
+            className={`btn btn-sm ${tab === 'niches' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setTab('niches')}
+          >
+            Niches
+          </button>
+        </div>
+        {/* Chapter filter bar -- legacy free-text chapter, superseded by the
+            Niches tab. Kept until the Phase 2c triage moves this data into the
+            taxonomy; removing it now would strand the 30 collections that
+            still only have a chapter. */}
+        <div style={{ display: tab === 'collections' ? 'flex' : 'none', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${!filterChapter ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterChapter('')}>
             All ({collections.filter(c => c.status !== 'archived').length})
           </button>
@@ -156,7 +182,9 @@ export default function Collections() {
         </div>
       </div>
 
-      {adding && (
+      {tab === 'niches' && <NicheTree />}
+
+      {tab === 'collections' && adding && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="eyebrow" style={{ marginBottom: 10 }}>New Collection</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
@@ -187,9 +215,9 @@ export default function Collections() {
         </div>
       )}
 
-      {loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
+      {tab === 'collections' && loading && <div style={{ color: 'var(--charcoal-soft)', fontSize: '0.85rem' }}>Loading…</div>}
 
-      {visiblePriorities.map(priority => {
+      {tab === 'collections' && visiblePriorities.map(priority => {
         const items = grouped[priority] || [];
         if (!items.length) return null;
         return (
@@ -210,7 +238,7 @@ export default function Collections() {
         );
       })}
 
-      {!showArchived && (grouped['archived'] || []).length > 0 && (
+      {tab === 'collections' && !showArchived && (grouped['archived'] || []).length > 0 && (
         <button
           className="btn btn-ghost btn-sm"
           style={{ marginTop: 8 }}

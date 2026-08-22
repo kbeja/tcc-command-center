@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection, useTimingNiches, useTimingSources, createTimingNiche, createTimingSource, createTimingGuidance, createTimingGuidanceNote, linkNicheToCollection } from '../lib/hooks';
+import { createSpark, createWorkshopItem, createResearchSession, createConcept, createConceptOutput, createImportSession, setCurrentOutput, generateConceptCode, useSparks, useResearchSessions, useTrendSignals, createTrendSignal, useVisualTags, createVisualTag, applyTagToCollection, useTimingNiches, useTimingSources, createTimingNiche, createTimingSource, createTimingGuidance, createTimingGuidanceNote, linkTimingNicheToCollection } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
 import { assignBucketsToList } from '../lib/keywords.jsx';
 import { supabase } from '../lib/supabase';
@@ -747,7 +747,7 @@ export default function SessionSummaryParser({ products, onDone }) {
       // then it counts as deliberate because she approved this item in the
       // preview before saving.
       if (t.collectionId) {
-        const { error: linkErr } = await linkNicheToCollection(nicheId, t.collectionId);
+        const { error: linkErr } = await linkTimingNicheToCollection(nicheId, t.collectionId);
         if (linkErr && !linkErr.message?.toLowerCase().includes('duplicate')) {
           errors.push(`Timing "${t.nicheName}" collection link: ${linkErr.message}`);
         }

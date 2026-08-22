@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useNicheTimings, linkNicheToCollection } from '../lib/hooks';
+import { useNicheTimings, linkTimingNicheToCollection } from '../lib/hooks';
 import TimingPanel from './TimingPanel';
 
 // Phase 22 — collection-level timing. Complements the per-product view rather
@@ -29,7 +29,7 @@ export default function CollectionTiming({ collection, products = [], collection
   async function link() {
     if (!pick) return;
     setBusy(true); setError(null);
-    const { error: err } = await linkNicheToCollection(pick, collection.id);
+    const { error: err } = await linkTimingNicheToCollection(pick, collection.id);
     setBusy(false);
     if (err) { setError(err.message); return; }
     setPick(''); setLinking(false); await refetch();

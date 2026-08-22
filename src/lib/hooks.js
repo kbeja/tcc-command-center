@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import { daysBetween, today } from '../data/seasons';
 import { interpretKeyword } from './keywordIntelligence';
 import { buildNicheTimings } from './timingIntelligence';
+import { childLevelOf, planReparent, levelForDepth, ancestorsOf } from './niches';
 import { analyzeVisual } from './claude';
 import { nowISO } from './utils';
 
@@ -1931,7 +1932,14 @@ export async function splitGuidanceNote(note, parts) {
   return supabase.from('timing_guidance_notes').delete().eq('id', note.id);
 }
 
-export function useNicheCollections() {
+// Reads timing_niche_collections -- Phase 22's SOURCE-vocabulary junction,
+// which is a different table from Phase 2b's taxonomy junction below. Renamed
+// from useNicheCollections when the real niche_collections table arrived: two
+// hooks called useNicheCollections reading two different tables is how a
+// future phase writes a taxonomy link into the timing calendar by accident.
+// Had no consumers at the time of the rename; linkTimingNicheToCollection()
+// below is what the Timing UI actually calls.
+export function useTimingNicheCollections() {
   const [links, setLinks] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1949,13 +1957,13 @@ export function useNicheCollections() {
 // niche name onto a TCC collection. "Hockey" in an expert calendar and this
 // shop's separate "Field Hockey Niche" collection may not be the same thing,
 // and guessing would quietly turn a source's vocabulary into a TCC fact.
-export async function linkNicheToCollection(nicheId, collectionId) {
+export async function linkTimingNicheToCollection(nicheId, collectionId) {
   const { data, error } = await supabase.from('timing_niche_collections')
     .insert({ niche_id: nicheId, collection_id: collectionId }).select().single();
   return { data, error };
 }
 
-export async function unlinkNicheFromCollection(nicheId, collectionId) {
+export async function unlinkTimingNicheFromCollection(nicheId, collectionId) {
   return supabase.from('timing_niche_collections').delete()
     .eq('niche_id', nicheId).eq('collection_id', collectionId);
 }
@@ -2135,4 +2143,210 @@ export async function createListingSnapshot(snapshot, { trafficSources = [], sea
 // them apart.
 export async function linkProductToEtsyListing(productId, etsyListingId) {
   return supabase.from('products').update({ etsy_listing_id: etsyListingId }).eq('id', productId);
+}
+
+// ─── Niche Taxonomy (Phase 2b) ─────────────────────────────────────────────
+// The canonical Broad → Sub → Specific tree. Replaces the nine free-text
+// niche-ish labels catalogued in docs/taxonomy-architecture-audit.md — but
+// additively: nothing here writes to collections/sparks/concepts/products, and
+// no existing read path depends on it. Pure tree logic lives in ./niches.js;
+// this file only does I/O.
+//
+// Case-insensitive sibling uniqueness is enforced by a DB index (see the
+// Phase 2a migration) with JS-side matching in front of it, exactly the
+// visual_tags convention above.
+
+export function useNiches() {
+  const [niches, setNiches] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('niches').select('*').order('name', { ascending: true });
+    if (data) setNiches(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('niches-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'niches' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  return { niches, loading, refetch: fetch };
+}
+
+// level is derived from the parent rather than passed in — the caller should
+// never be able to create a 'specific' directly under a broad niche. source
+// defaults to 'tcc_extension' because anything created by hand after the
+// Phase 2a seed is, by definition, not from Taylor's framework (§38).
+export async function createNiche(name, { parentId = null, source = 'tcc_extension', notes = null } = {}) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return { data: null, error: new Error('Niche name required') };
+
+  let level = 'broad';
+  if (parentId) {
+    const { data: parent } = await supabase.from('niches').select('level').eq('id', parentId).single();
+    if (!parent) return { data: null, error: new Error('Parent niche not found') };
+    level = childLevelOf(parent);
+    if (!level) return { data: null, error: new Error('That niche is already at the deepest level.') };
+  }
+
+  const now = nowISO();
+  const { data, error } = await supabase
+    .from('niches')
+    .insert({ name: trimmed, level, parent_id: parentId, source, notes, created_at: now, updated_at: now })
+    .select()
+    .single();
+
+  if (error) {
+    // Same insert-or-reuse recovery as createVisualTag: a unique violation
+    // here means this name already exists under this parent in different
+    // casing, which is a duplicate the user should be pointed at, not a
+    // failure. Scoped to the same parent — a name is only a duplicate
+    // relative to its siblings.
+    if (error.message?.toLowerCase().includes('unique')) {
+      let q = supabase.from('niches').select('*').ilike('name', trimmed);
+      q = parentId ? q.eq('parent_id', parentId) : q.is('parent_id', null);
+      const { data: existing } = await q.maybeSingle();
+      if (existing) return { data: existing, error: null, alreadyExisted: true };
+    }
+    return { data: null, error };
+  }
+  return { data, error: null };
+}
+
+export async function updateNiche(id, updates) {
+  const { data, error } = await supabase
+    .from('niches')
+    .update({ ...updates, updated_at: nowISO() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// §36 asks for archive as the normal removal path. Archiving a parent leaves
+// its children alone on purpose: they stay individually reachable and can be
+// archived or moved deliberately, rather than a whole branch disappearing
+// from one click. flattenForPicker() in ./niches.js is written to match —
+// it keeps the children of an archived parent visible.
+export async function archiveNiche(id)   { return updateNiche(id, { status: 'archived' }); }
+export async function unarchiveNiche(id) { return updateNiche(id, { status: 'active' }); }
+
+// Only ever succeeds for a leaf — the DB's ON DELETE RESTRICT on parent_id is
+// the real guarantee; canDeleteNiche() in ./niches.js gives the UI the same
+// answer up front so the button can be disabled with a reason.
+export async function deleteNiche(id) {
+  return supabase.from('niches').delete().eq('id', id);
+}
+
+// Moving a node moves its subtree, so this is several row updates, and
+// PostgREST gives us no transaction to wrap them in. Ordering is deliberate:
+// the moved node's parent_id goes LAST, after every descendant's level has
+// already been corrected. If a descendant write fails, the tree structure is
+// still untouched and the only damage is a stale level column on rows that
+// have not moved — recoverable, and invisible to every read that does not
+// filter on level. Writing the move first would instead leave a genuinely
+// relocated subtree carrying wrong levels.
+//
+// If anything does fail partway, the caller gets needsRepair: true and should
+// offer recomputeNicheLevels(), which rebuilds every level from actual depth.
+export async function reparentNiche(nicheId, newParentId, allNiches) {
+  const plan = planReparent(nicheId, newParentId, allNiches);
+  if (!plan.ok) return { error: new Error(plan.error) };
+
+  const moveRow = plan.updates.find(u => u.id === nicheId);
+  const descendantRows = plan.updates.filter(u => u.id !== nicheId);
+  const now = nowISO();
+
+  for (const row of descendantRows) {
+    const { id, ...fields } = row;
+    const { error } = await supabase.from('niches').update({ ...fields, updated_at: now }).eq('id', id);
+    if (error) return { error, needsRepair: true };
+  }
+
+  const { id, ...moveFields } = moveRow;
+  const { error } = await supabase.from('niches').update({ ...moveFields, updated_at: now }).eq('id', id);
+  if (error) return { error, needsRepair: descendantRows.length > 0 };
+
+  return { error: null };
+}
+
+// Self-heal for the partial-failure case above: recomputes every niche's level
+// from its actual depth in the tree and writes back only the rows that are
+// wrong. Safe to run at any time — a no-op when everything already agrees.
+export async function recomputeNicheLevels() {
+  const { data: niches, error } = await supabase.from('niches').select('*');
+  if (error) return { error, fixed: 0 };
+
+  const now = nowISO();
+  let fixed = 0;
+  for (const n of niches || []) {
+    const correct = levelForDepth(ancestorsOf(n, niches).length - 1);
+    if (correct && correct !== n.level) {
+      const { error: updErr } = await supabase.from('niches').update({ level: correct, updated_at: now }).eq('id', n.id);
+      if (updErr) return { error: updErr, fixed };
+      fixed++;
+    }
+  }
+  return { error: null, fixed };
+}
+
+// ─── niche ↔ collection links ──────────────────────────────────────────────
+// Many-to-many, human-populated only. Collections survive as a separate
+// curated layer (§5); this is the join that lets a collection span several
+// niches without either concept swallowing the other.
+
+export function useNicheCollections() {
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    const { data } = await supabase.from('niche_collections').select('niche_id, collection_id');
+    setLinks(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetch();
+    const sub = supabase
+      .channel('niche-collections-' + Math.random().toString(36).slice(2))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'niche_collections' }, fetch)
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, [fetch]);
+
+  // Both directions, since the Collections page needs "which niches is this
+  // collection in?" and the niche tree needs "how many collections hang off
+  // this node?" — computing both once here beats every consumer re-reducing
+  // the same array.
+  const collectionIdsByNicheId = {};
+  const nicheIdsByCollectionId = {};
+  for (const l of links) {
+    (collectionIdsByNicheId[l.niche_id] ||= []).push(l.collection_id);
+    (nicheIdsByCollectionId[l.collection_id] ||= []).push(l.niche_id);
+  }
+
+  return { links, collectionIdsByNicheId, nicheIdsByCollectionId, loading, refetch: fetch };
+}
+
+export async function linkNicheCollection(nicheId, collectionId) {
+  const { data, error } = await supabase
+    .from('niche_collections')
+    .insert({ niche_id: nicheId, collection_id: collectionId })
+    .select()
+    .single();
+  // Composite PK — re-linking something already linked is a no-op, not an error.
+  if (error?.message?.toLowerCase().includes('duplicate')) return { data: null, error: null };
+  return { data, error };
+}
+
+export async function unlinkNicheCollection(nicheId, collectionId) {
+  return supabase.from('niche_collections')
+    .delete()
+    .eq('niche_id', nicheId)
+    .eq('collection_id', collectionId);
 }
