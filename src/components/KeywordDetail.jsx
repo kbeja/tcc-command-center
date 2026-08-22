@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { updateKeyword } from '../lib/hooks';
+import { updateKeyword, setKeywordSearchIntent } from '../lib/hooks';
 import { RESEARCH_STATUSES } from '../lib/keywordIntelligence';
 import { ClassificationBadge, ConfidenceBadge, StatusBadge, TrendIndicator, DisagreementFlag } from '../lib/keywords';
+import { SEARCH_INTENTS, SEARCH_INTENT_HINTS } from '../data/searchIntents';
+import KeywordNicheLinks from './KeywordNicheLinks';
 
 // A source's own trend_data series (when it provides one) is preferred over
 // this app's own recorded volume readings over time — it's the source's
@@ -81,6 +83,15 @@ export default function KeywordDetail({ keywordId, onClose, onUpdated }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const [savingIntent, setSavingIntent] = useState(false);
+  async function handleIntentChange(intent) {
+    setSavingIntent(true);
+    await setKeywordSearchIntent(keywordId, intent || null);
+    setKw(prev => ({ ...prev, search_intent: intent || null }));
+    setSavingIntent(false);
+    onUpdated?.();
+  }
+
   async function handleStatusChange(status) {
     setSavingStatus(true);
     await updateKeyword(keywordId, { research_status: status });
@@ -126,6 +137,39 @@ export default function KeywordDetail({ keywordId, onClose, onUpdated }) {
                 {kw.interpretation_summary}
               </p>
             )}
+
+            {/* Search intent (§5). A durable property of the KEYWORD, set by a
+                human — distinct from listing_generation_keywords.relevance_category,
+                which records what a keyword was judged to be for one listing at
+                one moment. §7 makes this a filtering step that runs before any
+                opportunity scoring, which is why it is set here in Research
+                rather than inferred later at generation time. */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={FIELD_LABEL}>Search Intent</div>
+              <select
+                value={kw.search_intent || ''}
+                onChange={e => handleIntentChange(e.target.value)}
+                disabled={savingIntent}
+                style={{ fontSize: '0.8rem', padding: '5px 8px' }}
+              >
+                <option value="">— Unclassified —</option>
+                {SEARCH_INTENTS.map(i => <option key={i} value={i}>{i}</option>)}
+              </select>
+              {kw.search_intent && (
+                <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', marginTop: 4 }}>
+                  {SEARCH_INTENT_HINTS[kw.search_intent]}
+                </div>
+              )}
+            </div>
+
+            {/* Niche links (§29) — many-to-many on purpose. A term like
+                "bookish sweatshirt" genuinely serves several reader niches at
+                once; forcing one would lose the others or duplicate the
+                keyword and split its evidence ledger. */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={FIELD_LABEL}>Niches this keyword serves</div>
+              <KeywordNicheLinks keywordId={keywordId} />
+            </div>
 
             {/* Research status control */}
             <div style={{ marginBottom: 18 }}>

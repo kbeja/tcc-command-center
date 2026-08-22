@@ -2389,3 +2389,162 @@ export function useCompetitorTitlePatterns({ minSales = 100, category = null, li
   useEffect(() => { fetch(); }, [fetch]);
   return { listings, loading, refetch: fetch };
 }
+
+// ─── SEO Network — keyword↔niche links and clusters (Phase 8a) ─────────────
+// §13: "Taxonomy is a tree. SEO is a network around that tree." These are the
+// network edges. Unlike sparks/concepts/products, which each carry ONE
+// primary_niche_id, a keyword links to as many niches as it genuinely serves
+// (§29) — shoppers do not respect the tree, and forcing "bookish sweatshirt"
+// into a single branch would either lose three real markets or duplicate the
+// keyword four times, which would split its evidence ledger.
+
+// Every niche link for a set of keywords, grouped by keyword_id. Batched
+// rather than one query per keyword: the Research keyword list renders
+// hundreds of rows at once, and an N+1 there is felt immediately.
+export function useKeywordNiches(keywordIds) {
+  const [byKeywordId, setByKeywordId] = useState({});
+  const [loading, setLoading] = useState(true);
+  // Join on a stable string so a caller passing a fresh array literal each
+  // render doesn't re-trigger the fetch forever.
+  const idKey = (keywordIds || []).join(',');
+
+  const fetch = useCallback(async () => {
+    const ids = idKey ? idKey.split(',') : [];
+    if (!ids.length) { setByKeywordId({}); setLoading(false); return; }
+    const { data } = await supabase
+      .from('keyword_niches')
+      .select('keyword_id, niche_id, is_primary')
+      .in('keyword_id', ids);
+    const grouped = {};
+    for (const row of data || []) (grouped[row.keyword_id] ||= []).push(row);
+    setByKeywordId(grouped);
+    setLoading(false);
+  }, [idKey]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { byKeywordId, loading, refetch: fetch };
+}
+
+export async function linkKeywordToNiche(keywordId, nicheId, { isPrimary = false } = {}) {
+  const { data, error } = await supabase
+    .from('keyword_niches')
+    .insert({ keyword_id: keywordId, niche_id: nicheId, is_primary: isPrimary })
+    .select()
+    .single();
+  // Composite PK — re-linking an existing pair is a no-op, not a failure.
+  if (error?.message?.toLowerCase().includes('duplicate')) return { data: null, error: null };
+  return { data, error };
+}
+
+export async function unlinkKeywordFromNiche(keywordId, nicheId) {
+  return supabase.from('keyword_niches')
+    .delete().eq('keyword_id', keywordId).eq('niche_id', nicheId);
+}
+
+// At most one primary per keyword, enforced here rather than by a DB
+// constraint: a partial unique index would make a UI bug leave a keyword
+// unsaveable, and "which niche does this term mostly belong to" is a
+// preference, not an integrity rule.
+export async function setPrimaryKeywordNiche(keywordId, nicheId) {
+  await supabase.from('keyword_niches')
+    .update({ is_primary: false })
+    .eq('keyword_id', keywordId);
+  if (!nicheId) return { error: null };
+  return supabase.from('keyword_niches')
+    .update({ is_primary: true })
+    .eq('keyword_id', keywordId).eq('niche_id', nicheId);
+}
+
+export async function setKeywordSearchIntent(keywordId, intent) {
+  const { data, error } = await supabase
+    .from('keywords')
+    .update({ search_intent: intent || null, updated_at: nowISO() })
+    .eq('id', keywordId)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// ─── Keyword clusters (§28) ────────────────────────────────────────────────
+// Reusable SEO groupings that cut across the tree. §27 is explicit that a
+// cluster is NOT a niche level, which is why membership is its own junction
+// rather than a column on keywords.
+
+export function useKeywordClusters(nicheId = undefined) {
+  const [clusters, setClusters] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetch = useCallback(async () => {
+    let q = supabase
+      .from('keyword_clusters')
+      .select('*, keyword_cluster_keywords(keyword_id)')
+      .neq('status', 'archived')
+      .order('name', { ascending: true });
+    // undefined means "every cluster"; null means "only unassigned ones",
+    // which is a real filter and not the same question.
+    if (nicheId === null) q = q.is('niche_id', null);
+    else if (nicheId) q = q.eq('niche_id', nicheId);
+    const { data } = await q;
+    setClusters((data || []).map(c => ({
+      ...c,
+      keywordIds: (c.keyword_cluster_keywords || []).map(k => k.keyword_id),
+    })));
+    setLoading(false);
+  }, [nicheId]);
+
+  useEffect(() => { fetch(); }, [fetch]);
+  return { clusters, loading, refetch: fetch };
+}
+
+export async function createKeywordCluster(name, { nicheId = null, notes = null } = {}) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return { data: null, error: new Error('Cluster name required') };
+  const now = nowISO();
+  const { data, error } = await supabase
+    .from('keyword_clusters')
+    .insert({ name: trimmed, niche_id: nicheId, notes, created_at: now, updated_at: now })
+    .select()
+    .single();
+  if (error) {
+    // Same insert-or-reuse recovery as createVisualTag/createNiche: a unique
+    // violation means this name already exists under this niche, which is a
+    // cluster to reuse rather than an error to show.
+    if (error.message?.toLowerCase().includes('unique')) {
+      let q = supabase.from('keyword_clusters').select('*').ilike('name', trimmed);
+      q = nicheId ? q.eq('niche_id', nicheId) : q.is('niche_id', null);
+      const { data: existing } = await q.maybeSingle();
+      if (existing) return { data: existing, error: null, alreadyExisted: true };
+    }
+    return { data: null, error };
+  }
+  return { data, error: null };
+}
+
+export async function updateKeywordCluster(id, updates) {
+  const { data, error } = await supabase
+    .from('keyword_clusters')
+    .update({ ...updates, updated_at: nowISO() })
+    .eq('id', id)
+    .select()
+    .single();
+  return { data, error };
+}
+
+export async function archiveKeywordCluster(id) {
+  return updateKeywordCluster(id, { status: 'archived' });
+}
+
+export async function addKeywordToCluster(clusterId, keywordId) {
+  const { data, error } = await supabase
+    .from('keyword_cluster_keywords')
+    .insert({ cluster_id: clusterId, keyword_id: keywordId })
+    .select()
+    .single();
+  if (error?.message?.toLowerCase().includes('duplicate')) return { data: null, error: null };
+  return { data, error };
+}
+
+export async function removeKeywordFromCluster(clusterId, keywordId) {
+  return supabase.from('keyword_cluster_keywords')
+    .delete().eq('cluster_id', clusterId).eq('keyword_id', keywordId);
+}
