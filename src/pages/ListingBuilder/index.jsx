@@ -651,6 +651,11 @@ export default function ListingBuilder() {
       live_tags:         editTags.filter(Boolean).join(', ') || null,
       concept_id:        linkedConceptId || null,
       stage_updated_at:  nowISO(),
+      // §12 inheritance, Concept -> Product. A listing built from a concept
+      // carries its market across; without it the classification is lost at
+      // the exact point performance data starts arriving against it.
+      ...(linkedConcept?.primary_niche_id  ? { primary_niche_id:  linkedConcept.primary_niche_id }  : {}),
+      ...(linkedConcept?.seasonal_niche_id ? { seasonal_niche_id: linkedConcept.seasonal_niche_id } : {}),
       // Saving straight to Live from the builder is a launch, same rule as
       // ProductWorkspace's stage tracker — this is the path that created the
       // four Hockey listings, all of which ended up with no launch date at all

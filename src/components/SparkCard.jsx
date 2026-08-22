@@ -42,6 +42,10 @@ export default function SparkCard({ spark, onAction, linkedConcepts = [], onCrea
       name: spark.content,
       stage: 'Idea',
       collection: spark.collection_tag,
+      // §12 inheritance: activating a spark straight into a product carries
+      // its classification across. Without this the taxonomy would be lost at
+      // exactly the point it starts being worth analysing.
+      primary_niche_id: spark.primary_niche_id || null,
     });
     if (error || !data?.id) { setActivating(false); return; }
     await archiveSpark(spark.id);

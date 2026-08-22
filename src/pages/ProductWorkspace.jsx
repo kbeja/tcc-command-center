@@ -14,8 +14,10 @@ import ResearchSessionCard from '../components/ResearchSessionCard';
 import ResearchSessionForm from '../components/ResearchSessionForm';
 import ReviewCheckpoints from '../components/ReviewCheckpoints';
 import ProductTiming from '../components/ProductTiming';
+import NichePicker from '../components/NichePicker';
 import ConfirmButton from '../components/ConfirmButton';
 import { nowISO } from '../lib/utils';
+import { supabase } from '../lib/supabase';
 
 // ─── Stage Tracker (2-col grid, no overflow) ─────────────────────────────────
 
@@ -988,7 +990,26 @@ export default function ProductWorkspace() {
   const { concept: linkedConcept } = useConcept(product?.concept_id || null);
   const { concepts: pickableConcepts } = useConcepts(product?.collection || undefined);
   async function handleConceptLink(conceptId) {
-    const { error } = await updateProduct(id, { concept_id: conceptId || null });
+    const patch = { concept_id: conceptId || null };
+
+    // §12 inheritance, Concept -> Product. Only fills a niche that is still
+    // EMPTY -- linking a concept must never overwrite a classification already
+    // made on the product, which would be a silent write over a human
+    // judgment. Reads the concept fresh rather than trusting linkedConcept,
+    // which still holds the previously-linked one at this point.
+    if (conceptId && !product?.primary_niche_id) {
+      const { data: picked } = await supabase
+        .from('concepts')
+        .select('primary_niche_id, seasonal_niche_id')
+        .eq('id', conceptId)
+        .maybeSingle();
+      if (picked?.primary_niche_id) patch.primary_niche_id = picked.primary_niche_id;
+      if (picked?.seasonal_niche_id && !product?.seasonal_niche_id) {
+        patch.seasonal_niche_id = picked.seasonal_niche_id;
+      }
+    }
+
+    const { error } = await updateProduct(id, patch);
     if (error) { setSaveError(error.message); return; }
     setSaveError('');
     refetch();
@@ -1189,6 +1210,28 @@ export default function ProductWorkspace() {
       {/* ── Product Details ── */}
       <div style={{ marginBottom: 24 }}>
         <div className="section-label" style={{ marginBottom: 10 }}>Product Details</div>
+
+        {/* Classification (Phase 5). Sits above the free-text fields because
+            this is the field analysis actually groups by — §27's "is Hockey Mom
+            performing?" is unanswerable from the `ecosystem` free text below,
+            which is why that stays as a note rather than a dimension. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <NichePicker
+            value={product.primary_niche_id || null}
+            onChange={async val => { await updateProduct(id, { primary_niche_id: val }); refetch(); }}
+            label="Niche"
+            allowCreate
+            helpText="The market this listing serves."
+          />
+          <NichePicker
+            value={product.seasonal_niche_id || null}
+            onChange={async val => { await updateProduct(id, { seasonal_niche_id: val }); refetch(); }}
+            label="Seasonal overlay"
+            pathPrefix="Seasonal"
+            helpText="Optional — only if tied to a season or occasion."
+          />
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">
