@@ -10,6 +10,12 @@ const DIMENSION_LABEL = {
   evidence: 'Evidence',
   compatibility: 'Compatibility',
   generation_validation: 'Generation Check',
+  // Phase 6 — §24's pre-publish Search Setup checklist.
+  etsy_category: 'Etsy Category',
+  etsy_attributes: 'Etsy Attributes',
+  title: 'Title',
+  tags: 'Tags',
+  hero_image: 'Hero Image',
 };
 
 // Consolidates what used to be three scattered pieces (the 6-pill Research
@@ -22,6 +28,8 @@ export default function Zone4Review({
   productFormat, primarySearchIntent, primaryIntentStatus,
   usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount, excludedKeywords,
   validationWarnings, hasCollection, onRegenerate, onEditSetup,
+  etsyCategory, etsyCategoryConfirmed, etsyAttributes, etsyAttributesComplete,
+  heroImageApproved, title, tags,
   editTitle, editTags, editDesc, editPrompts,
   productId, onSaveEdits, saveEditsState,
   savedProductId, saving, saveStage, onSaveStageChange, saveStages, onSaveProduct, canSaveProduct, onOpenProduct,
@@ -39,6 +47,8 @@ export default function Zone4Review({
     hasGenerated, productFormat, primarySearchIntent, primaryIntentStatus,
     usableKeywordCount, keywordsStale, researchGaps, excludedKeywordCount,
     validationWarnings, aiValidationStatus: output?.validation?.status,
+    etsyCategory, etsyCategoryConfirmed, etsyAttributes, etsyAttributesComplete,
+    heroImageApproved, title, tags,
   });
 
   const unsavedEdits = hasUnsavedEdits({ editTitle, editTags, editDesc, editPrompts, output });

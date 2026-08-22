@@ -20,6 +20,7 @@ import Zone1Product from './Zone1Product';
 import Zone2SearchStrategy from './Zone2SearchStrategy';
 import Zone3Listing from './Zone3Listing';
 import Zone4Review from './Zone4Review';
+import SearchSetup from './SearchSetup';
 import VersionHistory from './VersionHistory';
 
 export default function ListingBuilder() {
@@ -97,6 +98,11 @@ export default function ListingBuilder() {
     // applied this template via TemplateMatchBar; never read by generation.
     productTemplateId: null,
     titleStrategy: 'hybrid',
+    // Phase 6 — Listing Search Setup (§13). Booleans start null, not false:
+    // null is "not looked at", false is "looked at and not right".
+    etsyCategory: '', etsyCategoryConfirmed: null,
+    etsyAttributes: [], etsyAttributesComplete: null,
+    heroImageApproved: null,
   });
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -131,6 +137,11 @@ export default function ListingBuilder() {
       // any of the 3 picker options, so the picker just shows none
       // selected rather than silently relabeling old history.
       titleStrategy: product.title_strategy || 'hybrid',
+      etsyCategory: product.etsy_category || '',
+      etsyCategoryConfirmed: product.etsy_category_confirmed ?? null,
+      etsyAttributes: Array.isArray(product.etsy_attributes) ? product.etsy_attributes : [],
+      etsyAttributesComplete: product.etsy_attributes_complete ?? null,
+      heroImageApproved: product.hero_image_approved ?? null,
     }));
     if (product.concept_id) setLinkedConceptId(product.concept_id);
     if (product.live_title) {
@@ -616,6 +627,14 @@ export default function ListingBuilder() {
       fulfillment_provider: form.fulfillmentProvider || null,
       product_template_id: form.productTemplateId || null,
       title_strategy: form.titleStrategy || 'hybrid',
+      // Phase 6 — Listing Search Setup. The booleans pass through as-is rather
+      // than being coerced with `|| null`, which would turn a deliberate false
+      // ("looked at, not right") into null ("never looked at") on every save.
+      etsy_category: form.etsyCategory || null,
+      etsy_category_confirmed: form.etsyCategoryConfirmed,
+      etsy_attributes: form.etsyAttributes?.length ? form.etsyAttributes : null,
+      etsy_attributes_complete: form.etsyAttributesComplete,
+      hero_image_approved: form.heroImageApproved,
     };
   }
 
@@ -802,6 +821,24 @@ export default function ListingBuilder() {
         saveFlagsProductId={productId || savedProductId}
       />
 
+      {/* Listing Search Setup (Phase 6) — sits directly above the readiness
+          rollup that scores it, so the fix is next to the finding. */}
+      <SearchSetup
+        etsyCategory={form.etsyCategory}
+        etsyCategoryConfirmed={form.etsyCategoryConfirmed}
+        etsyAttributes={form.etsyAttributes}
+        etsyAttributesComplete={form.etsyAttributesComplete}
+        heroImageApproved={form.heroImageApproved}
+        onChange={patch => setForm(f => ({
+          ...f,
+          ...(('etsy_category' in patch) ? { etsyCategory: patch.etsy_category } : {}),
+          ...(('etsy_category_confirmed' in patch) ? { etsyCategoryConfirmed: patch.etsy_category_confirmed } : {}),
+          ...(('etsy_attributes' in patch) ? { etsyAttributes: patch.etsy_attributes } : {}),
+          ...(('etsy_attributes_complete' in patch) ? { etsyAttributesComplete: patch.etsy_attributes_complete } : {}),
+          ...(('hero_image_approved' in patch) ? { heroImageApproved: patch.hero_image_approved } : {}),
+        }))}
+      />
+
       {/* Zone 4 — Review (Milestone B). Consolidates the old 6-pill
           readiness wall, the red Validation Warnings box, the Excluded
           Keywords disclosure, and both Save flows into one component —
@@ -817,6 +854,10 @@ export default function ListingBuilder() {
         usableKeywordCount={totalUsable} keywordsStale={keywordsStale} researchGaps={researchGaps}
         excludedKeywordCount={excludedKeywordsDisplay.length} excludedKeywords={excludedKeywordsDisplay}
         validationWarnings={validationWarnings} hasCollection={!!form.collection}
+        etsyCategory={form.etsyCategory} etsyCategoryConfirmed={form.etsyCategoryConfirmed}
+        etsyAttributes={form.etsyAttributes} etsyAttributesComplete={form.etsyAttributesComplete}
+        heroImageApproved={form.heroImageApproved}
+        title={editTitle} tags={editTags}
         onRegenerate={handleGenerate} onEditSetup={() => { setOutput(null); setExistingListing(false); }}
         editTitle={editTitle} editTags={editTags} editDesc={editDesc} editPrompts={editPrompts}
         productId={productId} onSaveEdits={handleSaveEdits} saveEditsState={saveEditsState}
