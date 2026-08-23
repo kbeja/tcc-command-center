@@ -60,6 +60,36 @@ function Section({ title, hint, done, total, children, defaultOpen = false }) {
   );
 }
 
+// Finished rows leave the working list rather than sitting in it recoloured —
+// a queue that visibly drains is the feedback that a write landed. They are
+// hidden, never removed, so a mistake is always one click from being seen and
+// undone.
+// Run one-row-at-a-time writes a handful at a time instead of strictly
+// sequentially. The largest session here holds 88 keywords; end to end that
+// was around twelve seconds of a button reading "Adding…" with nothing else
+// moving, which is indistinguishable from a hang. Small batches rather than
+// all at once so a big session cannot open 88 simultaneous connections.
+async function inBatches(items, fn, size = 8) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...await Promise.all(items.slice(i, i + size).map(fn)));
+  }
+  return out;
+}
+
+function DoneToggle({ showing, onToggle, count, noun }) {
+  if (!count) return null;
+  return (
+    <button
+      onClick={onToggle}
+      className="btn btn-ghost btn-sm"
+      style={{ fontSize: '0.65rem', padding: '1px 7px', marginBottom: 8 }}
+    >
+      {showing ? `Hide ${count} ${noun}` : `Show ${count} ${noun}`}
+    </button>
+  );
+}
+
 // One reusable niche <select>. Not the full NichePicker: this renders dozens of
 // times in a list and NichePicker opens a realtime channel per instance.
 function NicheSelect({ value, onChange, options, disabled }) {
@@ -85,11 +115,30 @@ export default function ClassifyWorkspace() {
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState('');
 
+  // The universal cluster — terms that belong to no market and pool into every
+  // listing. Deliberately not a niche: giving "gift for her" one would claim it
+  // belongs to a single market and hide it from every other listing.
+  //
+  // Declared up here rather than beside its own section because the SESSIONS
+  // list needs it too: a session whose keywords are all universal has been
+  // dealt with, and without this it rendered as untouched — no tint, no
+  // progress, button unchanged — which made a write that had actually
+  // succeeded look like it had done nothing.
+  const { clusters, refetch: refetchClusters } = useKeywordClusters();
+  const universalCluster = clusters.find(c => c.is_universal) || null;
+  const universalIds = new Set(universalCluster?.keywordIds || []);
+  const [uniSearch, setUniSearch] = useState('');
+
   const load = useCallback(async () => {
     const [{ data: p }, { data: s }] = await Promise.all([
       supabase.from('products').select('id, name, collection, stage, primary_niche_id').order('name'),
       supabase.from('research_sessions')
-        .select('id, collection, niche, source, date, niche_id, keywords(id, keyword, search_intent)')
+        // keyword_niches comes along because a session is only finished once
+        // its niche has actually been APPLIED to the keywords. Without it the
+        // row would drop out of the queue the moment a niche was picked, and
+        // take the "Apply niche to N keywords" button — the step that does the
+        // real work — with it.
+        .select('id, collection, niche, source, date, niche_id, keywords(id, keyword, search_intent, keyword_niches(niche_id))')
         .order('date', { ascending: false }),
     ]);
     setProducts(p || []);
@@ -99,7 +148,43 @@ export default function ClassifyWorkspace() {
   useEffect(() => { load(); }, [load]);
 
   const productsDone = products.filter(p => p.primary_niche_id).length;
-  const sessionsDone = sessions.filter(s => s.niche_id).length;
+
+  // How much of a session has been pooled as universal. 'all' is a terminal
+  // state for that session — there is no niche left to assign, because the
+  // whole point of a universal term is that it belongs to no market.
+  // 'partial' is a real and legitimate state too (a mostly-niche session with
+  // a few cross-niche terms picked out by hand), so it is shown rather than
+  // rounded to one of the two ends.
+  function universalState(s) {
+    const kws = s.keywords || [];
+    if (!kws.length || !universalIds.size) return 'none';
+    const inPool = kws.filter(k => universalIds.has(k.id)).length;
+    if (inPool === 0) return 'none';
+    return inPool === kws.length ? 'all' : 'partial';
+  }
+
+  // How many of a session's keywords are already linked to the session's own
+  // niche. Picking a niche is half the job; applying it is the half the
+  // Listing Builder actually reads.
+  function linkedCount(s) {
+    if (!s.niche_id) return 0;
+    return (s.keywords || []).filter(
+      k => (k.keyword_niches || []).some(kn => kn.niche_id === s.niche_id)
+    ).length;
+  }
+
+  // Finished means finished: niche applied to every keyword, or the whole
+  // session pooled as universal. A fully-universal session counts as handled —
+  // without that the bar sat at the same number no matter how many sessions
+  // were resolved that way, which read as "the click did nothing".
+  function sessionDone(s) {
+    if (universalState(s) === 'all') return true;
+    const kws = s.keywords || [];
+    if (!s.niche_id) return false;
+    return kws.length === 0 || linkedCount(s) === kws.length;
+  }
+
+  const sessionsDone = sessions.filter(sessionDone).length;
 
   const allKeywords = sessions.flatMap(s => s.keywords || []);
   const keywordsDone = allKeywords.filter(k => k.search_intent).length;
@@ -128,11 +213,12 @@ export default function ClassifyWorkspace() {
     const kws = session.keywords || [];
     if (!kws.length) return;
     setBusy(`sk-${session.id}`);
-    let linked = 0;
-    for (const k of kws) {
-      const { error } = await linkKeywordToNiche(k.id, session.niche_id);
-      if (!error) linked++;
-    }
+    const results = await inBatches(kws, k => linkKeywordToNiche(k.id, session.niche_id));
+    const linked = results.filter(r => !r.error).length;
+    // Reload before clearing busy: without this the row kept showing "Apply
+    // niche to 88 keywords" after the links were written, so the one action
+    // that feeds the Listing Builder looked like it had failed.
+    await load();
     setBusy(null);
     setMsg(`Linked ${linked} keyword${linked !== 1 ? 's' : ''} to ${nichePath(niches.find(n => n.id === session.niche_id), niches)}.`);
     setTimeout(() => setMsg(''), 4000);
@@ -148,13 +234,10 @@ export default function ClassifyWorkspace() {
     const kws = session.keywords || [];
     if (!kws.length) return;
     setBusy(`su-${session.id}`);
-    let added = 0;
-    for (const k of kws) {
-      const { error } = await addKeywordToCluster(universalCluster.id, k.id);
-      if (!error) added++;
-    }
-    setBusy(null);
+    const results = await inBatches(kws, k => addKeywordToCluster(universalCluster.id, k.id));
+    const added = results.filter(r => !r.error).length;
     await refetchClusters();
+    setBusy(null);
     setMsg(`Added ${added} keyword${added !== 1 ? 's' : ''} to the universal pool — they'll now appear in every listing.`);
     setTimeout(() => setMsg(''), 5000);
   }
@@ -166,14 +249,6 @@ export default function ClassifyWorkspace() {
     load();
   }
 
-  // The universal cluster — terms that belong to no market and pool into every
-  // listing. Deliberately not a niche: giving "gift for her" one would claim it
-  // belongs to a single market and hide it from every other listing.
-  const { clusters, refetch: refetchClusters } = useKeywordClusters();
-  const universalCluster = clusters.find(c => c.is_universal) || null;
-  const universalIds = new Set(universalCluster?.keywordIds || []);
-  const [uniSearch, setUniSearch] = useState('');
-
   async function toggleUniversal(keywordId, isIn) {
     if (!universalCluster) return;
     setBusy(`u-${keywordId}`);
@@ -183,7 +258,18 @@ export default function ClassifyWorkspace() {
     refetchClusters();
   }
 
-  const unclassifiedSessions = sessions.filter(s => !s.niche_id);
+  // These lists are queues, and a queue that never drains does not look like
+  // progress — it looks like the click failed. Classifying a session used to
+  // only change its background tint while it stayed in place among 82 rows,
+  // which is why a write that genuinely succeeded read as doing nothing.
+  // Done rows drop out by default and stay one toggle away, never deleted.
+  const [showDoneProducts, setShowDoneProducts] = useState(false);
+  const [showDoneSessions, setShowDoneSessions] = useState(false);
+
+  const visibleProducts = showDoneProducts ? products : products.filter(p => !p.primary_niche_id);
+  const visibleSessions = showDoneSessions ? sessions : sessions.filter(s => !sessionDone(s));
+
+  const unclassifiedSessions = sessions.filter(s => !sessionDone(s));
   const keywordsNeedingIntent = allKeywords.filter(k => !k.search_intent);
 
   return (
@@ -206,8 +292,12 @@ export default function ClassifyWorkspace() {
         defaultOpen
         hint="Highest leverage — each classified product makes its performance answerable by niche, and there are only 28."
       >
+        <DoneToggle showing={showDoneProducts} onToggle={() => setShowDoneProducts(v => !v)} count={productsDone} noun="classified" />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {products.map(p => (
+          {!visibleProducts.length && (
+            <div style={{ fontSize: '0.72rem', color: '#2d6b3c' }}>All products classified.</div>
+          )}
+          {visibleProducts.map(p => (
             <div key={p.id} style={{
               display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
               padding: '4px 6px', borderRadius: 3,
@@ -235,49 +325,72 @@ export default function ClassifyWorkspace() {
         total={sessions.length}
         hint="Set a session's niche, then use the button that appears to apply it to every keyword in that session — that connection is what lets the Listing Builder find keywords by niche rather than by matching collection names. For a session of cross-niche terms like General, use Mark universal instead: those stay niche-less and pool into every listing."
       >
+        <DoneToggle showing={showDoneSessions} onToggle={() => setShowDoneSessions(v => !v)} count={sessionsDone} noun="finished" />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {sessions.map(s => (
-            <div key={s.id} style={{
-              display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
-              padding: '5px 6px', borderRadius: 3,
-              background: s.niche_id ? 'rgba(124,175,138,0.08)' : 'transparent',
-            }}>
-              <span style={{ flex: '1 1 200px', minWidth: 0, fontSize: '0.76rem' }}>
-                {s.collection || 'No collection'}
-                {s.niche && <span style={{ color: 'var(--charcoal-soft)' }}> · {s.niche}</span>}
-                <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.66rem' }}>
-                  {' '}· {s.source} · {s.date} · {(s.keywords || []).length} keyword{(s.keywords || []).length !== 1 ? 's' : ''}
-                </span>
-              </span>
-              <NicheSelect
-                value={s.niche_id}
-                options={nicheOptions}
-                disabled={busy === `s-${s.id}`}
-                onChange={v => setSessionNiche(s.id, v)}
-              />
-              {universalCluster && (s.keywords || []).length > 0 && (
-                <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
-                  disabled={busy === `su-${s.id}`}
-                  title="These terms apply to any listing regardless of market — custom, gift for her, plus sized. They get pooled into every generation and stay niche-less."
-                  onClick={() => markSessionUniversal(s)}>
-                  {busy === `su-${s.id}` ? 'Adding…' : 'Mark universal'}
-                </button>
-              )}
-              {s.niche_id && (s.keywords || []).length > 0 && (
-                <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
-                  disabled={busy === `sk-${s.id}`}
-                  title="Connect every keyword in this session to the niche above, so the Listing Builder can find them by niche instead of by collection name"
-                  onClick={() => linkSessionKeywords(s)}>
-                  {busy === `sk-${s.id}`
-                    ? 'Linking…'
-                    : `Apply niche to ${(s.keywords || []).length} keyword${(s.keywords || []).length !== 1 ? 's' : ''}`}
-                </button>
-              )}
-            </div>
-          ))}
-          {!unclassifiedSessions.length && sessions.length > 0 && (
-            <div style={{ fontSize: '0.72rem', color: '#2d6b3c' }}>All sessions classified.</div>
+          {!visibleSessions.length && sessions.length > 0 && (
+            <div style={{ fontSize: '0.72rem', color: '#2d6b3c' }}>Every session is either classified or pooled as universal.</div>
           )}
+          {visibleSessions.map(s => {
+            const kws = s.keywords || [];
+            const uni = universalState(s);
+            const linked = linkedCount(s);
+            const done = sessionDone(s);
+            const unlinked = kws.length - linked;
+            return (
+              <div key={s.id} style={{
+                display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+                padding: '5px 6px', borderRadius: 3,
+                background: done ? 'rgba(124,175,138,0.14)' : s.niche_id ? 'rgba(124,175,138,0.06)' : 'transparent',
+              }}>
+                <span style={{ flex: '1 1 200px', minWidth: 0, fontSize: '0.76rem' }}>
+                  {done && <span style={{ color: '#2d6b3c' }}>✓ </span>}
+                  {s.collection || 'No collection'}
+                  {s.niche && <span style={{ color: 'var(--charcoal-soft)' }}> · {s.niche}</span>}
+                  <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.66rem' }}>
+                    {' '}· {s.source} · {s.date} · {kws.length} keyword{kws.length !== 1 ? 's' : ''}
+                  </span>
+                  {/* What actually happened to this session, in words. The
+                      previous version showed only a faint tint for "has a
+                      niche", so applying a niche to its keywords or pooling it
+                      as universal both left the row looking untouched. */}
+                  {uni !== 'none' && (
+                    <span style={{ fontSize: '0.64rem', fontWeight: 600, color: '#2d6b3c', background: 'rgba(124,175,138,0.22)', padding: '1px 7px', borderRadius: 10, marginLeft: 6 }}>
+                      {uni === 'all' ? 'universal' : `${kws.filter(k => universalIds.has(k.id)).length} universal`}
+                    </span>
+                  )}
+                  {linked > 0 && (
+                    <span style={{ fontSize: '0.64rem', fontWeight: 600, color: '#2d6b3c', background: 'rgba(124,175,138,0.22)', padding: '1px 7px', borderRadius: 10, marginLeft: 6 }}>
+                      {linked === kws.length ? 'niche applied' : `${linked} of ${kws.length} linked`}
+                    </span>
+                  )}
+                </span>
+                <NicheSelect
+                  value={s.niche_id}
+                  options={nicheOptions}
+                  disabled={busy === `s-${s.id}`}
+                  onChange={v => setSessionNiche(s.id, v)}
+                />
+                {universalCluster && kws.length > 0 && uni !== 'all' && (
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
+                    disabled={busy === `su-${s.id}`}
+                    title="These terms apply to any listing regardless of market — custom, gift for her, plus sized. They get pooled into every generation and stay niche-less."
+                    onClick={() => markSessionUniversal(s)}>
+                    {busy === `su-${s.id}` ? 'Adding…' : 'Mark universal'}
+                  </button>
+                )}
+                {s.niche_id && unlinked > 0 && (
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.62rem', padding: '2px 7px' }}
+                    disabled={busy === `sk-${s.id}`}
+                    title="Connect every keyword in this session to the niche above, so the Listing Builder can find them by niche instead of by collection name"
+                    onClick={() => linkSessionKeywords(s)}>
+                    {busy === `sk-${s.id}`
+                      ? 'Linking…'
+                      : `Apply niche to ${unlinked} keyword${unlinked !== 1 ? 's' : ''}`}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </Section>
 
