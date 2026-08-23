@@ -231,6 +231,45 @@ async function copyAssetToMoodBoard(conceptId, conceptCode, asset) {
   return assetRow;
 }
 
+// Push a concept into a fresh Listing Builder draft.
+//
+// Only Product Type (a factual description of the blank) and the design image
+// carry over — Product Name is a plain working label, never the concept's own
+// guessed title, because the real title is supposed to come from whatever
+// keywords get selected in Listing Builder itself, not from here.
+//
+// artworkAssets is deliberately the NON-mood-board list. A mood board is
+// somebody else's reference image; sending one into a listing draft would put
+// it into that listing's visual profile as though it were the product.
+//
+// Module scope so both the header and the Listing Draft tab call one
+// implementation. It used to live inside the output tab, which is why the
+// only route to it was: open the concept, find the Listing Draft sub-tab, and
+// already have a draft generated — three steps guarding a button whose real
+// prerequisite is just the concept.
+async function pushConceptToListingBuilder({ concept, conceptId, artworkAssets, navigate }) {
+  let imageBase64 = null;
+  let imageMediaType = null;
+  const asset = (artworkAssets || [])[0];
+  if (asset) {
+    const url = await getAssetUrl(asset.storage_path);
+    if (url) {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const resized = await resizeImageForUpload(blob);
+      imageBase64 = resized.base64;
+      imageMediaType = resized.mediaType;
+    }
+  }
+  sessionStorage.setItem('tcc_concept_push', JSON.stringify({
+    productName: concept.name,
+    productType: (concept.product_types || []).join(', '),
+    imageBase64,
+    imageMediaType,
+  }));
+  navigate('/listing-builder?fromConcept=' + conceptId);
+}
+
 async function getAssetUrl(path) {
   const { data } = await supabase.storage.from('design-vault').createSignedUrl(path, 3600);
   return data?.signedUrl || null;
@@ -264,6 +303,8 @@ export default function ConceptWorkspace() {
   const [uploading, setUploading] = useState(false);
   const [assetUrls, setAssetUrls] = useState({});
   const [assetsLoaded, setAssetsLoaded] = useState(false);
+  const [headerPushing, setHeaderPushing] = useState(false);
+  const [headerPushError, setHeaderPushError] = useState('');
   const fileInputRef = useRef(null);
 
   if (loading) return <div className="page"><div style={{ color: 'var(--charcoal-soft)', padding: 24 }}>Loading…</div></div>;
@@ -373,7 +414,41 @@ export default function ConceptWorkspace() {
               {concept.visual_style && <span> · {concept.visual_style}</span>}
             </div>
           </div>
+
+          {/* The point of the whole pipeline: a concept exists in order to
+              become a listing. This was previously reachable only from inside
+              the Listing Draft tab, and only once a draft had been generated
+              there — so the one action the concept exists for was the hardest
+              to find. The concept is the only real prerequisite. */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={headerPushing}
+              onClick={async () => {
+                setHeaderPushing(true);
+                setHeaderPushError('');
+                try {
+                  await pushConceptToListingBuilder({ concept, conceptId: id, artworkAssets: otherAssets, navigate });
+                } catch (err) {
+                  setHeaderPushError('Push failed: ' + err.message);
+                } finally {
+                  setHeaderPushing(false);
+                }
+              }}
+              title="Opens a fresh Listing Builder draft carrying this concept's product type and artwork. You still pick the collection and build the real title from actual keyword research there."
+            >
+              {headerPushing ? 'Pushing…' : '→ Build the listing'}
+            </button>
+            <span style={{ fontSize: '0.66rem', color: 'var(--charcoal-soft)' }}>
+              {otherAssets.length > 0
+                ? `carries product type + artwork`
+                : 'carries product type — no artwork attached yet'}
+            </span>
+          </div>
         </div>
+        {headerPushError && (
+          <div style={{ fontSize: '0.72rem', color: '#a33', marginTop: 8 }}>{headerPushError}</div>
+        )}
       </div>
 
       {/* Classification (Phase 4) — the niche is the market this concept
@@ -723,35 +798,10 @@ function GeneratedOutputTab({ concept, refetch, conceptId, config, navigate, oth
     }
   }
 
-  // Push this concept into a fresh Listing Builder draft. Only Product Type
-  // (a factual description of the blank) and the design image carry over —
-  // Product Name is a plain working label, never the concept's own guessed
-  // title, because the real title is supposed to come from whatever B1/B2/B3
-  // keywords she selects in Listing Builder itself, not from here.
   async function handlePushToListingBuilder() {
     setPushing(true);
     try {
-      let imageBase64 = null;
-      let imageMediaType = null;
-      const asset = (otherAssets || [])[0];
-      if (asset) {
-        const url = await getAssetUrl(asset.storage_path);
-        if (url) {
-          const res = await fetch(url);
-          const blob = await res.blob();
-          const resized = await resizeImageForUpload(blob);
-          imageBase64 = resized.base64;
-          imageMediaType = resized.mediaType;
-        }
-      }
-      const productType = (concept.product_types || []).join(', ');
-      sessionStorage.setItem('tcc_concept_push', JSON.stringify({
-        productName: concept.name,
-        productType,
-        imageBase64,
-        imageMediaType,
-      }));
-      navigate('/listing-builder?fromConcept=' + conceptId);
+      await pushConceptToListingBuilder({ concept, conceptId, artworkAssets: otherAssets, navigate });
     } catch (err) {
       setGenError('Push failed: ' + err.message);
     } finally {
