@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createConcept, createConceptOutput, setCurrentOutput, generateConceptCode, createCollection, useSparks, useResearchSessions, createImportSession, useVisualTags, createVisualTag, applyTagToConcept } from '../lib/hooks';
 import { useCollectionsContext } from '../context/CollectionsContext';
+import { uploadConceptAsset, isSupportedAssetMime, CONCEPT_ASSET_TYPES } from '../lib/conceptAssets';
 import VisualTagPicker from './VisualTagPicker';
 
 // Bidirectional case-insensitive substring match — same rule used for
@@ -106,6 +107,64 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
   const [savedConceptData, setSavedConceptData] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [editedConcept, setEditedConcept] = useState(null);
+
+  // ── Images ───────────────────────────────────────────────────────────────
+  // Staged in memory until the concept row exists, because concept_assets
+  // needs a concept_id. Nothing is uploaded on a cancelled import.
+  //
+  // Each entry is { id, file, previewUrl, assetType }. assetType is per-image
+  // rather than one setting for the batch: a single chat session routinely
+  // produces both the reference that inspired the design and a draft of the
+  // design itself, and calling those the same thing would feed a mood board
+  // into a listing's visual profile.
+  const [pendingImages, setPendingImages] = useState([]);
+  const [imageError, setImageError] = useState('');
+
+  function addImageFiles(files) {
+    const incoming = Array.from(files || []).filter(f => f && f.type?.startsWith('image/'));
+    if (!incoming.length) return;
+    const rejected = incoming.filter(f => !isSupportedAssetMime(f.type));
+    if (rejected.length) {
+      setImageError(`Skipped ${rejected.length} file${rejected.length !== 1 ? 's' : ''} — only PNG, JPG, WebP and GIF can be stored.`);
+    } else {
+      setImageError('');
+    }
+    const accepted = incoming.filter(f => isSupportedAssetMime(f.type));
+    if (!accepted.length) return;
+    setPendingImages(prev => [
+      ...prev,
+      ...accepted.map((file, i) => ({
+        // Date.now() alone collides when several files land in one drop.
+        id: `${Date.now()}-${prev.length + i}-${file.name || 'img'}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        assetType: 'reference_image',
+      })),
+    ]);
+  }
+
+  function removePendingImage(id) {
+    setPendingImages(prev => {
+      const gone = prev.find(p => p.id === id);
+      // Revoking matters here: these are full-size screenshots and an import
+      // modal can be opened and abandoned many times in a sitting.
+      if (gone) URL.revokeObjectURL(gone.previewUrl);
+      return prev.filter(p => p.id !== id);
+    });
+  }
+
+  function setPendingImageType(id, assetType) {
+    setPendingImages(prev => prev.map(p => (p.id === id ? { ...p, assetType } : p)));
+  }
+
+  // Release any previews still held when the modal unmounts. Via a ref rather
+  // than the state value directly: an unmount-only effect closes over the
+  // FIRST render's empty array, so reading state there would revoke nothing.
+  const pendingImagesRef = useRef(pendingImages);
+  pendingImagesRef.current = pendingImages;
+  useEffect(() => () => {
+    pendingImagesRef.current.forEach(p => URL.revokeObjectURL(p.previewUrl));
+  }, []);
 
   // Collection selection — separate from editedConcept.collection_name because
   // it can be either an existing collection or '__new__' with its own draft
@@ -334,6 +393,28 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
         }
       }
 
+      // Images last: the concept row must exist first, and a failed upload
+      // must not lose the brief. A screenshot can be re-dropped in the
+      // workspace; a parsed concept cannot be re-parsed once the modal closes.
+      if (pendingImages.length) {
+        const failed = [];
+        for (const img of pendingImages) {
+          try {
+            await uploadConceptAsset(savedConcept.id, savedConcept.concept_code, img.file, img.assetType);
+          } catch (e) {
+            failed.push(img.file.name || 'image');
+          }
+        }
+        if (failed.length) {
+          // Surfaced, not thrown. The concept saved; saying so and naming what
+          // did not is more useful than an error that implies nothing worked.
+          setSaveError(
+            `Concept saved, but ${failed.length} image${failed.length !== 1 ? 's' : ''} failed to upload `
+            + `(${failed.join(', ')}). Add them from the concept's Visuals tab.`
+          );
+        }
+      }
+
       setSavedConceptData(savedConcept);
       setSaved(true);
       onSaved?.(savedConcept);
@@ -473,6 +554,14 @@ export default function ConceptChatImport({ onSaved, onClose, sourceSpark }) {
             allTags={allVisualTags}
             selectedTags={selectedTags}
             setSelectedTags={setSelectedTags}
+          />
+
+          <ImageDropZone
+            images={pendingImages}
+            onAdd={addImageFiles}
+            onRemove={removePendingImage}
+            onSetType={setPendingImageType}
+            error={imageError}
           />
 
           {saveError && (
@@ -715,6 +804,108 @@ function ConceptPreview({
 
       {hasKittlPrompt && (
         <Field label="Kittl Prompt (imported)" value={concept.kittl_prompt} onChange={v => onChange('kittl_prompt', v)} multiline />
+      )}
+    </div>
+  );
+}
+
+// ── Image drop zone ─────────────────────────────────────────────────────────
+// Sits in the review step, beside the parsed fields, because that is the point
+// at which the concept is real to the person doing it — they are looking at
+// the brief and can say which picture is the artwork and which is the mood.
+//
+// Three ways in, because screenshots arrive three ways: a system paste
+// (Cmd/Ctrl+V straight from a screenshot tool, the common case here), a drag
+// from a folder, and a file picker. The paste handler is on the zone rather
+// than the window so it cannot swallow a Ctrl+V meant for a text field.
+function ImageDropZone({ images, onAdd, onRemove, onSetType, error }) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>
+        Images {images.length > 0 && `(${images.length})`}
+      </div>
+
+      <div
+        tabIndex={0}
+        onPaste={e => {
+          const files = Array.from(e.clipboardData?.files || []);
+          if (files.length) { e.preventDefault(); onAdd(files); }
+        }}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); onAdd(e.dataTransfer?.files); }}
+        onClick={() => inputRef.current?.click()}
+        style={{
+          border: `1px dashed ${dragging ? 'var(--dusty-rose)' : 'rgba(43,41,38,0.25)'}`,
+          background: dragging ? 'rgba(196,149,152,0.08)' : 'transparent',
+          borderRadius: 4, padding: '14px 12px', textAlign: 'center', cursor: 'pointer',
+          fontSize: '0.74rem', color: 'var(--charcoal-soft)',
+        }}
+      >
+        Drop screenshots here, click to browse, or focus this box and paste
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          onChange={e => { onAdd(e.target.files); e.target.value = ''; }}
+          style={{ display: 'none' }}
+        />
+      </div>
+
+      {error && (
+        <div style={{ fontSize: '0.7rem', color: '#a33', marginTop: 6 }}>{error}</div>
+      )}
+
+      {images.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+          {images.map(img => (
+            <div key={img.id} style={{
+              width: 150, border: '1px solid rgba(43,41,38,0.12)', borderRadius: 4,
+              padding: 6, display: 'flex', flexDirection: 'column', gap: 5,
+            }}>
+              <img
+                src={img.previewUrl}
+                alt=""
+                style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 3, display: 'block' }}
+              />
+              {/* Per image, not per batch — one chat session usually yields
+                  both the reference that inspired the design and a draft of
+                  the design itself. */}
+              <select
+                value={img.assetType}
+                onChange={e => onSetType(img.id, e.target.value)}
+                style={{ fontSize: '0.68rem', padding: '2px 4px', width: '100%' }}
+              >
+                {CONCEPT_ASSET_TYPES.map(t => (
+                  <option key={t.key} value={t.key}>{t.label}</option>
+                ))}
+              </select>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                <span style={{
+                  fontSize: '0.62rem', color: 'var(--charcoal-soft)', overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
+                }}>
+                  {img.file.name || 'pasted'}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: '0.62rem', padding: '0 5px' }}
+                  onClick={() => onRemove(img.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: '0.66rem', color: 'var(--charcoal-soft)', width: '100%', lineHeight: 1.5 }}>
+            <strong>Artwork</strong> is the design itself and becomes a listing image.
+            {' '}<strong>Mood board</strong> is inspiration and reference — it stays with the brief and is never listed.
+          </div>
+        </div>
       )}
     </div>
   );

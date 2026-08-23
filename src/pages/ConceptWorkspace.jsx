@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { uploadConceptAsset } from '../lib/conceptAssets';
 import { resizeImageForUpload } from '../lib/image';
 import { nowISO } from '../lib/utils';
 import ConfirmButton from '../components/ConfirmButton';
@@ -179,35 +180,11 @@ ${outputsBlock}
   );
 }
 
-// ── Upload asset to design-vault ──────────────────────────────────────────────
-
-const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
-
-async function uploadAsset(conceptId, conceptCode, file, assetType = 'reference_image') {
-  const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : (EXT_BY_MIME[file.type] || 'jpg');
-  const slug = (conceptCode || conceptId).toLowerCase().replace(/[^a-z0-9]/g, '-');
-  const path = `${slug}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from('design-vault').upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-  });
-  if (error) throw error;
-  const { data: assetRow, error: dbError } = await supabase
-    .from('concept_assets')
-    .insert({
-      concept_id: conceptId,
-      asset_type: assetType,
-      storage_path: path,
-      mime_type: file.type,
-      size_bytes: file.size,
-      label: file.name || 'Pasted image',
-      created_at: nowISO(),
-    })
-    .select()
-    .single();
-  if (dbError) throw dbError;
-  return assetRow;
-}
+// ── Upload asset to design-vault ──────────────────────────────────────────
+// The implementation now lives in src/lib/conceptAssets.js so the concept
+// IMPORT modal can use the same one — screenshots arrive at import time, and
+// until now they could only be attached from here, after the concept existed.
+const uploadAsset = uploadConceptAsset;
 
 // Fetches an external image URL via the fetch-image function (bypasses the
 // CORS wall a direct browser fetch would hit on most image hosts) and
