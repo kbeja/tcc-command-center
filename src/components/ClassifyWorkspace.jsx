@@ -146,6 +146,9 @@ export default function ClassifyWorkspace() {
     ]);
     setProducts(p || []);
     setSessions(s || []);
+    // Returned so a caller can inspect the row it just changed. Reading
+    // `sessions` straight after await load() would see the pre-update value.
+    return s || [];
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -202,8 +205,25 @@ export default function ClassifyWorkspace() {
   async function setSessionNiche(id, nicheId) {
     setBusy(`s-${id}`);
     await supabase.from('research_sessions').update({ niche_id: nicheId }).eq('id', id);
+    const fresh = await load();
     setBusy(null);
-    load();
+
+    // Picking a niche whose links ALREADY cover every keyword finishes the
+    // session outright, so the row leaves the queue without the "Apply niche"
+    // step ever appearing. That is correct, but silent — and silent looks
+    // arbitrary when the same click on a different session leaves the row in
+    // place with a button on it. 63 of the 103 existing links point at
+    // Seasonal, so in practice this fires there and nowhere else, which reads
+    // as the seasonal niche behaving differently from the rest.
+    if (!nicheId) return;
+    const row = (fresh || []).find(x => x.id === id);
+    const kws = row?.keywords || [];
+    const linked = kws.filter(k => (k.keyword_niches || []).some(kn => kn.niche_id === nicheId)).length;
+    if (kws.length && linked === kws.length) {
+      const name = nichePath(niches.find(n => n.id === nicheId), niches);
+      setMsg(`${name} was already applied to all ${kws.length} keyword${kws.length !== 1 ? 's' : ''} in this session — nothing left to do, so it moved to finished.`);
+      setTimeout(() => setMsg(''), 6000);
+    }
   }
 
   // Links every keyword in a session to the session's niche. This is the
