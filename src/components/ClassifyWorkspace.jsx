@@ -295,6 +295,49 @@ export default function ClassifyWorkspace() {
     .sort((a, b) => (b.volume ?? -1) - (a.volume ?? -1));
 
   const scopedDone = scopedKeywords.filter(k => k.search_intent).length;
+
+  // ── Bulk intent ─────────────────────────────────────────────────────────
+  // This section originally refused bulk apply outright, on the grounds that
+  // "hockey mom" and "hockey mom gift" share a niche and differ in intent.
+  // The observation is right; the conclusion was not. What §40 rules out is
+  // assignment WITHOUT human approval — a rule or a model deciding for you.
+  // Ticking rows you can see and applying one intent to them is that approval,
+  // exercised on every row, and 660 terms one dropdown at a time is how a
+  // classification never gets done at all.
+  //
+  // Two properties keep it honest, and both are load-bearing:
+  //   - Nothing is ever preselected. The selection starts empty every time,
+  //     so no keyword can be written without having been ticked.
+  //   - "Select all shown" selects exactly the rows on screen, and the button
+  //     names the count it will write. A filter you can read is the review.
+  const [selectedIntentIds, setSelectedIntentIds] = useState(() => new Set());
+  const [bulkIntent, setBulkIntent] = useState('');
+
+  const visibleIntentRows = intentRows.slice(0, 150);
+  const selectedVisible = visibleIntentRows.filter(k => selectedIntentIds.has(k.id));
+
+  function toggleIntentSelected(id) {
+    setSelectedIntentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function applyBulkIntent() {
+    if (!bulkIntent || !selectedVisible.length) return;
+    setBusy('bulk-intent');
+    const results = await inBatches(selectedVisible, k => setKeywordSearchIntent(k.id, bulkIntent));
+    const failed = results.filter(r => r?.error).length;
+    await load();
+    setSelectedIntentIds(new Set());
+    setBusy(null);
+    setMsg(
+      `Set ${selectedVisible.length - failed} keyword${selectedVisible.length - failed !== 1 ? 's' : ''} to ${bulkIntent}.`
+      + (failed ? ` ${failed} failed.` : '')
+    );
+    setTimeout(() => setMsg(''), 4000);
+  }
   const keywordsNeedingIntent = allKeywords.filter(k => !k.search_intent);
 
   return (
@@ -477,7 +520,7 @@ export default function ClassifyWorkspace() {
         title="Keyword search intent"
         done={keywordsDone}
         total={allKeywords.length}
-        hint="Set term by term on purpose — 'hockey mom' and 'hockey mom gift' share a niche but mean different things, which is the whole reason §7 filters on intent. No bulk apply here."
+        hint="'hockey mom' and 'hockey mom gift' share a niche but mean different things, which is the whole reason §7 filters on intent — so nothing here is ever assigned for you. Bulk apply works on rows you tick: filter to a shape you recognise ('gift for'), read what came back, then apply one intent to the lot."
       >
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
           {/* Pick the market you are about to build for and classify only its
@@ -530,12 +573,59 @@ export default function ClassifyWorkspace() {
             : 'Nothing left to classify in this scope.'}
         </div>
 
+        {/* Selection bar. The button always names the exact number it will
+            write, and the selection is only ever what you ticked — filtering
+            or rescoping does not silently drag rows along with it. */}
+        {visibleIntentRows.length > 0 && (
+          <div style={{
+            display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8,
+            padding: '6px 8px', borderRadius: 3,
+            background: selectedVisible.length ? 'rgba(124,175,138,0.12)' : 'var(--charcoal-faint)',
+          }}>
+            <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.65rem', padding: '1px 7px' }}
+              onClick={() => setSelectedIntentIds(
+                selectedVisible.length === visibleIntentRows.length
+                  ? new Set()
+                  : new Set(visibleIntentRows.map(k => k.id))
+              )}>
+              {selectedVisible.length === visibleIntentRows.length ? 'Clear selection' : `Select all ${visibleIntentRows.length} shown`}
+            </button>
+            <span style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)' }}>
+              {selectedVisible.length} selected
+            </span>
+            <select
+              value={bulkIntent}
+              onChange={e => setBulkIntent(e.target.value)}
+              disabled={!selectedVisible.length}
+              style={{ fontSize: '0.72rem', padding: '2px 6px', maxWidth: 190 }}
+            >
+              <option value="">Intent to apply…</option>
+              {SEARCH_INTENTS.map(i => <option key={i} value={i}>{i}</option>)}
+            </select>
+            <button className="btn btn-sm" style={{ fontSize: '0.65rem', padding: '2px 9px' }}
+              disabled={!bulkIntent || !selectedVisible.length || busy === 'bulk-intent'}
+              onClick={applyBulkIntent}>
+              {busy === 'bulk-intent'
+                ? 'Applying…'
+                : `Apply to ${selectedVisible.length} keyword${selectedVisible.length !== 1 ? 's' : ''}`}
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 460, overflowY: 'auto' }}>
-          {intentRows.slice(0, 150).map(k => (
+          {visibleIntentRows.map(k => (
             <div key={k.id} style={{
               display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '3px 6px',
-              borderRadius: 3, background: k.search_intent ? 'rgba(124,175,138,0.08)' : 'transparent',
+              borderRadius: 3,
+              background: selectedIntentIds.has(k.id) ? 'rgba(124,175,138,0.18)'
+                : k.search_intent ? 'rgba(124,175,138,0.08)' : 'transparent',
             }}>
+              <input
+                type="checkbox"
+                checked={selectedIntentIds.has(k.id)}
+                onChange={() => toggleIntentSelected(k.id)}
+                style={{ width: 'auto', margin: 0, flex: '0 0 auto' }}
+              />
               <span style={{ flex: '1 1 200px', minWidth: 0, fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {k.keyword}
                 {k.volume != null && (
