@@ -128,6 +128,9 @@ export default function ClassifyWorkspace() {
   const universalCluster = clusters.find(c => c.is_universal) || null;
   const universalIds = new Set(universalCluster?.keywordIds || []);
   const [uniSearch, setUniSearch] = useState('');
+  // Terms touched this session, kept visible even once they leave the pool so
+  // an accidental untick can be undone rather than disappearing.
+  const [recentUniversal, setRecentUniversal] = useState(() => new Set());
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: s }] = await Promise.all([
@@ -249,13 +252,31 @@ export default function ClassifyWorkspace() {
     load();
   }
 
-  async function toggleUniversal(keywordId, isIn) {
+  // Universal membership is a property of the TERM, not of one keyword row.
+  // 90 of 523 distinct texts exist as several rows across different sessions
+  // (227 rows in total), and "gift for her" is cross-niche no matter which
+  // session happened to record it.
+  //
+  // The list used to dedupe by text but check and write by row id, so the two
+  // disagreed on a third of the data: the row shown was whichever id came
+  // first, which could be an unpooled twin of a term that WAS pooled — drawn
+  // unchecked, and ticking it added a second id for the same text. Grouping
+  // makes the thing on screen and the thing being written the same thing.
+  async function toggleUniversalTerm(group) {
     if (!universalCluster) return;
-    setBusy(`u-${keywordId}`);
-    if (isIn) await removeKeywordFromCluster(universalCluster.id, keywordId);
-    else await addKeywordToCluster(universalCluster.id, keywordId);
+    setBusy(`u-${group.key}`);
+    const pooled = group.ids.filter(id => universalIds.has(id));
+    if (pooled.length) {
+      await inBatches(pooled, id => removeKeywordFromCluster(universalCluster.id, id));
+    } else {
+      await inBatches(group.ids, id => addKeywordToCluster(universalCluster.id, id));
+    }
+    // Keep the row on screen after it is unticked. Removing a term used to
+    // drop it straight out of the list — with an empty search the list IS the
+    // pool — so an undo looked like the term had vanished somewhere.
+    setRecentUniversal(prev => new Set(prev).add(group.key));
+    await refetchClusters();
     setBusy(null);
-    refetchClusters();
   }
 
   // These lists are queues, and a queue that never drains does not look like
@@ -293,6 +314,21 @@ export default function ClassifyWorkspace() {
     // whatever gets done first should be the terms most likely to end up in a
     // title — not whichever session happens to sort first by date.
     .sort((a, b) => (b.volume ?? -1) - (a.volume ?? -1));
+
+  // One entry per distinct keyword text, carrying every row id that shares it.
+  const universalGroups = useMemo(() => {
+    const byText = new Map();
+    for (const k of allKeywords) {
+      const key = (k.keyword || '').trim().toLowerCase();
+      if (!key) continue;
+      const g = byText.get(key) || { key, text: (k.keyword || '').trim(), ids: [] };
+      g.ids.push(k.id);
+      byText.set(key, g);
+    }
+    return [...byText.values()];
+  }, [allKeywords]);
+
+  const universalTermCount = universalGroups.filter(g => g.ids.some(id => universalIds.has(id))).length;
 
   const scopedDone = scopedKeywords.filter(k => k.search_intent).length;
 
@@ -465,8 +501,8 @@ export default function ClassifyWorkspace() {
       {/* ── Universal keywords ── */}
       <Section
         title="Universal keywords"
-        done={universalIds.size}
-        total={universalIds.size || 1}
+        done={universalTermCount}
+        total={universalTermCount || 1}
         hint="Terms that apply to any listing regardless of market — custom, personalized, gift for her, plus sized. These get pooled into every generation and deliberately have NO niche, because claiming one would hide them from every other listing."
       >
         {!universalCluster ? (
@@ -476,8 +512,9 @@ export default function ClassifyWorkspace() {
         ) : (
           <>
             <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
-              {universalIds.size} keyword{universalIds.size !== 1 ? 's' : ''} in the pool.
-              Search your research to add more — check the box to include a term.
+              {universalTermCount} term{universalTermCount !== 1 ? 's' : ''} in the pool
+              {universalIds.size !== universalTermCount && ` (${universalIds.size} keyword rows — the same term is often recorded in several sessions)`}.
+              {' '}Search your research to add more — check the box to include a term.
             </div>
             <input
               value={uniSearch}
@@ -486,26 +523,42 @@ export default function ClassifyWorkspace() {
               style={{ marginBottom: 8, maxWidth: 320 }}
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 320, overflowY: 'auto' }}>
-              {allKeywords
-                .filter(k => universalIds.has(k.id) || (uniSearch.trim() && k.keyword.toLowerCase().includes(uniSearch.trim().toLowerCase())))
-                // Same text can appear in several sessions; show it once.
-                .filter((k, i, arr) => arr.findIndex(x => x.keyword.toLowerCase() === k.keyword.toLowerCase()) === i)
+              {universalGroups
+                .filter(g =>
+                  g.ids.some(id => universalIds.has(id))
+                  || recentUniversal.has(g.key)
+                  || (uniSearch.trim() && g.key.includes(uniSearch.trim().toLowerCase()))
+                )
+                .sort((a, b) => a.text.localeCompare(b.text))
                 .slice(0, 120)
-                .map(k => {
-                  const isIn = universalIds.has(k.id);
+                .map(g => {
+                  const isIn = g.ids.some(id => universalIds.has(id));
                   return (
-                    <label key={k.id} style={{
+                    <label key={g.key} style={{
                       display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.76rem',
                       padding: '3px 6px', borderRadius: 3, cursor: 'pointer',
                       background: isIn ? 'rgba(124,175,138,0.1)' : 'transparent',
                     }}>
-                      <input type="checkbox" checked={isIn} disabled={busy === `u-${k.id}`}
-                        onChange={() => toggleUniversal(k.id, isIn)} style={{ width: 'auto', margin: 0 }} />
-                      <span>{k.keyword}</span>
+                      <input type="checkbox" checked={isIn} disabled={busy === `u-${g.key}`}
+                        onChange={() => toggleUniversalTerm(g)} style={{ width: 'auto', margin: 0 }} />
+                      <span>{g.text}</span>
+                      {g.ids.length > 1 && (
+                        <span style={{ fontSize: '0.64rem', color: 'var(--charcoal-soft)' }}>
+                          in {g.ids.length} sessions
+                        </span>
+                      )}
+                      {/* An unticked row that is still listed was just removed.
+                          Saying so is the difference between an undo and a
+                          thing that mysteriously vanished. */}
+                      {!isIn && recentUniversal.has(g.key) && (
+                        <span style={{ fontSize: '0.64rem', color: 'var(--charcoal-soft)', fontStyle: 'italic' }}>
+                          removed — tick to put it back
+                        </span>
+                      )}
                     </label>
                   );
                 })}
-              {!uniSearch.trim() && universalIds.size === 0 && (
+              {!uniSearch.trim() && universalTermCount === 0 && !recentUniversal.size && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--charcoal-soft)' }}>
                   Nothing added yet. Search above to find terms like &ldquo;gift for her&rdquo; or &ldquo;custom&rdquo;.
                 </div>
