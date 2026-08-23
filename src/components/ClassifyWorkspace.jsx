@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNiches, setKeywordSearchIntent, linkKeywordToNiche, useKeywordClusters, addKeywordToCluster, removeKeywordFromCluster } from '../lib/hooks';
 import { flattenForPicker, nichePath } from '../lib/niches';
-import { SEARCH_INTENTS } from '../data/searchIntents';
+import { SEARCH_INTENTS, SEARCH_INTENT_HINTS } from '../data/searchIntents';
 
 // ─── Classification workspace (post-Phase-10) ──────────────────────────────
 // The taxonomy is built and empty. Nothing in it is populated because §40
@@ -60,10 +60,6 @@ function Section({ title, hint, done, total, children, defaultOpen = false }) {
   );
 }
 
-// Finished rows leave the working list rather than sitting in it recoloured —
-// a queue that visibly drains is the feedback that a write landed. They are
-// hidden, never removed, so a mistake is always one click from being seen and
-// undone.
 // Run one-row-at-a-time writes a handful at a time instead of strictly
 // sequentially. The largest session here holds 88 keywords; end to end that
 // was around twelve seconds of a button reading "Adding…" with nothing else
@@ -77,6 +73,10 @@ async function inBatches(items, fn, size = 8) {
   return out;
 }
 
+// Finished rows leave the working list rather than sitting in it recoloured —
+// a queue that visibly drains is the feedback that a write landed. They are
+// hidden, never removed, so a mistake is always one click from being seen and
+// undone.
 function DoneToggle({ showing, onToggle, count, noun }) {
   if (!count) return null;
   return (
@@ -138,7 +138,7 @@ export default function ClassifyWorkspace() {
         // row would drop out of the queue the moment a niche was picked, and
         // take the "Apply niche to N keywords" button — the step that does the
         // real work — with it.
-        .select('id, collection, niche, source, date, niche_id, keywords(id, keyword, search_intent, keyword_niches(niche_id))')
+        .select('id, collection, niche, source, date, niche_id, keywords(id, keyword, search_intent, volume, keyword_niches(niche_id))')
         .order('date', { ascending: false }),
     ]);
     setProducts(p || []);
@@ -270,6 +270,31 @@ export default function ClassifyWorkspace() {
   const visibleSessions = showDoneSessions ? sessions : sessions.filter(s => !sessionDone(s));
 
   const unclassifiedSessions = sessions.filter(s => !sessionDone(s));
+
+  // ── Intent scoping ──────────────────────────────────────────────────────
+  // 660 keywords in one flat list capped at "the first 100" is unworkable:
+  // there is no reason to classify terms belonging to a market you are not
+  // building for, and no way to tell which those are. Scoping to a session —
+  // the unit research is actually collected in — turns a 660-item chore into
+  // a 20-item step you can finish before building one listing.
+  const [intentScope, setIntentScope] = useState('all');
+  const [intentSearch, setIntentSearch] = useState('');
+  const [showDoneIntent, setShowDoneIntent] = useState(false);
+  const [showIntentKey, setShowIntentKey] = useState(false);
+
+  const scopedSessions = intentScope === 'all' ? sessions : sessions.filter(s => s.id === intentScope);
+  const scopedKeywords = scopedSessions.flatMap(s => (s.keywords || []).map(k => ({ ...k, _session: s })));
+
+  const q = intentSearch.trim().toLowerCase();
+  const intentRows = scopedKeywords
+    .filter(k => showDoneIntent || !k.search_intent)
+    .filter(k => !q || k.keyword.toLowerCase().includes(q))
+    // Highest volume first. Intent is set by hand one term at a time, so
+    // whatever gets done first should be the terms most likely to end up in a
+    // title — not whichever session happens to sort first by date.
+    .sort((a, b) => (b.volume ?? -1) - (a.volume ?? -1));
+
+  const scopedDone = scopedKeywords.filter(k => k.search_intent).length;
   const keywordsNeedingIntent = allKeywords.filter(k => !k.search_intent);
 
   return (
@@ -454,19 +479,79 @@ export default function ClassifyWorkspace() {
         total={allKeywords.length}
         hint="Set term by term on purpose — 'hockey mom' and 'hockey mom gift' share a niche but mean different things, which is the whole reason §7 filters on intent. No bulk apply here."
       >
-        <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
-          Showing the first 100 unclassified of {keywordsNeedingIntent.length}.
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+          {/* Pick the market you are about to build for and classify only its
+              terms. Working the full 660 top-to-bottom means spending most of
+              the effort on markets you have no listing planned for. */}
+          <select
+            value={intentScope}
+            onChange={e => { setIntentScope(e.target.value); setIntentSearch(''); }}
+            style={{ fontSize: '0.72rem', padding: '2px 6px', maxWidth: 320 }}
+          >
+            <option value="all">All sessions ({keywordsNeedingIntent.length} left)</option>
+            {sessions.filter(s => (s.keywords || []).length > 0).map(s => {
+              const left = (s.keywords || []).filter(k => !k.search_intent).length;
+              return (
+                <option key={s.id} value={s.id}>
+                  {s.collection || 'No collection'} · {s.date} · {left} left
+                </option>
+              );
+            })}
+          </select>
+          <input
+            value={intentSearch}
+            onChange={e => setIntentSearch(e.target.value)}
+            placeholder="Filter terms…"
+            style={{ fontSize: '0.72rem', padding: '2px 6px', maxWidth: 200 }}
+          />
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.65rem', padding: '1px 7px' }}
+            onClick={() => setShowIntentKey(v => !v)}>
+            {showIntentKey ? 'Hide key' : 'What do these mean?'}
+          </button>
+          <DoneToggle showing={showDoneIntent} onToggle={() => setShowDoneIntent(v => !v)} count={scopedDone} noun="set" />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {keywordsNeedingIntent.slice(0, 100).map(k => (
-            <div key={k.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '3px 6px' }}>
+
+        {/* The distinction only stays consistent if the difference is visible
+            at the moment of choosing — Gift ("hockey mom gift") versus
+            Recipient ("gift for hockey mom") is otherwise a coin flip. */}
+        {showIntentKey && (
+          <div style={{ fontSize: '0.68rem', color: 'var(--charcoal-soft)', lineHeight: 1.6, marginBottom: 10, padding: '8px 10px', background: 'var(--charcoal-faint)', borderRadius: 3 }}>
+            {SEARCH_INTENTS.map(i => (
+              <div key={i}>
+                <strong style={{ color: 'var(--charcoal)' }}>{i}</strong> — {SEARCH_INTENT_HINTS[i]}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: '0.7rem', color: 'var(--charcoal-soft)', marginBottom: 8 }}>
+          {intentRows.length
+            ? `Showing ${Math.min(intentRows.length, 150)} of ${intentRows.length}, highest search volume first.`
+            : 'Nothing left to classify in this scope.'}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 460, overflowY: 'auto' }}>
+          {intentRows.slice(0, 150).map(k => (
+            <div key={k.id} style={{
+              display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '3px 6px',
+              borderRadius: 3, background: k.search_intent ? 'rgba(124,175,138,0.08)' : 'transparent',
+            }}>
               <span style={{ flex: '1 1 200px', minWidth: 0, fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {k.keyword}
+                {k.volume != null && (
+                  <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.66rem' }}> · {k.volume.toLocaleString()}</span>
+                )}
+                {intentScope === 'all' && (
+                  <span style={{ color: 'var(--charcoal-soft)', fontSize: '0.66rem' }}> · {k._session.collection || 'No collection'}</span>
+                )}
               </span>
+              {/* Bound to the current value rather than always blank, so a
+                  wrong call is corrected in place instead of requiring a trip
+                  to the keyword's own page. */}
               <select
-                value=""
+                value={k.search_intent || ''}
                 disabled={busy === `k-${k.id}`}
-                onChange={e => e.target.value && setIntent(k.id, e.target.value)}
+                onChange={e => setIntent(k.id, e.target.value || null)}
                 style={{ fontSize: '0.72rem', padding: '2px 6px', maxWidth: 190 }}
               >
                 <option value="">Set intent…</option>
