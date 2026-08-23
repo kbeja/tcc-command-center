@@ -26,6 +26,12 @@ const SEASONS = ['Halloween', 'Christmas', "Valentine's Day", "Mother's Day", 'B
 // no longer requires the "--- TCC CONCEPT ---" marker itself (that check
 // stays local to parsePasteBlock() below, since it's specific to this
 // standalone modal's own paste flow).
+// First array with anything in it. Exists because `a || b` is wrong for
+// arrays — [] is truthy — and every label here has an accepted alias.
+function firstNonEmpty(...lists) {
+  return lists.find(l => l.length > 0) || [];
+}
+
 export function parseConceptFields(raw) {
   // Strip a leading "- "/"* " bullet if present (the session-summary CONCEPTS
   // section follows the same bulleted-line convention as its other sections)
@@ -63,8 +69,12 @@ export function parseConceptFields(raw) {
     visual_style: get('Visual Style'),
     color_palette: get('Color Palette'),
     typography_notes: get('Typography') || get('Typography Notes'),
-    mood_keywords: getArray('Mood Keywords') || getArray('Mood'),
-    product_types: getArray('Product Types') || getArray('Products'),
+    // `||` cannot pick between these: getArray returns [] when a label is
+    // absent, and [] is truthy, so the fallback never fired. "Mood:" and
+    // "Products:" looked supported and silently imported nothing — the exact
+    // failure that bites when a paste format is standardised on an alias.
+    mood_keywords: firstNonEmpty(getArray('Mood Keywords'), getArray('Mood')),
+    product_types: firstNonEmpty(getArray('Product Types'), getArray('Products')),
     seasonal_flag: get('Seasonal') || get('Seasonal Flag'),
     emotional_trigger: get('Emotional Trigger'),
     kittl_prompt: kittlPrompt,
