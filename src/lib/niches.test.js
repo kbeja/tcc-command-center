@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   LEVELS, childLevelOf, buildNicheTree, ancestorsOf, nichePath,
   descendantsOf, subtreeHeight, findSiblingConflict, validateNicheName,
-  planReparent, canDeleteNiche, flattenForPicker,
+  planReparent, canDeleteNiche, flattenForPicker, inheritedNicheIds,
 } from './niches.js';
 
 // Hobbies → Hockey → {Hockey Mom, Hockey Fan}
@@ -217,5 +217,50 @@ describe('flattenForPicker', () => {
     const archivedParent = NICHES.map(n => n.id === 'hoc' ? { ...n, status: 'archived' } : n);
     const flat = flattenForPicker(archivedParent);
     expect(flat.map(f => f.id)).toContain('hom');
+  });
+});
+
+// ─── inheritedNicheIds ─────────────────────────────────────────────────────
+// The Listing Builder matched niche ids exactly, so a Hockey Mom product saw
+// none of the keywords linked to Hockey one level above it. These pin the
+// direction of inheritance and the broad-ancestor cutoff, both of which are
+// judgment calls that a future refactor could quietly reverse.
+describe('inheritedNicheIds', () => {
+  const NICHES = [
+    { id: 'hob',  name: 'Hobbies',           level: 'broad',    parent_id: null },
+    { id: 'hoc',  name: 'Hockey',            level: 'sub',      parent_id: 'hob' },
+    { id: 'mom',  name: 'Hockey Mom',        level: 'specific', parent_id: 'hoc' },
+    { id: 'gf',   name: 'Hockey Girlfriend', level: 'specific', parent_id: 'hoc' },
+    { id: 'sea',  name: 'Seasonal',          level: 'broad',    parent_id: null },
+    { id: 'hal',  name: 'Halloween',         level: 'sub',      parent_id: 'sea' },
+  ];
+
+  it('includes the niche itself and its non-broad ancestors', () => {
+    expect(inheritedNicheIds('mom', NICHES).sort()).toEqual(['hoc', 'mom']);
+  });
+
+  it('never includes descendants — a sibling must not bleed in', () => {
+    // A Hockey Mom listing must not pull Hockey Girlfriend terms.
+    expect(inheritedNicheIds('mom', NICHES)).not.toContain('gf');
+    // And a parent listing does not absorb its children either.
+    expect(inheritedNicheIds('hoc', NICHES)).not.toContain('mom');
+  });
+
+  it('excludes a broad ancestor', () => {
+    // Seasonal holds 63 keywords spanning every holiday; inheriting them into
+    // a Halloween listing is the exact silent-wrong-default to avoid.
+    expect(inheritedNicheIds('hal', NICHES)).toEqual(['hal']);
+    expect(inheritedNicheIds('mom', NICHES)).not.toContain('hob');
+  });
+
+  it('still returns a broad niche when it IS the niche', () => {
+    // The filter applies to ancestors, never to the niche itself.
+    expect(inheritedNicheIds('sea', NICHES)).toEqual(['sea']);
+  });
+
+  it('handles missing input safely', () => {
+    expect(inheritedNicheIds(null, NICHES)).toEqual([]);
+    expect(inheritedNicheIds('mom', [])).toEqual(['mom']);
+    expect(inheritedNicheIds('nope', NICHES)).toEqual(['nope']);
   });
 });

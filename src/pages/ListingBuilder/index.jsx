@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { inheritedNicheIds } from '../../lib/niches';
 import { supabase } from '../../lib/supabase';
 import {
   useProduct, usePlaybooks, useConcept, useConcepts,
   useListingGenerations, createProduct, updateProduct, createListingGeneration, linkGenerationsToProduct,
-  useStorePolicies, useProductTemplates,
+  useStorePolicies, useProductTemplates, useNiches,
 } from '../../lib/hooks';
 import { useCollectionsContext } from '../../context/CollectionsContext';
 import { resizeImageForUpload } from '../../lib/image';
@@ -45,6 +46,8 @@ export default function ListingBuilder() {
     chapters,
   } = useCollectionsContext();
   const { playbooks } = usePlaybooks();
+  // Needed to walk a niche up to its parents when gathering keywords.
+  const { niches } = useNiches();
   // Approved Store Policy Library (Milestone C1) — active only; generation
   // resolves the effective Product Truth from these via
   // resolveEffectiveProductTruth(), see generation.js's buildGenerationContext.
@@ -404,24 +407,56 @@ export default function ListingBuilder() {
     // A niche alone is now enough to have a keyword universe — a product
     // classified to Hockey Mom but filed under no collection previously got
     // nothing at all.
-    if (!form.collection && !product?.primary_niche_id) {
+    if (!form.collection && !product?.primary_niche_id && !linkedConcept?.primary_niche_id) {
       setSessions([]); setSelectedSessionIds(new Set()); setCollectionLastVerified(null); return;
     }
     const cols = [...new Set([form.collection, ...extraCollections, ...GLOBAL_COLLECTIONS].filter(Boolean))];
-    const nicheIds = [product?.primary_niche_id].filter(Boolean);
+    // Self plus non-broad ancestors, so a listing on Hockey Mom sees the
+    // keywords linked at Hockey. Exact-id matching meant every Hockey
+    // product (all classified to a child) saw none of the 98 links sitting
+    // on the parent. The concept's niche counts too — a listing pushed
+    // straight from a concept has no product yet, so without it every
+    // niche path switched off at exactly the moment the concept pipeline
+    // was meant to pay off.
+    const nicheIds = [...new Set(
+      [product?.primary_niche_id, linkedConcept?.primary_niche_id]
+        .filter(Boolean)
+        .flatMap(id => inheritedNicheIds(id, niches))
+    )];
     fetchKeywordUniverse(cols, nicheIds)
       .then(rows => {
         setSessions(rows);
         setSelectedSessionIds(new Set(rows.map(s => s.id)));
       });
-    supabase.from('collections').select('last_verified').eq('name', form.collection).single()
-      .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
-  }, [form.collection, extraCollections, product?.primary_niche_id]);
+    // Only when there IS a collection, and maybeSingle rather than single.
+    // A niche alone is enough to reach this effect, so on a niche-classified
+    // product this ran with form.collection still empty and PostgREST answered
+    // 406 for "single() matched no rows" — harmless, since the result is
+    // coalesced to null, but it put a red error in the console on every load
+    // and would mask a real one.
+    if (form.collection) {
+      supabase.from('collections').select('last_verified').eq('name', form.collection).maybeSingle()
+        .then(({ data }) => setCollectionLastVerified(data?.last_verified || null));
+    } else {
+      setCollectionLastVerified(null);
+    }
+  }, [form.collection, extraCollections, product?.primary_niche_id, linkedConcept?.primary_niche_id, niches]);
 
   function refetchSessions() {
-    if (!form.collection && !product?.primary_niche_id) return;
+    if (!form.collection && !product?.primary_niche_id && !linkedConcept?.primary_niche_id) return;
     const cols = [...new Set([form.collection, ...extraCollections, ...GLOBAL_COLLECTIONS].filter(Boolean))];
-    const nicheIds = [product?.primary_niche_id].filter(Boolean);
+    // Self plus non-broad ancestors, so a listing on Hockey Mom sees the
+    // keywords linked at Hockey. Exact-id matching meant every Hockey
+    // product (all classified to a child) saw none of the 98 links sitting
+    // on the parent. The concept's niche counts too — a listing pushed
+    // straight from a concept has no product yet, so without it every
+    // niche path switched off at exactly the moment the concept pipeline
+    // was meant to pay off.
+    const nicheIds = [...new Set(
+      [product?.primary_niche_id, linkedConcept?.primary_niche_id]
+        .filter(Boolean)
+        .flatMap(id => inheritedNicheIds(id, niches))
+    )];
     fetchKeywordUniverse(cols, nicheIds)
       .then(rows => {
         setSessions(rows);

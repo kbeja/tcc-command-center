@@ -282,3 +282,34 @@ export function flattenForPicker(niches, { includeArchived = false } = {}) {
   walk(buildNicheTree(visible), 0);
   return out;
 }
+
+// ── Inherited niches — which niches' keywords a listing may draw on ────────
+// A listing classified to a SPECIFIC niche should see the general terms of the
+// market above it: a Hockey Mom listing wants "hockey mom", "hockey gifts" and
+// "hockey ornament", and those are linked at Hockey, one level up.
+//
+// This exists because the Listing Builder matched niche ids EXACTLY. Every
+// Hockey product is classified to a child (Hockey Mom, Hockey Fan, Hockey
+// Girlfriend) while every keyword link sits on the Hockey parent, so not one
+// of the links reached any of the products. The classification work produced
+// nothing at the only moment it mattered.
+//
+// UPWARD ONLY. Descendants are deliberately excluded: a Hockey Mom listing
+// must not inherit Hockey Girlfriend's terms. Specific inherits general;
+// siblings never bleed into each other.
+//
+// BROAD ANCESTORS ARE EXCLUDED, and that is the load-bearing part. A broad
+// niche is a category, not a market — "Seasonal" currently holds 63 keywords
+// spanning every holiday of the year. Walking the full chain would pour all of
+// them into a Halloween listing, pre-selected, which is precisely the silent
+// wrong-default this codebase keeps having to remove. A niche classified
+// directly to a broad niche still gets its own keywords: the rule filters
+// ANCESTORS, never the niche itself.
+export function inheritedNicheIds(nicheId, niches) {
+  if (!nicheId) return [];
+  const self = (niches || []).find(n => n.id === nicheId);
+  if (!self) return [nicheId];
+  return ancestorsOf(self, niches)
+    .filter(n => n.id === nicheId || n.level !== 'broad')
+    .map(n => n.id);
+}
